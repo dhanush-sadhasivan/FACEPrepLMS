@@ -31,8 +31,8 @@ export default function LockedContestView({ contestId, title, start, end }: any)
       <h2 className="text-2xl font-bold mb-2">{title}</h2>
       <p className="text-muted mb-6">This contest is not currently active.</p>
       <div className="mb-6 text-sm text-left bg-[var(--bg)] p-4 rounded border border-[var(--border)]">
-        <div><strong>Starts:</strong> {new Date(start).toLocaleString()}</div>
-        <div><strong>Ends:</strong> {new Date(end).toLocaleString()}</div>
+        <div suppressHydrationWarning><strong>Starts:</strong> {new Date(start).toLocaleString()}</div>
+        <div suppressHydrationWarning><strong>Ends:</strong> {new Date(end).toLocaleString()}</div>
       </div>
       
       {success ? (
