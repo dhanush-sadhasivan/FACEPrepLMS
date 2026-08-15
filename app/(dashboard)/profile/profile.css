@@ -1,0 +1,229 @@
+.profile-page-container {
+  padding: 0;
+  max-width: 1000px;
+  margin: 0;
+}
+
+/* ─── Header ──────────────────────────────────────── */
+.profile-header {
+  margin-bottom: 2.5rem;
+}
+
+.profile-header h1 {
+  font-size: 1.9rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  margin: 0 0 0.4rem;
+  color: var(--text-primary);
+}
+
+.profile-header p {
+  color: var(--text-muted);
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+/* ─── Layout Grid ──────────────────────────────────── */
+.profile-content {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: 1.5rem;
+}
+
+@media (max-width: 768px) {
+  .profile-content { grid-template-columns: 1fr; }
+}
+
+/* ─── Info Card ──────────────────────────────────────── */
+.profile-readonly-info {
+  background: var(--surface);
+  padding: 1.75rem;
+  border-radius: var(--radius-lg, 16px);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  position: relative;
+  overflow: hidden;
+}
+
+.profile-readonly-info::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--indigo) 0%, var(--accent) 100%);
+}
+
+/* ─── Edit Section ───────────────────────────────────── */
+.profile-edit-section {
+  background: var(--surface);
+  padding: 1.75rem;
+  border-radius: var(--radius-lg, 16px);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  position: relative;
+  overflow: hidden;
+}
+
+.profile-edit-section::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent) 0%, #f97316 100%);
+}
+
+/* Section headings */
+.profile-readonly-info h3,
+.profile-edit-section h3 {
+  margin-top: 0;
+  margin-bottom: 1.5rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* ─── Info List ──────────────────────────────────────── */
+.profile-readonly-info ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+}
+
+.profile-readonly-info li {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.profile-readonly-info strong {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  font-weight: 700;
+}
+
+.profile-readonly-info span,
+.profile-readonly-info div {
+  color: var(--text-primary);
+  font-weight: 500;
+  font-size: 0.9rem;
+}
+
+/* ─── Role Badge ──────────────────────────────────────── */
+.role-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15rem 0.65rem;
+  background: var(--accent-muted);
+  color: var(--accent);
+  border-radius: var(--radius-full, 9999px);
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: capitalize;
+  width: fit-content;
+  border: 1px solid rgba(245,158,11,0.2);
+}
+
+/* ─── Profile Form ──────────────────────────────────── */
+.profile-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.form-group label {
+  font-size: 0.83rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  letter-spacing: 0.02em;
+}
+
+.form-group input {
+  padding: 0.7rem 1rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius, 10px);
+  color: var(--text-primary);
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.9rem;
+  transition: all 0.2s ease;
+  box-shadow: var(--shadow-inset);
+}
+
+.form-group input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-muted);
+  background: var(--surface);
+}
+
+.form-group input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* ─── Save Button ──────────────────────────────────── */
+.save-btn {
+  background: linear-gradient(135deg, var(--accent) 0%, #e87a00 100%);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius, 10px);
+  padding: 0.7rem 1.5rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+  font-family: 'Outfit', sans-serif;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  align-self: flex-start;
+  margin-top: 0.75rem;
+  box-shadow: 0 2px 12px var(--accent-glow);
+  letter-spacing: 0.02em;
+}
+
+.save-btn:hover:not(:disabled) {
+  box-shadow: 0 4px 20px var(--accent-glow), 0 0 0 3px var(--accent-muted);
+  transform: translateY(-1px);
+}
+
+.save-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ─── Form Message ─────────────────────────────────── */
+.form-message {
+  padding: 0.85rem 1rem;
+  border-radius: var(--radius, 10px);
+  font-size: 0.875rem;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.form-message.success {
+  background: var(--success-muted);
+  color: var(--success);
+  border: 1px solid rgba(52,211,153,0.2);
+}
+
+.form-message.error {
+  background: var(--error-muted);
+  color: var(--error);
+  border: 1px solid rgba(248,113,113,0.2);
+}
