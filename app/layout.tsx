@@ -28,7 +28,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" data-theme="dark" suppressHydrationWarning>
-      <body className={outfit.className}>
+      <body className={outfit.className} suppressHydrationWarning>
         <ThemeProvider>
           <ToastProvider>
             {children}

@@ -142,12 +142,14 @@ export async function POST(request: Request) {
   if (!scraperUrl) {
     console.error('[scrape/trigger] RAILWAY_SCRAPER_URL not configured');
     return NextResponse.json(
-      { error: 'Scraper service URL not configured (RAILWAY_SCRAPER_URL)' },
+      { error: 'Scraper service URL is not configured in Vercel environment variables (RAILWAY_SCRAPER_URL).' },
       { status: 500 }
     );
   }
 
   try {
+    const cleanScraperUrl = scraperUrl.trim().replace(/\/$/, '');
+
     // Map questions to the format the scraper expects
     const scraperQuestions = (questions || []).map((q: any) => ({
       slug: q.slug,
@@ -155,10 +157,7 @@ export async function POST(request: Request) {
       maxScore: q.max_score || 10,
     }));
 
-    // NOTE: No ingestUrl needed — the new scraper-service writes progress
-    // directly to Supabase using its own service role key.
-
-    const res = await fetch(`${scraperUrl}/scrape/progress`, {
+    const res = await fetch(`${cleanScraperUrl}/scrape/progress`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -178,7 +177,12 @@ export async function POST(request: Request) {
     if (!res.ok) {
       const errorText = await res.text();
       console.error(`[scrape/trigger] Scraper returned ${res.status}: ${errorText}`);
-      throw new Error(`Scraper returned HTTP ${res.status}`);
+      let errorMessage = `Scraper service returned HTTP ${res.status}`;
+      try {
+        const errJson = JSON.parse(errorText);
+        if (errJson.error) errorMessage = errJson.error;
+      } catch {}
+      return NextResponse.json({ error: `Scraper error: ${errorMessage}` }, { status: res.status });
     }
 
     const result = await res.json();

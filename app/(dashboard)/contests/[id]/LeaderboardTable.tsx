@@ -164,7 +164,7 @@ export default function LeaderboardTable({ contestId, data, lastScraped, questio
     <div>
       {/* Controls */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '1rem' }}>
-        <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+        <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }} suppressHydrationWarning>
           Last scraped: {lastScraped ? new Date(lastScraped).toLocaleString() : 'Never'}
         </div>
         <div style={{ display: 'flex', gap: '0.5rem' }}>
@@ -280,7 +280,7 @@ export default function LeaderboardTable({ contestId, data, lastScraped, questio
                       </div>
                     </td>
                     <td style={{ padding: '0.75rem 1rem', fontWeight: 600, color: row.score > 0 ? 'var(--accent)' : 'inherit' }}>{row.score} pts</td>
-                    <td style={{ padding: '0.75rem 1rem', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                    <td style={{ padding: '0.75rem 1rem', fontSize: '0.85rem', color: 'var(--text-muted)' }} suppressHydrationWarning>
                       {row.lastActive ? new Date(row.lastActive).toLocaleString() : '—'}
                     </td>
                   </tr>
