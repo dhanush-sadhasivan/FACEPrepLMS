@@ -242,7 +242,7 @@ export default function AdminRoadmapsPage() {
                     paddingTop: '0.75rem',
                     borderTop: '1px solid var(--border)',
                     display: 'flex',
-                    justify: 'space-between',
+                    justifyContent: 'space-between',
                     alignItems: 'center',
                     flexWrap: 'wrap',
                     gap: '0.5rem',

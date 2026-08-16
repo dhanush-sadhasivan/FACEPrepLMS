@@ -272,7 +272,7 @@ export default function QuestionsPanel({
                     cursor: 'pointer',
                     fontWeight: 800,
                     display: 'flex',
-                    justify: 'space-between',
+                    justifyContent: 'space-between',
                     alignItems: 'center',
                     fontSize: '0.88rem',
                     color: 'var(--text-primary)',
@@ -300,7 +300,7 @@ export default function QuestionsPanel({
                         key={q.id || idx}
                         style={{
                           display: 'flex',
-                          justify: 'space-between',
+                          justifyContent: 'space-between',
                           alignItems: 'center',
                           padding: '0.5rem 0.75rem',
                           borderRadius: 8,

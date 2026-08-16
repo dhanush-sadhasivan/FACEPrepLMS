@@ -221,7 +221,7 @@ export default function ContestWizard({ groups, teams }: { groups: any[]; teams:
         style={{
           display: 'flex',
           alignItems: 'center',
-          justify: 'space-between',
+          justifyContent: 'space-between',
           marginBottom: '1.5rem',
           borderBottom: '1px solid var(--border)',
           paddingBottom: '1rem',
@@ -391,7 +391,7 @@ export default function ContestWizard({ groups, teams }: { groups: any[]; teams:
             <div
               style={{
                 display: 'flex',
-                justify: 'space-between',
+                justifyContent: 'space-between',
                 alignItems: 'center',
                 marginBottom: '1rem',
               }}
@@ -432,7 +432,7 @@ export default function ContestWizard({ groups, teams }: { groups: any[]; teams:
                           cursor: 'pointer',
                           fontWeight: 700,
                           display: 'flex',
-                          justify: 'space-between',
+                          justifyContent: 'space-between',
                           alignItems: 'center',
                           fontSize: '0.86rem',
                         }}
@@ -456,7 +456,7 @@ export default function ContestWizard({ groups, teams }: { groups: any[]; teams:
                             key={idx}
                             style={{
                               display: 'flex',
-                              justify: 'space-between',
+                              justifyContent: 'space-between',
                               alignItems: 'center',
                               fontSize: '0.84rem',
                               padding: '0.3rem 0',
@@ -606,7 +606,7 @@ export default function ContestWizard({ groups, teams }: { groups: any[]; teams:
               padding: '0.65rem 0.95rem',
               marginBottom: '1.25rem',
               display: 'flex',
-              justify: 'space-between',
+              justifyContent: 'space-between',
               fontSize: '0.85rem',
             }}
           >

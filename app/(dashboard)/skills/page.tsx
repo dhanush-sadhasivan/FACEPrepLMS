@@ -442,9 +442,9 @@ export default function SkillsPage() {
 
                     <div className="course-card-footer">
                       <div className="course-meta-info">
-                        <span>⏱️ {course.estimated_hours}h</span>
+                        <span>⏱️ {(course as any).estimated_hours || 10}h</span>
                         <span>•</span>
-                        <span>📅 {new Date(assignment.assigned_at).toLocaleDateString()}</span>
+                        <span>📅 {new Date((assignment as any).assigned_at || assignment.created_at || Date.now()).toLocaleDateString()}</span>
                       </div>
 
                       <button
@@ -569,7 +569,7 @@ export default function SkillsPage() {
                   {selectedAssignment.course.syllabus.map((week, wIdx) => (
                     <div key={wIdx} style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: '10px', padding: '1rem' }}>
                       <div style={{ fontWeight: 700, fontSize: '0.92rem', color: 'var(--accent)', marginBottom: '0.5rem' }}>
-                        Week {week.week}: {week.title}
+                        Week {week.week}: {(week as any).title || 'Module'}
                       </div>
                       {week.topics && week.topics.length > 0 && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.5rem' }}>
