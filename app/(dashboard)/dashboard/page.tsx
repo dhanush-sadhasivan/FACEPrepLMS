@@ -8,6 +8,7 @@ import TopicRoadmapsWidget from './TopicRoadmapsWidget';
 import AssignedCoursesWidget from './AssignedCoursesWidget';
 import TopPerformersWidget from './TopPerformersWidget';
 import HelpdeskWidget from './HelpdeskWidget';
+import TrainerCompletionAnalytics, { ContestCompletionStat, RoadmapCompletionStat } from './TrainerCompletionAnalytics';
 import './page.css';
 
 export const dynamic = 'force-dynamic';
@@ -40,7 +41,7 @@ export default async function DashboardPage() {
   const globalUserMap = new Map();
   (allUserProfiles || []).forEach((u: any) => {
     globalUserMap.set(u.id, {
-      user_id: u.id,
+      id: u.id,
       name: u.full_name,
       emp_id: u.emp_id || '—',
       team: u.team || 'N/A',
@@ -55,7 +56,7 @@ export default async function DashboardPage() {
   while (true) {
     const { data: pageRows, error: pErr } = await dbAdmin
       .from('progress')
-      .select('user_id, score, status')
+      .select('user_id, question_id, score, status')
       .or('score.gt.0,status.eq.solved')
       .range(pFrom, pFrom + pStep - 1);
 
@@ -86,8 +87,23 @@ export default async function DashboardPage() {
   let activeContestsCount = 0;
   let upcomingContestsCount = 0;
 
+  let contestStats: ContestCompletionStat[] = [];
+  let roadmapStats: RoadmapCompletionStat[] = [];
+  let topTrainersWithStats: any[] = [];
+
   if (isAdminOrManager) {
-    const [uq, gq, qq, pq, cq] = await Promise.all([
+    const [
+      uq,
+      gq,
+      qq,
+      pq,
+      cq,
+      allQsRes,
+      allRoadmapsRes,
+      allRoadmapProgressRes,
+      allContestAssignRes,
+      allRoadmapAssignRes,
+    ] = await Promise.all([
       supabase.from('users').select('*', { count: 'exact', head: true }),
       supabase.from('groups').select('*', { count: 'exact', head: true }),
       supabase.from('questions').select('*', { count: 'exact', head: true }),
@@ -99,8 +115,12 @@ export default async function DashboardPage() {
       supabase
         .from('contests')
         .select('*, questions(count), assignments:contest_assignments(count)')
-        .order('created_at', { ascending: false })
-        .limit(6),
+        .order('created_at', { ascending: false }),
+      dbAdmin.from('questions').select('id, contest_id, topic, domain'),
+      dbAdmin.from('roadmaps').select('id, title, domain, level, topics'),
+      dbAdmin.from('user_roadmap_progress').select('user_id, roadmap_id, completed_topic_ids, status'),
+      dbAdmin.from('contest_assignments').select('contest_id, user_id, group_id'),
+      dbAdmin.from('roadmap_assignments').select('roadmap_id, user_id, group_id'),
     ]);
 
     usersCount = uq.count || 0;
@@ -117,6 +137,115 @@ export default async function DashboardPage() {
       if (now >= start && now <= end) activeContestsCount++;
       else if (now < start) upcomingContestsCount++;
     });
+
+    const allContestsData = contests;
+    const allQsData = allQsRes.data || [];
+    const allContestAssignData = allContestAssignRes.data || [];
+    const totalTrainersCount = globalUserMap.size || 1;
+
+    // 1. Contest Completion Analytics
+    contestStats = allContestsData.slice(0, 5).map((c: any) => {
+      const cQs = allQsData.filter((q: any) => q.contest_id === c.id);
+      const qCount = cQs.length || (c.questions?.[0]?.count || 0);
+
+      const assignedUserIds = new Set<string>();
+      allContestAssignData.forEach((a: any) => {
+        if (a.contest_id === c.id && a.user_id) assignedUserIds.add(a.user_id);
+      });
+      const assignedCount = assignedUserIds.size > 0 ? assignedUserIds.size : totalTrainersCount;
+
+      let completedTrainers = 0;
+      let totalSolvedSum = 0;
+
+      globalUserMap.forEach((userEntry, userId) => {
+        if (cQs.length > 0) {
+          const userSolvedInContest = cQs.filter((q: any) =>
+            allProgressRows.some((p: any) => p.user_id === userId && p.question_id === q.id && (p.status === 'solved' || p.score > 0))
+          ).length;
+          totalSolvedSum += userSolvedInContest;
+          if (userSolvedInContest >= cQs.length) {
+            completedTrainers++;
+          }
+        }
+      });
+
+      const maxPossibleSolved = (qCount || 1) * assignedCount;
+      const pct = maxPossibleSolved > 0 ? Math.min(100, Math.round((totalSolvedSum / maxPossibleSolved) * 100)) : 0;
+
+      return {
+        contestId: c.id,
+        title: c.title,
+        slug: c.hackerrank_slug,
+        questionCount: qCount,
+        assignedTrainersCount: assignedCount,
+        completedTrainersCount: completedTrainers,
+        completionPercentage: pct,
+      };
+    });
+
+    // 2. Roadmap Completion Analytics
+    const allRoadmapsData = allRoadmapsRes.data || [];
+    const allRoadmapProgressData = allRoadmapProgressRes.data || [];
+    const allRoadmapAssignData = allRoadmapAssignRes.data || [];
+
+    roadmapStats = allRoadmapsData.slice(0, 5).map((r: any) => {
+      const topicsArr = r.topics || [];
+      const topicCount = topicsArr.length || 1;
+
+      const assignedUserIds = new Set<string>();
+      allRoadmapAssignData.forEach((a: any) => {
+        if (a.roadmap_id === r.id && a.user_id) assignedUserIds.add(a.user_id);
+      });
+      const assignedCount = assignedUserIds.size > 0 ? assignedUserIds.size : totalTrainersCount;
+
+      let completedTrainers = 0;
+      let totalTopicsDoneSum = 0;
+
+      globalUserMap.forEach((userEntry, userId) => {
+        const rp = allRoadmapProgressData.find((p: any) => p.user_id === userId && p.roadmap_id === r.id);
+        const doneCount = (rp?.completed_topic_ids || []).length;
+        totalTopicsDoneSum += doneCount;
+        if (rp?.status === 'completed' || doneCount >= topicCount) {
+          completedTrainers++;
+        }
+      });
+
+      const maxPossible = topicCount * assignedCount;
+      const pct = maxPossible > 0 ? Math.min(100, Math.round((totalTopicsDoneSum / maxPossible) * 100)) : 0;
+
+      return {
+        roadmapId: r.id,
+        title: r.title,
+        domain: r.domain || 'DSA',
+        level: r.level || 'Intermediate',
+        totalTopics: topicCount,
+        assignedTrainersCount: assignedCount,
+        completedTrainersCount: completedTrainers,
+        completionPercentage: pct,
+      };
+    });
+
+    // 3. Top Master Trainers Leaderboard
+    topTrainersWithStats = globalPerformers.map((userPerf: any) => {
+      const userCompletedContests = contestStats.filter((c) => {
+        const cQs = allQsData.filter((q: any) => q.contest_id === c.contestId);
+        if (cQs.length === 0) return false;
+        const userSolved = cQs.filter((q: any) =>
+          allProgressRows.some((p: any) => p.user_id === userPerf.id && p.question_id === q.id && (p.status === 'solved' || p.score > 0))
+        ).length;
+        return userSolved >= cQs.length;
+      }).length;
+
+      const userCompletedRoadmaps = allRoadmapProgressData.filter(
+        (rp: any) => rp.user_id === userPerf.id && rp.status === 'completed'
+      ).length;
+
+      return {
+        ...userPerf,
+        completedContestsCount: userCompletedContests,
+        completedRoadmapsCount: userCompletedRoadmaps,
+      };
+    }).sort((a: any, b: any) => ((b.completedContestsCount + b.completedRoadmapsCount) - (a.completedContestsCount + a.completedRoadmapsCount)) || (b.solved - a.solved));
   }
 
   // ── Trainer Queries ─────────────────────────────────────────────────
@@ -178,25 +307,13 @@ export default async function DashboardPage() {
       const existing = progressData.find((p: any) => p.roadmap_id === rm.id);
       const completedTopicIds: string[] = [...(existing?.completed_topic_ids || [])];
       const topics = rm.topics || [];
-      let totalQs = 0;
+      const totalQs = topics.length;
 
       topics.forEach((t: any) => {
-        const questions = t.questions || [];
-        if (Array.isArray(questions) && questions.length > 0) {
-          totalQs += questions.length;
-          questions.forEach((q: any) => {
-            const qId = q.question_id || q.id;
-            const qp = questionProgress.find((p: any) => p.question_id === qId);
-            if (qp && (qp.status === 'solved' || qp.score > 0)) {
-              if (q.id && !completedTopicIds.includes(q.id)) completedTopicIds.push(q.id);
-              if (qId && !completedTopicIds.includes(qId)) completedTopicIds.push(qId);
-            }
-          });
-        } else {
-          totalQs += 1;
-          const qId = t.question_id || t.id;
-          const qp = questionProgress.find((p: any) => p.question_id === qId);
-          if (qp && (qp.status === 'solved' || qp.score > 0)) {
+        const qId = t.id || t.question_id;
+        if (qId) {
+          const isSolvedInDb = questionProgress.some((qp: any) => qp.question_id === qId && (qp.status === 'solved' || qp.score > 0));
+          if (isSolvedInDb) {
             if (t.id && !completedTopicIds.includes(t.id)) completedTopicIds.push(t.id);
             if (qId && !completedTopicIds.includes(qId)) completedTopicIds.push(qId);
           }
@@ -240,26 +357,46 @@ export default async function DashboardPage() {
     });
     trainerProgress = { score: totalScore, solved: solvedCount };
 
-    assignedContestsCount = (contests || []).length;
-    if ((contests || []).length > 0) {
-      const { data: allQuestions } = await supabase.from('questions').select('id, contest_id');
-      (contests || []).forEach((c: any) => {
-        const cQs = (allQuestions || []).filter((q: any) => q.contest_id === c.id);
-        if (cQs.length > 0) {
-          const solvedInContest = cQs.filter((q: any) =>
-            questionProgress.some((qp: any) => qp.question_id === q.id && (qp.status === 'solved' || qp.score > 0))
-          ).length;
-          if (solvedInContest >= cQs.length) {
-            completedContestsCount++;
-          }
-        }
-      });
+    const [contestAssignRes, groupContestAssignRes, allContestsRes, allQsRes] = await Promise.all([
+      supabase.from('contest_assignments').select('contest_id').eq('user_id', user.id),
+      groupIds.length > 0 ? supabase.from('contest_assignments').select('contest_id').in('group_id', groupIds) : Promise.resolve({ data: [] }),
+      supabase.from('contests').select('id, title, start_date, end_date'),
+      supabase.from('questions').select('id, contest_id'),
+    ]);
+
+    const directContestIds = (contestAssignRes.data || []).map((a: any) => a.contest_id);
+    const groupContestIds = ((groupContestAssignRes.data || []) as any[]).map((a: any) => a.contest_id);
+    const roadmapContestIds = trainerRoadmaps.map((rm: any) => rm.contest_id).filter(Boolean);
+
+    let myContestIds = Array.from(new Set([...directContestIds, ...groupContestIds, ...roadmapContestIds]));
+    const availableContests = allContestsRes.data || [];
+
+    if (myContestIds.length === 0 && availableContests.length > 0) {
+      myContestIds = availableContests.map((c: any) => c.id);
     }
+
+    const myContests = availableContests.filter((c: any) => myContestIds.includes(c.id));
+    assignedContestsCount = myContests.length;
+
+    const allQs = allQsRes.data || [];
+    completedContestsCount = 0;
+
+    myContests.forEach((c: any) => {
+      const cQs = allQs.filter((q: any) => q.contest_id === c.id);
+      if (cQs.length > 0) {
+        const solvedInContest = cQs.filter((q: any) =>
+          questionProgress.some((qp: any) => qp.question_id === q.id && (qp.status === 'solved' || qp.score > 0))
+        ).length;
+        if (solvedInContest >= cQs.length) {
+          completedContestsCount++;
+        }
+      }
+    });
   }
 
   return (
     <div className="dashboard-container">
-      {/* Exact Original Header */}
+      {/* Header */}
       <header className="dashboard-header">
         <div>
           <h1 className="dashboard-title">Dashboard</h1>
@@ -302,59 +439,57 @@ export default async function DashboardPage() {
         </div>
       </header>
 
-      {/* Exact Original Stats Grid */}
+      {/* Stats Grid */}
       <div className="stats-grid">
         {isAdminOrManager ? (
           <>
             <div className="stat-card">
-              <div className="stat-icon" style={{ background: 'rgba(59,130,246,0.12)', color: '#3b82f6' }}>👥</div>
+              <div className="stat-icon" style={{ background: 'rgba(99,102,241,0.12)', color: 'var(--indigo)' }}>👥</div>
               <div className="stat-info">
-                <span className="stat-value">{usersCount || 0}</span>
-                <span className="stat-label">Total Users</span>
+                <span className="stat-value">{usersCount} Users</span>
+                <span className="stat-label">System Members</span>
               </div>
             </div>
             <div className="stat-card">
-              <div className="stat-icon" style={{ background: 'rgba(34,197,94,0.12)', color: '#22c55e' }}>🏆</div>
+              <div className="stat-icon" style={{ background: 'rgba(16,185,129,0.12)', color: 'var(--success)' }}>👥</div>
               <div className="stat-info">
-                <span className="stat-value">{activeContestsCount} Active</span>
-                <span className="stat-label">{contestsCount || 0} Total Contests</span>
+                <span className="stat-value">{groupsCount} Groups</span>
+                <span className="stat-label">Active Training Groups</span>
               </div>
             </div>
             <div className="stat-card">
-              <div className="stat-icon" style={{ background: 'rgba(255,165,0,0.12)', color: '#FFA500' }}>📚</div>
+              <div className="stat-icon" style={{ background: 'rgba(240,82,55,0.12)', color: 'var(--accent)' }}>🏆</div>
               <div className="stat-info">
-                <span className="stat-value">{questionsCount || 0}</span>
-                <span className="stat-label">Scraped Questions</span>
+                <span className="stat-value">{contestsCount} Contests</span>
+                <span className="stat-label">{activeContestsCount} Active Now</span>
               </div>
             </div>
             <div className="stat-card">
-              <div className="stat-icon" style={{ background: 'rgba(245,158,11,0.12)', color: '#f59e0b' }}>🔒</div>
+              <div className="stat-icon" style={{ background: 'rgba(245,158,11,0.12)', color: '#f59e0b' }}>⚡</div>
               <div className="stat-info">
-                <span className="stat-value" style={{ color: (pendingRequestsCount || 0) > 0 ? 'var(--warning)' : 'inherit' }}>
-                  {pendingRequestsCount || 0}
-                </span>
-                <span className="stat-label">Pending Requests</span>
+                <span className="stat-value">{questionsCount} Questions</span>
+                <span className="stat-label">Bank Total</span>
               </div>
             </div>
           </>
         ) : (
           <>
             <div className="stat-card">
-              <div className="stat-icon" style={{ background: 'rgba(99,102,241,0.12)', color: '#6366f1' }}>🗺️</div>
+              <div className="stat-icon" style={{ background: 'rgba(240,82,55,0.12)', color: 'var(--accent)' }}>🗺️</div>
               <div className="stat-info">
-                <span className="stat-value">{trainerRoadmaps.length}</span>
-                <span className="stat-label">Topic Roadmaps</span>
+                <span className="stat-value">{trainerRoadmaps.length} Roadmaps</span>
+                <span className="stat-label">Assigned Learning</span>
               </div>
             </div>
             <div className="stat-card">
-              <div className="stat-icon" style={{ background: 'rgba(59,130,246,0.12)', color: '#3b82f6' }}>🏆</div>
+              <div className="stat-icon" style={{ background: 'rgba(99,102,241,0.12)', color: 'var(--indigo)' }}>🏆</div>
               <div className="stat-info">
-                <span className="stat-value">{assignedContestsCount}</span>
-                <span className="stat-label">Contests Assigned</span>
+                <span className="stat-value">{assignedContestsCount} Contests</span>
+                <span className="stat-label">Assigned Contests</span>
               </div>
             </div>
             <div className="stat-card">
-              <div className="stat-icon" style={{ background: 'rgba(34,197,94,0.12)', color: '#22c55e' }}>👑</div>
+              <div className="stat-icon" style={{ background: 'rgba(16,185,129,0.12)', color: 'var(--success)' }}>🥇</div>
               <div className="stat-info">
                 <span className="stat-value">{completedContestsCount} Completed</span>
                 <span className="stat-label">Contests Mastery</span>
@@ -374,75 +509,74 @@ export default async function DashboardPage() {
       {/* Main Content Layout Grid */}
       {isAdminOrManager ? (
         /* ── Admin Dashboard Layout ── */
-        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '1.5rem', marginBottom: '2.5rem' }}>
-          {/* Left Column: Contests Section */}
-          <section className="contests-section">
-            <div className="section-header">
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                <h2 className="section-title">Recent Contests</h2>
-                {contests.length > 0 && <span className="contests-count-badge">{contests.length}</span>}
-              </div>
-              <Link href="/contests" className="btn-view-all">
-                View All Contests →
-              </Link>
-            </div>
-
-            <div className="d-contests-list">
-              {(!contests || contests.length === 0) ? (
-                <div className="empty-state">
-                  <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>🏆</div>
-                  <h3>No active or recent contests</h3>
-                  <p>Check back later or view past contests.</p>
+        <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: '0.85rem', marginBottom: '1rem' }}>
+          {/* Left Column: Compact Recent Contests Summary + Real-time Contest & Roadmap Completion Analytics */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+            <section className="contests-section" style={{ padding: '0.75rem 1rem' }}>
+              <div className="section-header" style={{ marginBottom: '0.4rem', paddingBottom: '0.4rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <h2 className="section-title" style={{ fontSize: '0.98rem' }}>Recent Contests</h2>
+                  {contests.length > 0 && <span className="contests-count-badge">{contests.length}</span>}
                 </div>
-              ) : (
-                contests.map((contest: any) => {
-                  const now = new Date();
-                  const start = new Date(contest.start_date);
-                  const end = new Date(contest.end_date);
-                  const status = now >= start && now <= end ? 'active' : now < start ? 'upcoming' : 'past';
-                  const qCount = contest.questions?.[0]?.count || 0;
-                  const gCount = contest.assignments?.[0]?.count || 0;
+                <Link href="/contests" className="btn-view-all" style={{ fontSize: '0.78rem' }}>
+                  View All →
+                </Link>
+              </div>
 
-                  return (
-                    <Link key={contest.id} href={`/contests/${contest.id}`} className={`d-contest-row status-${status}`}>
-                      <div className="d-contest-icon">🏆</div>
-                      <div className="d-contest-body">
-                        <div className="d-contest-title">{contest.title}</div>
-                        <div className="d-contest-sub">
-                          <span>🗓️ {start.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} – {end.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
-                          <span className="d-sub-sep">•</span>
-                          <span>❓ {qCount} Questions</span>
-                          {gCount > 0 && (
-                            <>
-                              <span className="d-sub-sep">•</span>
-                              <span>👥 {gCount} {gCount === 1 ? 'Group' : 'Groups'}</span>
-                            </>
-                          )}
+              <div className="d-contests-list">
+                {(!contests || contests.length === 0) ? (
+                  <div className="empty-state" style={{ padding: '0.85rem' }}>
+                    <h3>No active contests</h3>
+                  </div>
+                ) : (
+                  contests.slice(0, 3).map((contest: any) => {
+                    const now = new Date();
+                    const start = new Date(contest.start_date);
+                    const end = new Date(contest.end_date);
+                    const status = now >= start && now <= end ? 'active' : now < start ? 'upcoming' : 'past';
+                    const qCount = contest.questions?.[0]?.count || 0;
+
+                    return (
+                      <Link key={contest.id} href={`/contests/${contest.id}`} className="d-contest-row" style={{ padding: '0.45rem 0.4rem' }}>
+                        <div className="d-contest-icon" style={{ width: 32, height: 32, fontSize: '0.95rem' }}>🏆</div>
+                        <div className="d-contest-body">
+                          <span className="d-contest-title" style={{ fontSize: '0.86rem' }}>{contest.title}</span>
+                          <div className="d-contest-sub" style={{ fontSize: '0.74rem' }}>
+                            <span>💡 {qCount} Qs</span>
+                          </div>
                         </div>
-                      </div>
-                      <div className="d-contest-right">
-                        <span className={`d-status-badge d-status-${status}`}>
-                          {status === 'active' && <span className="d-pulse-dot" />}
-                          {status.toUpperCase()}
-                        </span>
-                        <span className="d-arrow">→</span>
-                      </div>
-                    </Link>
-                  );
-                })
-              )}
-            </div>
-          </section>
+                        <div className="d-contest-right">
+                          <span className={`d-status-badge d-status-${status}`} style={{ fontSize: '0.68rem', padding: '0.1rem 0.45rem' }}>
+                            {status === 'active' && <span className="d-pulse-dot" />}
+                            {status.toUpperCase()}
+                          </span>
+                          <span className="d-arrow">→</span>
+                        </div>
+                      </Link>
+                    );
+                  })
+                )}
+              </div>
+            </section>
+
+            {/* Contest & Roadmap Completion Analytics Module */}
+            <TrainerCompletionAnalytics
+              contestStats={contestStats}
+              roadmapStats={roadmapStats}
+              topTrainers={topTrainersWithStats}
+              totalTrainersCount={globalUserMap.size}
+            />
+          </div>
 
           {/* Right Column: Admin Widgets */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
             <PendingRequestsWidget initialRequests={pendingRequests || []} />
             <TopPerformersWidget performers={globalPerformers} currentUserId={user.id} />
           </div>
         </div>
       ) : (
         /* ── Trainer Dashboard Layout ── */
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem', marginBottom: '2.5rem' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.85rem', marginBottom: '1rem' }}>
           {/* Top-left: Topic Roadmaps */}
           <TopicRoadmapsWidget roadmaps={trainerRoadmaps} />
 

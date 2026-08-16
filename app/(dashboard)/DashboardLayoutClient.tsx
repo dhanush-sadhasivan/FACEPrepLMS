@@ -16,9 +16,11 @@ interface DashboardLayoutClientProps {
 
 import GlobalFloatingTodo from '@/components/GlobalFloatingTodo';
 import ITAttendanceModal from '@/components/ITAttendanceModal';
+import GlobalSupportModal from '@/components/GlobalSupportModal';
 
 export default function DashboardLayoutClient({ role, children }: DashboardLayoutClientProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [supportOpen, setSupportOpen] = useState(false);
   const [mustChangePassword, setMustChangePassword] = useState(false);
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -36,6 +38,10 @@ export default function DashboardLayoutClient({ role, children }: DashboardLayou
       }
     }
     checkUserMetadata();
+
+    const handleOpenSupport = () => setSupportOpen(true);
+    window.addEventListener('open-global-support', handleOpenSupport);
+    return () => window.removeEventListener('open-global-support', handleOpenSupport);
   }, [supabase]);
 
   const handleForceUpdatePassword = async (e: React.FormEvent) => {
@@ -89,6 +95,12 @@ export default function DashboardLayoutClient({ role, children }: DashboardLayou
 
         {/* Daily Internal Training (IT) Check Modal for Trainers */}
         <ITAttendanceModal />
+
+        {/* Global Helpdesk & Support Ticket Request Modal */}
+        <GlobalSupportModal
+          isOpen={supportOpen}
+          onClose={() => setSupportOpen(false)}
+        />
 
         {/* Force Password Change Modal overlay */}
         {mustChangePassword && (

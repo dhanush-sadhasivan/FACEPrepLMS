@@ -26,19 +26,23 @@ export default async function ContestDetailPage({ params }: { params: Promise<{ 
 
   if (!contest) {
     return (
-      <div style={{ padding: '3rem 2rem', textAlign: 'center' }}>
-        <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🔍</div>
-        <h2 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '0.5rem' }}>Contest Not Found</h2>
-        <p style={{ color: 'var(--text-muted)', marginBottom: '1.5rem' }}>
+      <div style={{ padding: '2.5rem 1.5rem', textAlign: 'center' }}>
+        <div style={{ fontSize: '2.5rem', marginBottom: '0.5rem' }}>🔍</div>
+        <h2 style={{ fontSize: '1.35rem', fontWeight: 800, marginBottom: '0.35rem' }}>Contest Not Found</h2>
+        <p style={{ color: 'var(--text-muted)', marginBottom: '1.25rem', fontSize: '0.85rem' }}>
           {contestError?.message || 'This contest may have been deleted or the ID is invalid.'}
         </p>
-        <Link href="/contests" className="btn btn-primary">← Back to Contests</Link>
+        <Link href="/contests" className="btn btn-primary btn-sm">← Back to Contests</Link>
       </div>
     );
   }
 
-  // Sort questions by order_index
-  const questionsList = (contest.questions || []).sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0));
+  // All questions for management panel
+  const allQuestionsList = (contest.questions || []).sort((a: any, b: any) => (a.order_index ?? 0) - (b.order_index ?? 0));
+
+  // Only enabled questions for calculations, points, and leaderboard counting
+  const enabledQuestionsList = allQuestionsList.filter((q: any) => q.is_enabled !== false);
+  const enabledQuestionIdsSet = new Set(enabledQuestionsList.map((q: any) => q.id));
 
   const now = new Date();
   const startDate = new Date(contest.start_date);
@@ -68,7 +72,6 @@ export default async function ContestDetailPage({ params }: { params: Promise<{ 
   // ── Build Leaderboard data with ALL assigned users ────────────────────────
   const dbAdmin = getAdminClient();
 
-  // Fetch all user profiles for bulletproof user lookup
   const { data: allUserProfiles } = await dbAdmin
     .from('users')
     .select('id, full_name, emp_id, team')
@@ -90,9 +93,8 @@ export default async function ContestDetailPage({ params }: { params: Promise<{ 
 
   // 2. Fetch assigned user records
   const userMap = new Map();
-  const totalContestMaxScore = questionsList.reduce((sum: number, q: any) => sum + (q.max_score || 10), 0);
+  const totalContestMaxScore = enabledQuestionsList.reduce((sum: number, q: any) => sum + (q.max_score || 10), 0);
 
-  // From group members
   if (groupIds.length > 0) {
     const { data: groupMembers } = await dbAdmin
       .from('group_members')
@@ -108,7 +110,7 @@ export default async function ContestDetailPage({ params }: { params: Promise<{ 
           emp_id: u.emp_id,
           team: u.team || 'N/A',
           solved: 0,
-          total: questionsList.length,
+          total: enabledQuestionsList.length,
           score: 0,
           maxScore: totalContestMaxScore,
           lastActive: null,
@@ -118,7 +120,6 @@ export default async function ContestDetailPage({ params }: { params: Promise<{ 
     });
   }
 
-  // From teams
   if (teams.length > 0) {
     const { data: teamUsers } = await dbAdmin
       .from('users')
@@ -134,7 +135,7 @@ export default async function ContestDetailPage({ params }: { params: Promise<{ 
           emp_id: u.emp_id,
           team: u.team || 'N/A',
           solved: 0,
-          total: questionsList.length,
+          total: enabledQuestionsList.length,
           score: 0,
           maxScore: totalContestMaxScore,
           lastActive: null,
@@ -144,7 +145,6 @@ export default async function ContestDetailPage({ params }: { params: Promise<{ 
     });
   }
 
-  // Fallback: If no assigned users found yet, initialize all non-admin users in userMap
   if (userMap.size === 0) {
     allUsersMap.forEach((u: any) => {
       userMap.set(u.id, {
@@ -153,7 +153,7 @@ export default async function ContestDetailPage({ params }: { params: Promise<{ 
         emp_id: u.emp_id,
         team: u.team || 'N/A',
         solved: 0,
-        total: questionsList.length,
+        total: enabledQuestionsList.length,
         score: 0,
         maxScore: totalContestMaxScore,
         lastActive: null,
@@ -162,7 +162,7 @@ export default async function ContestDetailPage({ params }: { params: Promise<{ 
     });
   }
 
-  // 3. Overlay progress data from database
+  // 3. Overlay progress data from database (only for enabled questions)
   let progress: any[] = [];
   let from = 0;
   const step = 1000;
@@ -185,6 +185,9 @@ export default async function ContestDetailPage({ params }: { params: Promise<{ 
   }
 
   (progress || []).forEach((p: any) => {
+    // Strictly skip progress for disabled questions
+    if (!enabledQuestionIdsSet.has(p.question_id)) return;
+
     if (!userMap.has(p.user_id)) {
       const userProfile = allUsersMap.get(p.user_id);
       userMap.set(p.user_id, {
@@ -193,7 +196,7 @@ export default async function ContestDetailPage({ params }: { params: Promise<{ 
         emp_id: userProfile?.emp_id || '—',
         team: userProfile?.team || 'N/A',
         solved: 0,
-        total: questionsList.length,
+        total: enabledQuestionsList.length,
         score: 0,
         maxScore: totalContestMaxScore,
         lastActive: null,
@@ -214,60 +217,69 @@ export default async function ContestDetailPage({ params }: { params: Promise<{ 
   });
 
   const leaderboard = Array.from(userMap.values()).sort((a, b) => b.score - a.score);
+  const totalTopicsCount = Array.from(new Set(enabledQuestionsList.map((q: any) => q.domain || 'General'))).length;
 
   return (
     <div>
-      {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem' }}>
+      {/* Compact Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.65rem', marginBottom: '0.75rem' }}>
         <div>
-          <h1 style={{ fontSize: '1.75rem', fontWeight: 700 }}>{contest.title}</h1>
-          <p style={{ color: 'var(--text-muted)', marginTop: '0.35rem', fontSize: '0.85rem' }}>
-            HackerRank Slug: <code style={{ background: 'var(--surface-2)', padding: '0.15rem 0.4rem', borderRadius: 4 }}>{contest.hackerrank_slug}</code>
-          </p>
-          <p style={{ color: 'var(--text-muted)', marginTop: '0.25rem', fontSize: '0.85rem' }}>
-            🗓️ <strong>Start:</strong> {startDate.toLocaleString()} &nbsp;|&nbsp; ⌛ <strong>End:</strong> {endDate.toLocaleString()}
-          </p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <h1 style={{ fontSize: '1.45rem', fontWeight: 900, letterSpacing: '-0.02em', margin: 0 }}>
+              {contest.title}
+            </h1>
+            <span className={`badge ${statusBadgeClass}`} style={{ fontSize: '0.68rem', fontWeight: 800 }}>
+              {statusStr.toUpperCase()}
+            </span>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '0.65rem', marginTop: '0.3rem', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+            <span>
+              HackerRank Slug: <code style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', padding: '0.1rem 0.45rem', borderRadius: 4, color: 'var(--accent)', fontWeight: 700 }}>{contest.hackerrank_slug}</code>
+            </span>
+            <span>&bull;</span>
+            <span>🗓️ <strong>Start:</strong> {startDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+            <span>&bull;</span>
+            <span>⏳ <strong>End:</strong> {endDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+          </div>
         </div>
-        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-          <span className={`badge ${statusBadgeClass}`}>{statusStr.toUpperCase()}</span>
-          {isAdminOrManager && (
-            <Link href={`/contests/${contest.id}/edit`} className="btn btn-secondary">
-              ⚙️ Manage / Edit Contest
-            </Link>
-          )}
+
+        {isAdminOrManager && (
+          <Link href={`/contests/${contest.id}/edit`} className="btn btn-secondary btn-sm" style={{ fontSize: '0.82rem' }}>
+            ⚙️ Manage / Edit Contest
+          </Link>
+        )}
+      </div>
+
+      {/* Compact Stats Row */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.65rem', marginBottom: '0.75rem' }}>
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '10px', padding: '0.55rem 0.85rem', textAlign: 'center' }}>
+          <div style={{ fontSize: '1.25rem', fontWeight: 900, color: 'var(--accent)', lineHeight: 1 }}>{enabledQuestionsList.length}</div>
+          <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginTop: '0.15rem' }}>Active Questions</div>
+        </div>
+
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '10px', padding: '0.55rem 0.85rem', textAlign: 'center' }}>
+          <div style={{ fontSize: '1.25rem', fontWeight: 900, color: 'var(--indigo)', lineHeight: 1 }}>{totalTopicsCount}</div>
+          <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginTop: '0.15rem' }}>Topics / Domains</div>
+        </div>
+
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '10px', padding: '0.55rem 0.85rem', textAlign: 'center' }}>
+          <div style={{ fontSize: '1.25rem', fontWeight: 900, color: 'var(--success)', lineHeight: 1 }}>{leaderboard.length}</div>
+          <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginTop: '0.15rem' }}>Assigned Participants</div>
+        </div>
+
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '10px', padding: '0.55rem 0.85rem', textAlign: 'center' }}>
+          <div style={{ fontSize: '1.25rem', fontWeight: 900, color: '#f59e0b', lineHeight: 1 }}>{totalContestMaxScore}</div>
+          <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginTop: '0.15rem' }}>Total Points</div>
         </div>
       </div>
 
-      {/* Stats Row */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '1rem', marginBottom: '1.5rem' }}>
-        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, padding: '1.25rem 1rem', textAlign: 'center' }}>
-          <div style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--accent)' }}>{questionsList.length}</div>
-          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>Questions</div>
-        </div>
-        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, padding: '1.25rem 1rem', textAlign: 'center' }}>
-          <div style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--accent)' }}>
-            {Array.from(new Set(questionsList.map((q: any) => q.domain || 'General'))).length}
-          </div>
-          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>Topics / Domains</div>
-        </div>
-        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, padding: '1.25rem 1rem', textAlign: 'center' }}>
-          <div style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--accent)' }}>{leaderboard.length}</div>
-          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>Assigned Participants</div>
-        </div>
-        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, padding: '1.25rem 1rem', textAlign: 'center' }}>
-          <div style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--accent)' }}>
-            {questionsList.reduce((s: number, q: any) => s + (q.max_score || 10), 0)}
-          </div>
-          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>Total Points</div>
-        </div>
-      </div>
-
-      {/* Tabs View: Leaderboard visible entirely at first, with Topic-wise Questions Dropdowns tab */}
+      {/* Tabs View */}
       <ContestViewTabs
         contestId={contest.id}
         contestSlug={contest.hackerrank_slug}
         leaderboard={leaderboard}
-        questions={questionsList}
+        questions={allQuestionsList}
         lastScraped={contest.last_scraped_at}
         isAdminOrManager={isAdminOrManager}
       />

@@ -13,19 +13,66 @@ interface TopicCategory {
   questionIds: string[];
 }
 
-const DEFAULT_TOPIC_NAMES = [
-  'Looping & Basics',
-  'Arrays 1D',
-  'Arrays 2D & Matrices',
-  'LinkedList',
-  'Stacks & Queues',
-  'Binary Trees',
-  'Binary Search Trees',
-  'Graphs & Searching',
-];
-
 const DOMAINS = ['General', 'DSA', 'System Design', 'Web Dev', 'Python', 'Cloud', 'SQL', 'Java', 'DevOps'];
 const LEVELS = ['Beginner', 'Intermediate', 'Advanced'];
+
+/**
+ * Pure Hyphen-Prefix & Topic Specifier Classifier.
+ * No hardcoded keyword presets or artificial domain fallbacks.
+ *
+ * 1. Takes 1st part before '-' in title (e.g. "Arrays - 2D Array" -> Topic: "Arrays")
+ * 2. Takes 1st part before '-' in domain / topic specifier if title has no hyphen
+ * 3. If no hyphen delimiter found, question is placed in unclassified list to prompt user
+ */
+function classifyQuestionsByHyphenPrefixOnly(questions: Question[]): {
+  prefixTopics: TopicCategory[];
+  unclassified: Question[];
+} {
+  const prefixMap = new Map<string, string[]>();
+  const unclassified: Question[] = [];
+
+  questions.forEach(q => {
+    const title = q.title || '';
+    const domain = q.domain || '';
+
+    let extractedPrefix: string | null = q.topic ? q.topic.trim() : null;
+
+    if (!extractedPrefix) {
+      if (title.includes('-')) {
+        const part = title.split('-')[0].trim();
+        if (part.length > 0) extractedPrefix = part;
+      } else if (domain.includes('-')) {
+        const part = domain.split('-')[0].trim();
+        if (part.length > 0) extractedPrefix = part;
+      } else if (domain && domain.toLowerCase() !== 'general' && domain.toLowerCase() !== 'dsa') {
+        extractedPrefix = domain.trim();
+      }
+    }
+
+    if (extractedPrefix) {
+      const topicName = extractedPrefix.charAt(0).toUpperCase() + extractedPrefix.slice(1);
+      if (!prefixMap.has(topicName)) {
+        prefixMap.set(topicName, []);
+      }
+      prefixMap.get(topicName)!.push(q.id);
+    } else {
+      unclassified.push(q);
+    }
+  });
+
+  const prefixTopics: TopicCategory[] = [];
+  let idx = 1;
+  for (const [name, qIds] of prefixMap.entries()) {
+    prefixTopics.push({
+      id: `cat_${Date.now()}_${idx++}`,
+      name,
+      description: `Questions under ${name}`,
+      questionIds: qIds,
+    });
+  }
+
+  return { prefixTopics, unclassified };
+}
 
 export default function EditRoadmapPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -43,13 +90,19 @@ export default function EditRoadmapPage({ params }: { params: Promise<{ id: stri
   const [groups, setGroups] = useState<Group[]>([]);
   const [selectedContestId, setSelectedContestId] = useState<string>('');
 
-  // Loaded questions from contest & roadmap
+  // Loaded questions & unclassified list
   const [rawQuestions, setRawQuestions] = useState<Question[]>([]);
   const [loading, setLoading] = useState(true);
+  const [detectedPrefixCategories, setDetectedPrefixCategories] = useState<TopicCategory[]>([]);
+  const [unclassifiedQuestions, setUnclassifiedQuestions] = useState<Question[]>([]);
 
-  // Topic Categories (e.g. Looping, Arrays 1D, LinkedList)
+  // Active Topic Categories
   const [topicCategories, setTopicCategories] = useState<TopicCategory[]>([]);
   const [newTopicName, setNewTopicName] = useState('');
+
+  // Inline topic creation control for unclassified questions
+  const [promptingNewTopicForQId, setPromptingNewTopicForQId] = useState<string | null>(null);
+  const [inlineNewTopicName, setInlineNewTopicName] = useState<string>('');
 
   // Target assignment selection
   const [selectedGroupIds, setSelectedGroupIds] = useState<string[]>([]);
@@ -115,20 +168,32 @@ export default function EditRoadmapPage({ params }: { params: Promise<{ id: stri
           });
 
           setTopicCategories(categories);
-          setRawQuestions(allQuestions);
 
-          // If contest is linked, load extra contest questions if available
+          // If contest is linked, load extra contest questions and process prefix topics
           if (rm.contest_id) {
             const cRes = await fetch(`/api/admin/roadmaps/contests/${rm.contest_id}/questions`);
             if (cRes.ok) {
               const cData = await cRes.json();
               const contestQuestions: Question[] = cData.questions || [];
-              // Merge questions ensuring no duplicates
               const mergedMap = new Map<string, Question>();
               allQuestions.forEach(q => mergedMap.set(q.id, q));
               contestQuestions.forEach(q => mergedMap.set(q.id, q));
-              setRawQuestions(Array.from(mergedMap.values()));
+              const mergedQuestions = Array.from(mergedMap.values());
+              setRawQuestions(mergedQuestions);
+
+              const { prefixTopics, unclassified } = classifyQuestionsByHyphenPrefixOnly(mergedQuestions);
+              setDetectedPrefixCategories(prefixTopics);
+
+              // Unclassified questions are those not assigned to any existing topic category
+              const assignedQIds = new Set(categories.flatMap(c => c.questionIds));
+              setUnclassifiedQuestions(unclassified.filter((q: Question) => !assignedQIds.has(q.id)));
             }
+          } else {
+            setRawQuestions(allQuestions);
+            const { prefixTopics, unclassified } = classifyQuestionsByHyphenPrefixOnly(allQuestions);
+            setDetectedPrefixCategories(prefixTopics);
+            const assignedQIds = new Set(categories.flatMap(c => c.questionIds));
+            setUnclassifiedQuestions(unclassified.filter((q: Question) => !assignedQIds.has(q.id)));
           }
         } else {
           setErrorMsg('Failed to load roadmap details.');
@@ -143,16 +208,75 @@ export default function EditRoadmapPage({ params }: { params: Promise<{ id: stri
     loadData();
   }, [id]);
 
-  const addTopicCategory = () => {
+  const toggleDetectedPrefixCategory = (cat: TopicCategory) => {
+    const exists = topicCategories.some(c => c.name.toLowerCase() === cat.name.toLowerCase());
+    if (exists) {
+      setTopicCategories(prev => prev.filter(c => c.name.toLowerCase() !== cat.name.toLowerCase()));
+    } else {
+      const newCat: TopicCategory = {
+        id: `cat_${Date.now()}_${cat.name}`,
+        name: cat.name,
+        description: cat.description,
+        questionIds: [...cat.questionIds],
+      };
+      setTopicCategories(prev => [...prev, newCat]);
+    }
+  };
+
+  const handleAddAllDetectedTopics = () => {
+    if (detectedPrefixCategories.length === 0) return;
+    const merged: TopicCategory[] = detectedPrefixCategories.map(cat => ({
+      id: `cat_${Date.now()}_${cat.name}`,
+      name: cat.name,
+      description: cat.description,
+      questionIds: [...cat.questionIds],
+    }));
+    setTopicCategories(merged);
+  };
+
+  const addCustomTopicCategory = () => {
     if (!newTopicName.trim()) return;
+    const name = newTopicName.trim();
     const newCat: TopicCategory = {
       id: `cat_${Date.now()}`,
-      name: newTopicName.trim(),
-      description: `Questions under ${newTopicName.trim()}`,
+      name,
+      description: `Questions under ${name}`,
       questionIds: [],
     };
     setTopicCategories(prev => [...prev, newCat]);
     setNewTopicName('');
+  };
+
+  const assignUnclassifiedQuestionToTopicName = (questionId: string, topicName: string) => {
+    const cleanTopicName = topicName.trim();
+    if (!cleanTopicName) return;
+
+    setTopicCategories(prev => {
+      const existingIndex = prev.findIndex(c => c.name.toLowerCase() === cleanTopicName.toLowerCase());
+      if (existingIndex >= 0) {
+        return prev.map((c, idx) => {
+          if (idx === existingIndex) {
+            return {
+              ...c,
+              questionIds: Array.from(new Set([...c.questionIds, questionId])),
+            };
+          }
+          return c;
+        });
+      } else {
+        const newCat: TopicCategory = {
+          id: `cat_${Date.now()}_${cleanTopicName}`,
+          name: cleanTopicName,
+          description: `Questions under ${cleanTopicName}`,
+          questionIds: [questionId],
+        };
+        return [...prev, newCat];
+      }
+    });
+
+    setUnclassifiedQuestions(prev => prev.filter(q => q.id !== questionId));
+    setPromptingNewTopicForQId(null);
+    setInlineNewTopicName('');
   };
 
   const removeTopicCategory = (catId: string) => {
@@ -174,6 +298,13 @@ export default function EditRoadmapPage({ params }: { params: Promise<{ id: stri
       prev.includes(groupId) ? prev.filter(gid => gid !== groupId) : [...prev, groupId]
     );
   };
+
+  const allAvailableTopicNames = Array.from(
+    new Set([
+      ...detectedPrefixCategories.map(c => c.name),
+      ...topicCategories.map(c => c.name),
+    ])
+  );
 
   // Submit Edit Handler
   const handleSubmit = async (e: React.FormEvent) => {
@@ -223,7 +354,7 @@ export default function EditRoadmapPage({ params }: { params: Promise<{ id: stri
     };
 
     const res = await fetch(`/api/admin/roadmaps/${id}`, {
-      method: 'PUT',
+      method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
@@ -232,30 +363,41 @@ export default function EditRoadmapPage({ params }: { params: Promise<{ id: stri
       router.push('/admin/roadmaps');
       router.refresh();
     } else {
-      const err = await res.json();
-      setErrorMsg(err.error || 'Failed to update roadmap.');
+      let message = 'Failed to update roadmap.';
+      try {
+        const err = await res.json();
+        if (err?.error) message = err.error;
+      } catch {
+        const text = await res.text().catch(() => '');
+        if (text) message = text;
+      }
+      setErrorMsg(message);
       setSubmitting(false);
     }
   };
 
-  // Delete Roadmap Handler
   const handleDelete = async () => {
     if (!confirm('Are you sure you want to delete this roadmap? This action cannot be undone.')) return;
     setDeleting(true);
-    const res = await fetch(`/api/admin/roadmaps/${id}`, { method: 'DELETE' });
-    if (res.ok) {
-      router.push('/admin/roadmaps');
-      router.refresh();
-    } else {
-      alert('Failed to delete roadmap.');
+    try {
+      const res = await fetch(`/api/admin/roadmaps/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        router.push('/admin/roadmaps');
+        router.refresh();
+      } else {
+        const err = await res.json();
+        alert(err.error || 'Failed to delete roadmap.');
+      }
+    } catch {
+      alert('Error deleting roadmap.');
+    } finally {
       setDeleting(false);
     }
   };
 
   if (loading) {
     return (
-      <div style={{ padding: '5rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-        <div className="roadmap-spinner" style={{ margin: '0 auto 0.5rem' }} />
+      <div style={{ padding: '4rem', textAlign: 'center', color: 'var(--text-muted)' }}>
         Loading roadmap details…
       </div>
     );
@@ -264,7 +406,7 @@ export default function EditRoadmapPage({ params }: { params: Promise<{ id: stri
   return (
     <div className="create-roadmap-page">
       {/* Header */}
-      <header className="create-roadmap-header">
+      <header className="create-roadmap-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.3rem' }}>
             <Link href="/admin/roadmaps" style={{ color: 'var(--text-muted)', textDecoration: 'none', fontSize: '0.85rem' }}>
@@ -273,10 +415,17 @@ export default function EditRoadmapPage({ params }: { params: Promise<{ id: stri
           </div>
           <h1 className="create-roadmap-title">Edit Topic Roadmap</h1>
           <p className="create-roadmap-subtitle">
-            Update roadmap structure, domain, topics, and target group assignments
+            Update roadmap details, strictly extracted hyphen (-) prefixes, and unclassified question mappings
           </p>
         </div>
-        <button type="button" className="btn btn-error" onClick={handleDelete} disabled={deleting}>
+
+        <button
+          type="button"
+          onClick={handleDelete}
+          disabled={deleting}
+          className="btn btn-secondary"
+          style={{ color: 'var(--error)', borderColor: 'var(--error-muted)' }}
+        >
           {deleting ? 'Deleting…' : '🗑️ Delete Roadmap'}
         </button>
       </header>
@@ -284,6 +433,7 @@ export default function EditRoadmapPage({ params }: { params: Promise<{ id: stri
       <form onSubmit={handleSubmit} className="create-roadmap-layout">
         {/* Left Column: Form & Contest Selector */}
         <div className="create-roadmap-left">
+          {/* Step 1: Basic Info */}
           <div className="roadmap-form-section">
             <h3 className="section-heading">1. Basic Information</h3>
 
@@ -337,8 +487,9 @@ export default function EditRoadmapPage({ params }: { params: Promise<{ id: stri
             </div>
           </div>
 
+          {/* Step 2: Contest Selection */}
           <div className="roadmap-form-section">
-            <h3 className="section-heading">2. Associated Contest</h3>
+            <h3 className="section-heading">2. Linked Contest (Questions Source)</h3>
             <div className="form-group mb-3">
               <select
                 value={selectedContestId}
@@ -353,8 +504,24 @@ export default function EditRoadmapPage({ params }: { params: Promise<{ id: stri
                 ))}
               </select>
             </div>
+            {rawQuestions.length > 0 && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.5rem' }}>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                  Loaded {rawQuestions.length} questions ({detectedPrefixCategories.length} hyphen-prefix topics detected)
+                </span>
+                <button
+                  type="button"
+                  onClick={handleAddAllDetectedTopics}
+                  className="btn btn-secondary btn-sm"
+                  style={{ fontSize: '0.75rem' }}
+                >
+                  ⚡ Add All Hyphen Topics
+                </button>
+              </div>
+            )}
           </div>
 
+          {/* Step 3: Target Groups */}
           <div className="roadmap-form-section">
             <h3 className="section-heading">3. Target Group Assignments</h3>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
@@ -379,19 +546,49 @@ export default function EditRoadmapPage({ params }: { params: Promise<{ id: stri
           </div>
         </div>
 
-        {/* Right Column: Topics & Questions Categorizer */}
+        {/* Right Column: Topics & Mapped Questions Categorizer */}
         <div className="create-roadmap-right">
           <div className="roadmap-form-section" style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-            <h3 className="section-heading">4. Edit Topics &amp; Questions</h3>
-            <p style={{ fontSize: '0.83rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>
-              Trainers see these topics in order (e.g. <strong>LinkedList, Arrays 1D</strong>).
+            <h3 className="section-heading">4. Hyphen-Prefix Topics &amp; Questions Mapping</h3>
+            <p style={{ fontSize: '0.83rem', color: 'var(--text-muted)', marginBottom: '0.75rem' }}>
+              Click any hyphen-prefix topic chip below to add or remove it from the roadmap. Matching questions automatically map inside the topic!
             </p>
 
+            {/* Hyphen Prefix Topic Chips */}
+            <div style={{ marginBottom: '1rem' }}>
+              <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '0.4rem' }}>
+                Extracted Prefix Topics (Click to add/remove topic + mapped questions):
+              </div>
+              <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                {detectedPrefixCategories.length === 0 ? (
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                    No prefix topics detected.
+                  </span>
+                ) : (
+                  detectedPrefixCategories.map(cat => {
+                    const isAdded = topicCategories.some(c => c.name.toLowerCase() === cat.name.toLowerCase());
+                    return (
+                      <button
+                        key={cat.name}
+                        type="button"
+                        onClick={() => toggleDetectedPrefixCategory(cat)}
+                        className={`quick-topic-pill ${isAdded ? 'added' : ''}`}
+                        style={isAdded ? { background: 'var(--accent-muted)', borderColor: 'var(--accent)', color: 'var(--accent)' } : {}}
+                      >
+                        {isAdded ? '✓ ' : '+ '} {cat.name} <strong style={{ marginLeft: '0.2rem' }}>({cat.questionIds.length} Qs)</strong>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+
+            {/* Custom topic input */}
             <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
               <input
                 type="text"
                 className="input"
-                placeholder="Add topic (e.g. Arrays 1D, LinkedList)..."
+                placeholder="Add custom topic (e.g. Dynamic Programming)..."
                 value={newTopicName}
                 onChange={e => setNewTopicName(e.target.value)}
                 style={{ flex: 1 }}
@@ -399,27 +596,10 @@ export default function EditRoadmapPage({ params }: { params: Promise<{ id: stri
               <button
                 type="button"
                 className="btn btn-secondary"
-                onClick={addTopicCategory}
+                onClick={addCustomTopicCategory}
               >
-                + Add Topic
+                + Add Custom Topic
               </button>
-            </div>
-
-            <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
-              {DEFAULT_TOPIC_NAMES.map(name => (
-                <button
-                  key={name}
-                  type="button"
-                  onClick={() => {
-                    if (!topicCategories.some(c => c.name === name)) {
-                      setTopicCategories(prev => [...prev, { id: `cat_${Date.now()}_${name}`, name, description: `${name} exercises`, questionIds: [] }]);
-                    }
-                  }}
-                  className="quick-topic-pill"
-                >
-                  + {name}
-                </button>
-              ))}
             </div>
 
             {errorMsg && (
@@ -428,7 +608,18 @@ export default function EditRoadmapPage({ params }: { params: Promise<{ id: stri
               </div>
             )}
 
+            {/* Topic Categories List */}
             <div className="topic-builder-list">
+              {topicCategories.length === 0 && unclassifiedQuestions.length === 0 && (
+                <div className="empty-builder">
+                  <div style={{ fontSize: '2.5rem', marginBottom: '0.5rem' }}>📌</div>
+                  <p style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>No topics added yet</p>
+                  <p style={{ fontSize: '0.83rem', color: 'var(--text-muted)' }}>
+                    Click topic chips above to add topics and populate mapped questions.
+                  </p>
+                </div>
+              )}
+
               {topicCategories.map((cat, catIdx) => {
                 const catQuestions = rawQuestions.filter(q => cat.questionIds.includes(q.id));
 
@@ -445,7 +636,7 @@ export default function EditRoadmapPage({ params }: { params: Promise<{ id: stri
                         }}
                         className="topic-cat-name-input"
                       />
-                      <span className="topic-cat-count">{catQuestions.length} questions</span>
+                      <span className="topic-cat-count">{catQuestions.length} mapped questions</span>
                       <button
                         type="button"
                         className="topic-cat-del-btn"
@@ -456,10 +647,11 @@ export default function EditRoadmapPage({ params }: { params: Promise<{ id: stri
                       </button>
                     </div>
 
+                    {/* Mapped questions inside this topic */}
                     <div className="topic-cat-questions-list">
                       {catQuestions.length === 0 ? (
                         <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', fontStyle: 'italic', padding: '0.4rem 0' }}>
-                          No questions assigned to this topic.
+                          No questions mapped to this topic. Assign unclassified questions below to this topic.
                         </div>
                       ) : (
                         catQuestions.map(q => (
@@ -467,7 +659,7 @@ export default function EditRoadmapPage({ params }: { params: Promise<{ id: stri
                             <span style={{ fontSize: '0.83rem', fontWeight: 600, color: 'var(--text-primary)', flex: 1 }}>
                               📄 {q.title}
                             </span>
-                            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{q.difficulty}</span>
+                            <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{q.difficulty || 'Medium'}</span>
                             <select
                               value={cat.id}
                               onChange={e => moveQuestionToCategory(q.id, e.target.value)}
@@ -485,37 +677,89 @@ export default function EditRoadmapPage({ params }: { params: Promise<{ id: stri
                 );
               })}
 
-              {/* Unassigned Questions */}
-              {(() => {
-                const assignedQIds = new Set(topicCategories.flatMap(c => c.questionIds));
-                const unassigned = rawQuestions.filter(q => !assignedQIds.has(q.id));
-                if (unassigned.length === 0) return null;
-
-                return (
-                  <div className="topic-cat-box unassigned">
-                    <div style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--warning)', marginBottom: '0.5rem' }}>
-                      ⚠️ Unassigned Questions ({unassigned.length})
+              {/* ── Unclassified Questions Section (Questions without '-' Hyphen Prefix) ── */}
+              {unclassifiedQuestions.length > 0 && (
+                <div className="topic-cat-box unassigned" style={{ marginTop: '0.5rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.6rem' }}>
+                    <div style={{ fontWeight: 700, fontSize: '0.88rem', color: 'var(--warning)' }}>
+                      ❓ Unclassified Questions ({unclassifiedQuestions.length})
                     </div>
-                    {unassigned.map(q => (
-                      <div key={q.id} className="topic-question-row">
-                        <span style={{ fontSize: '0.83rem', color: 'var(--text-primary)', flex: 1 }}>📄 {q.title}</span>
-                        <select
-                          value=""
-                          onChange={e => moveQuestionToCategory(q.id, e.target.value)}
-                          className="topic-move-select"
-                        >
-                          <option value="" disabled>-- Assign to Topic --</option>
-                          {topicCategories.map(c => (
-                            <option key={c.id} value={c.id}>Move to {c.name}</option>
-                          ))}
-                        </select>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                      No '-' prefix in title. Please classify to a topic below:
+                    </span>
+                  </div>
+
+                  <div className="topic-cat-questions-list" style={{ paddingLeft: 0 }}>
+                    {unclassifiedQuestions.map(q => (
+                      <div key={q.id} className="topic-question-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '0.4rem', padding: '0.5rem 0.65rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontSize: '0.83rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                            📄 {q.title}
+                          </span>
+                          <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{q.difficulty || 'Medium'}</span>
+                        </div>
+
+                        {/* Classification Controls */}
+                        {promptingNewTopicForQId === q.id ? (
+                          <div style={{ display: 'flex', gap: '0.35rem', marginTop: '0.2rem' }}>
+                            <input
+                              type="text"
+                              className="input"
+                              placeholder="Enter topic name for this question..."
+                              value={inlineNewTopicName}
+                              onChange={e => setInlineNewTopicName(e.target.value)}
+                              style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem', flex: 1 }}
+                              autoFocus
+                            />
+                            <button
+                              type="button"
+                              className="btn btn-primary btn-sm"
+                              style={{ fontSize: '0.72rem', padding: '0.2rem 0.5rem' }}
+                              onClick={() => assignUnclassifiedQuestionToTopicName(q.id, inlineNewTopicName)}
+                            >
+                              Create &amp; Assign
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-sm"
+                              style={{ fontSize: '0.72rem', padding: '0.2rem 0.4rem' }}
+                              onClick={() => { setPromptingNewTopicForQId(null); setInlineNewTopicName(''); }}
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                            <select
+                              value=""
+                              onChange={e => {
+                                const val = e.target.value;
+                                if (val === '__CREATE_NEW__') {
+                                  setPromptingNewTopicForQId(q.id);
+                                  setInlineNewTopicName('');
+                                } else if (val) {
+                                  assignUnclassifiedQuestionToTopicName(q.id, val);
+                                }
+                              }}
+                              className="topic-move-select"
+                              style={{ flex: 1 }}
+                            >
+                              <option value="" disabled>-- Classify this question into a Topic --</option>
+                              {allAvailableTopicNames.map(name => (
+                                <option key={name} value={name}>Assign to "{name}"</option>
+                              ))}
+                              <option value="__CREATE_NEW__">✨ + Create New Topic for this Question...</option>
+                            </select>
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
-                );
-              })()}
+                </div>
+              )}
             </div>
 
+            {/* Submit */}
             <div style={{ marginTop: 'auto', paddingTop: '1.25rem', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
               <Link href="/admin/roadmaps" className="btn btn-secondary">Cancel</Link>
               <button
@@ -523,7 +767,7 @@ export default function EditRoadmapPage({ params }: { params: Promise<{ id: stri
                 className="btn btn-primary"
                 disabled={submitting || topicCategories.length === 0}
               >
-                {submitting ? 'Saving…' : '💾 Save Changes'}
+                {submitting ? 'Saving Changes…' : '💾 Save Roadmap Changes'}
               </button>
             </div>
           </div>

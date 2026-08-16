@@ -2,7 +2,6 @@
 
 import { useState, useMemo } from 'react';
 import { User } from '@/lib/types';
-import { useRouter } from 'next/navigation';
 import { useToast } from '@/components/Toast';
 
 interface UserTableProps {
@@ -31,14 +30,22 @@ function displayValue(val?: string | null): React.ReactNode {
   return cleaned;
 }
 
+function getInitials(name?: string | null): string {
+  if (!name) return 'U';
+  const parts = name.trim().split(/\s+/);
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }
+  return parts[0].slice(0, 2).toUpperCase();
+}
+
 export default function UserTable({ initialUsers }: UserTableProps) {
-  const router = useRouter();
   const { showToast } = useToast();
   const [users, setUsers] = useState<User[]>(initialUsers);
   const [search, setSearch] = useState('');
-  const [roleFilter, setRoleFilter] = useState('All');
+  const [roleFilter, setRoleFilter] = useState<'All' | 'Admin' | 'Manager' | 'Trainer'>('All');
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 20;
+  const itemsPerPage = 15;
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -52,21 +59,34 @@ export default function UserTable({ initialUsers }: UserTableProps) {
   const [resetCustomPassword, setResetCustomPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Role Counts
+  const counts = useMemo(() => {
+    const admin = users.filter((u) => u.role?.toLowerCase() === 'admin').length;
+    const manager = users.filter((u) => u.role?.toLowerCase() === 'manager').length;
+    const trainer = users.filter((u) => u.role?.toLowerCase() === 'trainer').length;
+    return { all: users.length, admin, manager, trainer };
+  }, [users]);
+
+  // Filtering
   const filteredUsers = useMemo(() => {
     return users.filter((u) => {
+      const q = search.toLowerCase().trim();
       const matchesSearch =
-        u.full_name?.toLowerCase().includes(search.toLowerCase()) ||
-        u.email?.toLowerCase().includes(search.toLowerCase()) ||
-        u.emp_id?.toLowerCase().includes(search.toLowerCase()) ||
-        u.team?.toLowerCase().includes(search.toLowerCase());
+        !q ||
+        u.full_name?.toLowerCase().includes(q) ||
+        u.email?.toLowerCase().includes(q) ||
+        u.emp_id?.toLowerCase().includes(q) ||
+        u.team?.toLowerCase().includes(q) ||
+        u.hackerrank_id?.toLowerCase().includes(q) ||
+        u.manager?.toLowerCase().includes(q);
 
-      const matchesRole = roleFilter === 'All' || u.role === roleFilter.toLowerCase();
+      const matchesRole = roleFilter === 'All' || u.role?.toLowerCase() === roleFilter.toLowerCase();
 
       return matchesSearch && matchesRole;
     });
   }, [users, search, roleFilter]);
 
-  const totalPages = Math.ceil(filteredUsers.length / itemsPerPage);
+  const totalPages = Math.max(1, Math.ceil(filteredUsers.length / itemsPerPage));
   const currentUsers = filteredUsers.slice(
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
@@ -74,7 +94,6 @@ export default function UserTable({ initialUsers }: UserTableProps) {
 
   const handleOpenEdit = (user: User) => {
     setSelectedUser(user);
-    // Sanitize values so "Nil" / "null" strings are cleaned to "" in the form inputs
     setFormData({
       full_name: cleanValue(user.full_name),
       email: cleanValue(user.email),
@@ -115,7 +134,7 @@ export default function UserTable({ initialUsers }: UserTableProps) {
         });
         if (res.ok) {
           const updated = await res.json();
-          setUsers(users.map(u => u.id === updated.id ? updated : u));
+          setUsers(users.map((u) => (u.id === updated.id ? updated : u)));
           setIsEditModalOpen(false);
           showToast('User updated successfully', 'success');
         } else {
@@ -189,7 +208,7 @@ export default function UserTable({ initialUsers }: UserTableProps) {
     try {
       const res = await fetch(`/api/users/${selectedUser.id}`, { method: 'DELETE' });
       if (res.ok) {
-        setUsers(users.filter(u => u.id !== selectedUser.id));
+        setUsers(users.filter((u) => u.id !== selectedUser.id));
         setIsDeleteModalOpen(false);
         showToast('User deleted successfully', 'success');
       } else {
@@ -212,117 +231,247 @@ export default function UserTable({ initialUsers }: UserTableProps) {
     showToast('Credentials copied to clipboard!', 'info');
   };
 
-  const getRoleBadgeClass = (role: string) => {
-    switch (role?.toLowerCase()) {
-      case 'admin': return 'badge-orange';
-      case 'manager': return 'badge-blue';
-      default: return 'badge-gray';
+  const renderRoleBadge = (role?: string) => {
+    const r = role?.toLowerCase() || 'trainer';
+    if (r === 'admin') {
+      return (
+        <span className="role-badge admin">
+          👑 Admin
+        </span>
+      );
     }
+    if (r === 'manager') {
+      return (
+        <span className="role-badge manager">
+          🛡️ Manager
+        </span>
+      );
+    }
+    return (
+      <span className="role-badge trainer">
+        🎓 Trainer
+      </span>
+    );
   };
+
+  const startIndex = (currentPage - 1) * itemsPerPage + 1;
+  const endIndex = Math.min(currentPage * itemsPerPage, filteredUsers.length);
 
   return (
     <div className="user-table-wrapper">
-      <div className="table-controls mb-4" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div className="search-filter-group" style={{ display: 'flex', gap: '0.75rem', flex: 1, maxWidth: 600 }}>
-          <input
-            type="text"
-            className="input search-input"
-            placeholder="Search by name, ID, email, team..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-          <select
-            className="select filter-select"
-            value={roleFilter}
-            onChange={(e) => setRoleFilter(e.target.value)}
-            style={{ width: 140 }}
+      {/* Controls Header & Filter Tabs */}
+      <div className="table-controls-bar">
+        {/* Role Tabs */}
+        <div className="role-filter-tabs">
+          <button
+            className={`role-tab-btn ${roleFilter === 'All' ? 'active' : ''}`}
+            onClick={() => { setRoleFilter('All'); setCurrentPage(1); }}
           >
-            <option value="All">All Roles</option>
-            <option value="Admin">Admin</option>
-            <option value="Manager">Manager</option>
-            <option value="Trainer">Trainer</option>
-          </select>
+            All Users <span className="tab-count-pill">{counts.all}</span>
+          </button>
+          <button
+            className={`role-tab-btn ${roleFilter === 'Admin' ? 'active' : ''}`}
+            onClick={() => { setRoleFilter('Admin'); setCurrentPage(1); }}
+          >
+            👑 Admins <span className="tab-count-pill">{counts.admin}</span>
+          </button>
+          <button
+            className={`role-tab-btn ${roleFilter === 'Manager' ? 'active' : ''}`}
+            onClick={() => { setRoleFilter('Manager'); setCurrentPage(1); }}
+          >
+            🛡️ Managers <span className="tab-count-pill">{counts.manager}</span>
+          </button>
+          <button
+            className={`role-tab-btn ${roleFilter === 'Trainer' ? 'active' : ''}`}
+            onClick={() => { setRoleFilter('Trainer'); setCurrentPage(1); }}
+          >
+            🎓 Trainers <span className="tab-count-pill">{counts.trainer}</span>
+          </button>
         </div>
-        <button className="btn btn-primary" onClick={handleOpenAdd}>
-          + Add User
-        </button>
+
+        {/* Search & Action */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+          <div className="search-box-wrapper">
+            <span className="search-box-icon">🔍</span>
+            <input
+              type="text"
+              className="search-box-input"
+              placeholder="Search user, ID, team..."
+              value={search}
+              onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }}
+            />
+          </div>
+
+          <button className="btn btn-primary" onClick={handleOpenAdd}>
+            ➕ Add Single User
+          </button>
+        </div>
       </div>
 
-      <div className="table-container" style={{ overflowX: 'auto' }}>
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Emp ID</th>
-              <th>Full Name</th>
-              <th>Email</th>
-              <th>Team</th>
-              <th>Manager</th>
-              <th>HackerRank ID</th>
-              <th>Role</th>
-              <th className="text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {currentUsers.map(u => (
-              <tr key={u.id}>
-                <td>{displayValue(u.emp_id)}</td>
-                <td className="font-medium">{displayValue(u.full_name)}</td>
-                <td className="text-muted">{displayValue(u.email)}</td>
-                <td>{displayValue(u.team)}</td>
-                <td>{displayValue(u.manager)}</td>
-                <td>{displayValue(u.hackerrank_id)}</td>
-                <td>
-                  <span className={`badge ${getRoleBadgeClass(u.role)}`}>
-                    {u.role}
-                  </span>
-                </td>
-                <td className="text-right" style={{ whiteSpace: 'nowrap' }}>
-                  <button className="btn btn-ghost btn-sm mr-2" onClick={() => handleOpenReset(u)} title="Reset password with temporary password">
-                    🔑 Reset
-                  </button>
-                  <button className="btn btn-ghost btn-sm mr-2" onClick={() => handleOpenEdit(u)}>
-                    Edit
-                  </button>
-                  <button className="btn btn-ghost btn-sm text-danger" onClick={() => handleOpenDelete(u)}>
-                    Delete
-                  </button>
-                </td>
-              </tr>
-            ))}
-            {currentUsers.length === 0 && (
+      {/* Main Table Card */}
+      <div className="table-card">
+        <div className="users-table-container">
+          <table className="users-table">
+            <thead>
               <tr>
-                <td colSpan={8} className="text-center py-8 text-muted">No users found.</td>
+                <th>User Details</th>
+                <th>Emp ID</th>
+                <th>Team</th>
+                <th>Manager</th>
+                <th>HackerRank ID</th>
+                <th>Role</th>
+                <th style={{ textAlign: 'right' }}>Actions</th>
               </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {currentUsers.map((u) => (
+                <tr key={u.id}>
+                  {/* User Cell: Avatar + Full Name + Email */}
+                  <td>
+                    <div className="user-identity-cell">
+                      <div className="user-avatar">{getInitials(u.full_name)}</div>
+                      <div className="user-name-box">
+                        <span className="user-full-name">{u.full_name || 'Unnamed User'}</span>
+                        <span className="user-email-text">{u.email}</span>
+                      </div>
+                    </div>
+                  </td>
 
-      {totalPages > 1 && (
-        <div className="pagination mt-4">
-          <button
-            className="btn btn-secondary btn-sm"
-            disabled={currentPage === 1}
-            onClick={() => setCurrentPage(p => p - 1)}
-          >
-            Previous
-          </button>
-          <span className="text-sm">Page {currentPage} of {totalPages}</span>
-          <button
-            className="btn btn-secondary btn-sm"
-            disabled={currentPage === totalPages}
-            onClick={() => setCurrentPage(p => p + 1)}
-          >
-            Next
-          </button>
+                  {/* Emp ID */}
+                  <td>
+                    {cleanValue(u.emp_id) ? (
+                      <span className="emp-id-badge">{cleanValue(u.emp_id)}</span>
+                    ) : (
+                      displayValue(u.emp_id)
+                    )}
+                  </td>
+
+                  {/* Team */}
+                  <td>
+                    {cleanValue(u.team) ? (
+                      <span className="meta-chip">🏢 {cleanValue(u.team)}</span>
+                    ) : (
+                      displayValue(u.team)
+                    )}
+                  </td>
+
+                  {/* Manager */}
+                  <td>
+                    {cleanValue(u.manager) ? (
+                      <span className="meta-chip">👤 {cleanValue(u.manager)}</span>
+                    ) : (
+                      displayValue(u.manager)
+                    )}
+                  </td>
+
+                  {/* HackerRank ID */}
+                  <td>
+                    {cleanValue(u.hackerrank_id) ? (
+                      <span className="meta-chip hackerrank">⚡ {cleanValue(u.hackerrank_id)}</span>
+                    ) : (
+                      displayValue(u.hackerrank_id)
+                    )}
+                  </td>
+
+                  {/* Role */}
+                  <td>{renderRoleBadge(u.role)}</td>
+
+                  {/* Actions */}
+                  <td>
+                    <div className="action-btn-group">
+                      <button
+                        className="action-icon-btn"
+                        onClick={() => handleOpenReset(u)}
+                        title="Reset password & generate temporary credentials"
+                      >
+                        🔑 Reset
+                      </button>
+                      <button
+                        className="action-icon-btn"
+                        onClick={() => handleOpenEdit(u)}
+                        title="Edit user details"
+                      >
+                        ✏️ Edit
+                      </button>
+                      <button
+                        className="action-icon-btn delete-btn"
+                        onClick={() => handleOpenDelete(u)}
+                        title="Delete user"
+                      >
+                        🗑️
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+
+              {currentUsers.length === 0 && (
+                <tr>
+                  <td colSpan={7}>
+                    <div className="empty-users-state">
+                      <div className="empty-users-icon">🔍</div>
+                      <h3 style={{ fontSize: '1.05rem', fontWeight: 700, margin: '0.25rem 0' }}>
+                        No users found
+                      </h3>
+                      <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                        {search
+                          ? `No matches for "${search}". Try adjusting your search query or filters.`
+                          : 'No users created under this role category yet.'}
+                      </p>
+                    </div>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
-      )}
+
+        {/* Pagination Bar */}
+        {filteredUsers.length > 0 && (
+          <div className="pagination-bar">
+            <div>
+              Showing <strong>{startIndex}</strong> to <strong>{endIndex}</strong> of{' '}
+              <strong>{filteredUsers.length}</strong> users
+            </div>
+
+            <div className="pagination-controls">
+              <button
+                className="page-num-btn"
+                disabled={currentPage === 1}
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                title="Previous Page"
+              >
+                ‹
+              </button>
+
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => (
+                <button
+                  key={pageNum}
+                  className={`page-num-btn ${pageNum === currentPage ? 'active' : ''}`}
+                  onClick={() => setCurrentPage(pageNum)}
+                >
+                  {pageNum}
+                </button>
+              ))}
+
+              <button
+                className="page-num-btn"
+                disabled={currentPage === totalPages}
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                title="Next Page"
+              >
+                ›
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Add / Edit Modal */}
       {(isAddModalOpen || isEditModalOpen) && (
         <div className="modal-overlay">
           <div className="modal" style={{ maxWidth: 560 }}>
-            <h2 className="modal-title">{isEditModalOpen ? 'Edit User' : 'Add New User'}</h2>
+            <h2 className="modal-title">{isEditModalOpen ? '✏️ Edit User Details' : '➕ Add New User'}</h2>
             <form onSubmit={handleSave}>
               <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                 <div className="form-group">
@@ -339,10 +488,10 @@ export default function UserTable({ initialUsers }: UserTableProps) {
                 </div>
                 <div className="form-group">
                   <label className="label">Role *</label>
-                  <select name="role" className="select" value={formData.role || 'trainer'} onChange={handleChange}>
-                    <option value="trainer">Trainer</option>
-                    <option value="manager">Manager</option>
-                    <option value="admin">Admin</option>
+                  <select name="role" className="input" value={formData.role || 'trainer'} onChange={handleChange}>
+                    <option value="trainer">🎓 Trainer</option>
+                    <option value="manager">🛡️ Manager</option>
+                    <option value="admin">👑 Admin</option>
                   </select>
                 </div>
                 {isAddModalOpen && (
@@ -374,7 +523,7 @@ export default function UserTable({ initialUsers }: UserTableProps) {
               <div className="modal-actions mt-6" style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
                 <button type="button" className="btn btn-secondary" onClick={() => { setIsAddModalOpen(false); setIsEditModalOpen(false); }}>Cancel</button>
                 <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
-                  {isSubmitting ? 'Saving...' : 'Save User'}
+                  {isSubmitting ? 'Saving...' : '💾 Save User'}
                 </button>
               </div>
             </form>
@@ -387,7 +536,7 @@ export default function UserTable({ initialUsers }: UserTableProps) {
         <div className="modal-overlay">
           <div className="modal" style={{ maxWidth: 480 }}>
             <h2 className="modal-title">🔑 Reset Password</h2>
-            <p className="text-muted mb-4" style={{ fontSize: '0.9rem' }}>
+            <p className="text-muted mb-4" style={{ fontSize: '0.88rem' }}>
               Generate a temporary password for <strong>{selectedUser.full_name}</strong> (<code>{selectedUser.email}</code>). They will be forced to set a new password on their next login.
             </p>
             <div className="form-group mb-4">
@@ -397,7 +546,7 @@ export default function UserTable({ initialUsers }: UserTableProps) {
                 className="input"
                 placeholder="Leave blank for auto-generated password"
                 value={resetCustomPassword}
-                onChange={e => setResetCustomPassword(e.target.value)}
+                onChange={(e) => setResetCustomPassword(e.target.value)}
               />
             </div>
             <div className="modal-actions mt-6" style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
@@ -415,10 +564,10 @@ export default function UserTable({ initialUsers }: UserTableProps) {
         <div className="modal-overlay">
           <div className="modal" style={{ maxWidth: 480 }}>
             <h2 className="modal-title" style={{ color: 'var(--success)' }}>🎉 Temporary Password Set</h2>
-            <p className="text-muted mb-4" style={{ fontSize: '0.9rem' }}>
+            <p className="text-muted mb-4" style={{ fontSize: '0.88rem' }}>
               Credentials for <strong>{createdCredentials.full_name}</strong> (<code>{createdCredentials.email}</code>):
             </p>
-            <div style={{ background: 'var(--surface-2)', padding: '1rem', borderRadius: 8, border: '1px solid var(--border)', fontFamily: 'monospace', fontSize: '0.9rem' }}>
+            <div style={{ background: 'var(--surface-2)', padding: '1rem', borderRadius: 8, border: '1px solid var(--border)', fontFamily: 'monospace', fontSize: '0.88rem' }}>
               <div className="mb-2"><strong>Email:</strong> {createdCredentials.email}</div>
               <div><strong>Temp Password:</strong> <span style={{ color: 'var(--accent)', fontWeight: 'bold' }}>{createdCredentials.tempPassword}</span></div>
             </div>
@@ -445,11 +594,13 @@ export default function UserTable({ initialUsers }: UserTableProps) {
       {isDeleteModalOpen && (
         <div className="modal-overlay">
           <div className="modal" style={{ maxWidth: 460 }}>
-            <h2 className="modal-title">Delete User</h2>
-            <p style={{ color: 'var(--text-muted)' }}>Are you sure you want to delete <strong>{selectedUser?.full_name}</strong>? This action cannot be undone.</p>
+            <h2 className="modal-title" style={{ color: 'var(--error)' }}>🗑️ Delete User</h2>
+            <p style={{ color: 'var(--text-primary)', fontSize: '0.9rem' }}>
+              Are you sure you want to delete <strong>{selectedUser?.full_name}</strong> (<code>{selectedUser?.email}</code>)? This action cannot be undone.
+            </p>
             <div className="modal-actions mt-6" style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
               <button className="btn btn-secondary" onClick={() => setIsDeleteModalOpen(false)}>Cancel</button>
-              <button className="btn btn-danger" onClick={handleDelete} disabled={isSubmitting}>
+              <button className="btn" onClick={handleDelete} disabled={isSubmitting} style={{ background: 'var(--error)', color: '#fff' }}>
                 {isSubmitting ? 'Deleting...' : 'Delete User'}
               </button>
             </div>

@@ -96,14 +96,28 @@ export function TopBar({ userRole, onToggleSidebar }: TopBarProps) {
         </nav>
       </div>
 
-      {/* TopBar Right: Global Floating Notes Trigger Button */}
-      <div className="topbar-right" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+      {/* TopBar Right: Support Ticket & Floating Notes Trigger Buttons */}
+      <div className="topbar-right" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+        <button
+          onClick={() => window.dispatchEvent(new Event('open-global-support'))}
+          className="btn btn-secondary btn-sm"
+          style={{
+            display: 'flex', alignItems: 'center', gap: '0.4rem',
+            padding: '0.3rem 0.65rem', fontSize: '0.78rem', fontWeight: 700,
+            borderRadius: '999px', cursor: 'pointer',
+          }}
+          title="Open Helpdesk & Support Request"
+        >
+          <span>🎧</span>
+          <span>Support</span>
+        </button>
+
         <button
           onClick={() => window.dispatchEvent(new Event('toggle-floating-todo'))}
           className="btn btn-secondary btn-sm"
           style={{
             display: 'flex', alignItems: 'center', gap: '0.4rem',
-            padding: '0.35rem 0.75rem', fontSize: '0.8rem', fontWeight: 600,
+            padding: '0.3rem 0.65rem', fontSize: '0.78rem', fontWeight: 700,
             borderRadius: '999px', cursor: 'pointer',
           }}
           title="Open Floating To-Do Notes"

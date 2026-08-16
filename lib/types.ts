@@ -43,6 +43,7 @@ export interface Question {
   contest_id: string
   slug: string
   title: string
+  topic?: string | null
   domain: string
   hackerrank_url: string
   max_score: number

@@ -43,7 +43,9 @@ export async function GET(
   });
 }
 
-// PUT /api/admin/roadmaps/[id] — Update an existing roadmap and its assignments
+// PUT / PATCH /api/admin/roadmaps/[id] — Update an existing roadmap and its assignments
+export const PATCH = PUT;
+
 export async function PUT(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -95,7 +97,6 @@ export async function PUT(
       estimated_hours: estimated_hours || 20,
       topics,
       contest_id: contest_id || null,
-      updated_at: new Date().toISOString(),
     })
     .eq('id', id)
     .select()

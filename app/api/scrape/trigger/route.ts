@@ -43,18 +43,33 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Contest not found' }, { status: 404 });
   }
 
-  // 2. Fetch questions
-  const { data: questions } = await supabase
+  // 2. Fetch enabled questions
+  let questionsData: any[] | null = null;
+  const { data: filteredQs, error: qErr } = await supabase
     .from('questions')
-    .select('id, slug, title, max_score, domain')
-    .eq('contest_id', contestId);
+    .select('id, slug, title, max_score, domain, is_enabled')
+    .eq('contest_id', contestId)
+    .neq('is_enabled', false);
+
+  if (qErr || !filteredQs) {
+    // Fallback if is_enabled column does not exist in DB schema yet
+    const { data: allQs } = await supabase
+      .from('questions')
+      .select('id, slug, title, max_score, domain')
+      .eq('contest_id', contestId);
+    questionsData = allQs || [];
+  } else {
+    questionsData = filteredQs;
+  }
+
+  const questions = questionsData;
 
   const questionCount = questions?.length ?? 0;
   console.log(`[scrape/trigger] Found ${questionCount} questions for contest "${contest.title}"`);
 
   if (questionCount === 0) {
     return NextResponse.json(
-      { error: 'This contest has no questions. Create or re-scrape the contest first.' },
+      { error: 'This contest has no questions in DB. Create or re-scrape the contest first.' },
       { status: 400 }
     );
   }
@@ -150,39 +165,68 @@ export async function POST(request: Request) {
   try {
     const cleanScraperUrl = scraperUrl.trim().replace(/\/$/, '');
 
-    // Map questions to the format the scraper expects
     const scraperQuestions = (questions || []).map((q: any) => ({
       slug: q.slug,
       questionName: q.title,
       maxScore: q.max_score || 10,
     }));
 
-    const res = await fetch(`${cleanScraperUrl}/scrape/progress`, {
+    const scrapePayload = {
+      contestId,
+      contestSlug: contest.hackerrank_slug,
+      questions: scraperQuestions,
+      users: validUsers.map((u: { id: string; hackerrank_id: string }) => ({
+        user_id: u.id,
+        hackerrank_id: u.hackerrank_id,
+      })),
+    };
+
+    let res = await fetch(`${cleanScraperUrl}/scrape/progress`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'x-api-key': process.env.RAILWAY_API_KEY || '',
       },
-      body: JSON.stringify({
-        contestId,
-        contestSlug: contest.hackerrank_slug,
-        questions: scraperQuestions,
-        users: validUsers.map((u: { id: string; hackerrank_id: string }) => ({
-          user_id: u.id,
-          hackerrank_id: u.hackerrank_id,
-        })),
-      }),
+      body: JSON.stringify(scrapePayload),
     });
 
     if (!res.ok) {
       const errorText = await res.text();
       console.error(`[scrape/trigger] Scraper returned ${res.status}: ${errorText}`);
-      let errorMessage = `Scraper service returned HTTP ${res.status}`;
-      try {
-        const errJson = JSON.parse(errorText);
-        if (errJson.error) errorMessage = errJson.error;
-      } catch {}
-      return NextResponse.json({ error: `Scraper error: ${errorMessage}` }, { status: res.status });
+
+      // Auto-healing fallback: If contest not registered in scraper DB, register it via /scrape/challenges first
+      if (errorText.includes('not found in database') || errorText.includes('Create it first')) {
+        console.log(`[scrape/trigger] Auto-registering contest "${contest.hackerrank_slug}" with scraper...`);
+        const registerRes = await fetch(`${cleanScraperUrl}/scrape/challenges`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': process.env.RAILWAY_API_KEY || '',
+          },
+          body: JSON.stringify({ slug: contest.hackerrank_slug, contestId }),
+        });
+
+        if (registerRes.ok) {
+          console.log(`[scrape/trigger] Successfully registered contest "${contest.hackerrank_slug}". Retrying progress scrape...`);
+          res = await fetch(`${cleanScraperUrl}/scrape/progress`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-api-key': process.env.RAILWAY_API_KEY || '',
+            },
+            body: JSON.stringify(scrapePayload),
+          });
+        }
+      }
+
+      if (!res.ok) {
+        let errorMessage = `Scraper service returned HTTP ${res.status}`;
+        try {
+          const errJson = JSON.parse(errorText);
+          if (errJson.error) errorMessage = errJson.error;
+        } catch {}
+        return NextResponse.json({ error: `Scraper error: ${errorMessage}` }, { status: res.status });
+      }
     }
 
     const result = await res.json();

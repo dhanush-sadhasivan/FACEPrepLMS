@@ -114,7 +114,7 @@ export default function TopPerformersWidget({ performers, currentUserId }: TopPe
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
-            {top5.map((p) => {
+            {top5.map((p, idx) => {
               const isCurrentUser = p.user_id === currentUserId;
               const rankBadgeBg =
                 p.rank === 1 ? 'linear-gradient(135deg, #f59e0b, #d97706)' :
@@ -124,7 +124,7 @@ export default function TopPerformersWidget({ performers, currentUserId }: TopPe
 
               return (
                 <div
-                  key={p.user_id}
+                  key={p.user_id ? `${p.user_id}-${idx}` : `top5-${idx}`}
                   style={{
                     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                     padding: '0.65rem 0.85rem', borderRadius: 'var(--radius)',
@@ -285,11 +285,11 @@ export default function TopPerformersWidget({ performers, currentUserId }: TopPe
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredPerformers.map((p) => {
+                    {filteredPerformers.map((p, idx) => {
                       const isCurrentUser = p.user_id === currentUserId;
                       return (
                         <tr
-                          key={p.user_id}
+                          key={p.user_id ? `modal-${p.user_id}-${idx}` : `modal-${idx}`}
                           style={{
                             borderBottom: '1px solid var(--border)',
                             background: isCurrentUser ? 'rgba(99, 102, 241, 0.08)' : 'transparent',

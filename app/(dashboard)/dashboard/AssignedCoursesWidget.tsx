@@ -57,11 +57,11 @@ export default function AssignedCoursesWidget() {
     ...(skillsData?.contestBadges || []),
   ];
 
-  // Sort by priority (higher level & completed badges first!)
+  // Sort by priority (completed & high level badges first!)
   const sortedBadges = [...allBadges].sort((a, b) => getBadgePriority(b) - getBadgePriority(a));
   const displayBadges = sortedBadges.slice(0, 4);
 
-  const unlockedCount = allBadges.filter(b => b.isCompleted).length;
+  const unlockedCount = allBadges.filter((b) => b.isCompleted).length;
 
   return (
     <div className="widget-card" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
@@ -70,7 +70,7 @@ export default function AssignedCoursesWidget() {
           <span>🏆</span>
           Skills &amp; Badges Obtained
           {unlockedCount > 0 && (
-            <span style={{ fontSize: '0.7rem', background: 'rgba(245,158,11,0.15)', color: '#f59e0b', padding: '0.1rem 0.5rem', borderRadius: '999px', fontWeight: 800 }}>
+            <span style={{ fontSize: '0.7rem', background: 'rgba(245,158,11,0.15)', color: '#f59e0b', padding: '0.1rem 0.55rem', borderRadius: '999px', fontWeight: 800 }}>
               {unlockedCount} Earned
             </span>
           )}
@@ -85,72 +85,105 @@ export default function AssignedCoursesWidget() {
           Loading skills &amp; badges...
         </div>
       ) : displayBadges.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '1.25rem 0.75rem', background: 'var(--surface-2)', borderRadius: '12px', border: '1px dashed var(--border)' }}>
-          <div style={{ fontSize: '1.5rem', marginBottom: '0.2rem' }}>🎯</div>
-          <div style={{ fontWeight: 700, fontSize: '0.83rem', color: 'var(--text-primary)' }}>
+        <div style={{ textAlign: 'center', padding: '1.5rem 1rem', background: 'var(--surface-2)', borderRadius: '12px', border: '1px dashed var(--border)', flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ fontSize: '1.8rem', marginBottom: '0.35rem' }}>🎯</div>
+          <div style={{ fontWeight: 800, fontSize: '0.88rem', color: 'var(--text-primary)' }}>
             No Badges Unlocked Yet
           </div>
-          <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: '0.2rem 0 0 0' }}>
-            Complete 100% of questions in any topic to earn your first badge!
+          <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '0.25rem 0 0 0', maxWidth: 280 }}>
+            Complete 100% of questions in any topic or contest to earn your official skill badges!
           </p>
         </div>
       ) : (
-        /* ── Compact Square Tiles Grid ─────────────────────────────────── */
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.6rem' }}>
-          {displayBadges.map(b => {
+        /* ── Flexible Dynamic Badge List Grid ─────────────────────────────────── */
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '0.75rem', flex: 1, alignContent: 'start' }}>
+          {displayBadges.map((b) => {
             const isCompleted = b.isCompleted;
             return (
               <div
                 key={b.id}
                 style={{
                   background: isCompleted ? 'rgba(245, 158, 11, 0.08)' : 'var(--surface-2)',
-                  border: isCompleted ? '1.5px solid rgba(245, 158, 11, 0.4)' : '1px dashed var(--border)',
-                  borderRadius: '12px', padding: '0.65rem 0.4rem',
-                  display: 'flex', flexDirection: 'column', alignItems: 'center',
-                  justifyContent: 'space-between', textAlign: 'center',
+                  border: isCompleted ? '1.5px solid rgba(245, 158, 11, 0.4)' : '1px solid var(--border)',
+                  borderRadius: '12px',
+                  padding: '0.75rem 0.85rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.75rem',
                   boxShadow: isCompleted ? '0 4px 12px rgba(245, 158, 11, 0.12)' : 'none',
-                  transition: 'transform 0.15s ease',
-                  cursor: 'pointer', minHeight: '100px',
+                  transition: 'all 0.15s ease',
+                  cursor: 'pointer',
+                  position: 'relative',
+                  overflow: 'hidden',
                 }}
                 title={isCompleted ? `${b.title} (100% Completed)` : `${b.title} (${b.solved}/${b.total} Solved)`}
               >
-                {/* Badge Icon */}
-                <div style={{
-                  fontSize: '1.6rem', lineHeight: 1, marginBottom: '0.35rem',
-                  filter: isCompleted ? 'drop-shadow(0 2px 6px rgba(245,158,11,0.4))' : 'grayscale(60%)',
-                }}>
-                  {b.badgeIcon}
+                {/* Badge Icon Emblem */}
+                <div
+                  style={{
+                    width: 44,
+                    height: 44,
+                    borderRadius: '10px',
+                    background: isCompleted ? 'rgba(245, 158, 11, 0.15)' : 'var(--surface-3)',
+                    border: isCompleted ? '1px solid rgba(245, 158, 11, 0.35)' : '1px solid var(--border)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '1.45rem',
+                    flexShrink: 0,
+                    boxShadow: isCompleted ? '0 2px 8px rgba(245, 158, 11, 0.2)' : 'none',
+                  }}
+                >
+                  {b.badgeIcon || '🏆'}
                 </div>
 
-                {/* Badge Title */}
-                <div style={{
-                  fontSize: '0.72rem', fontWeight: 800, color: 'var(--text-primary)',
-                  lineHeight: 1.15, overflow: 'hidden', textOverflow: 'ellipsis',
-                  display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
-                  maxHeight: '2.3em', width: '100%', wordBreak: 'break-word',
-                }}>
-                  {b.title}
-                </div>
-
-                {/* Level / Status Pill */}
-                <div style={{ marginTop: '0.35rem' }}>
-                  {isCompleted ? (
-                    <span style={{
-                      fontSize: '0.62rem', fontWeight: 900, background: 'linear-gradient(135deg, #f59e0b, #eab308)',
-                      color: '#000', padding: '0.1rem 0.4rem', borderRadius: '999px', textTransform: 'uppercase',
-                      letterSpacing: '0.3px', display: 'inline-block',
-                    }}>
-                      🏆 100%
-                    </span>
-                  ) : (
-                    <span style={{
-                      fontSize: '0.62rem', fontWeight: 700, background: 'var(--surface-3)',
-                      color: 'var(--text-muted)', padding: '0.1rem 0.4rem', borderRadius: '999px',
-                      display: 'inline-block',
-                    }}>
-                      🔒 {b.solved}/{b.total}
-                    </span>
-                  )}
+                {/* Badge Content */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div
+                    style={{
+                      fontSize: '0.84rem',
+                      fontWeight: 800,
+                      color: 'var(--text-primary)',
+                      lineHeight: 1.2,
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                    }}
+                  >
+                    {b.title}
+                  </div>
+                  
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginTop: '0.25rem' }}>
+                    {isCompleted ? (
+                      <span
+                        style={{
+                          fontSize: '0.65rem',
+                          fontWeight: 900,
+                          background: 'linear-gradient(135deg, #f59e0b, #eab308)',
+                          color: '#000',
+                          padding: '0.12rem 0.5rem',
+                          borderRadius: '999px',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.3px',
+                        }}
+                      >
+                        🏆 100% MASTERED
+                      </span>
+                    ) : (
+                      <span
+                        style={{
+                          fontSize: '0.65rem',
+                          fontWeight: 700,
+                          background: 'var(--surface-3)',
+                          color: 'var(--text-muted)',
+                          padding: '0.12rem 0.5rem',
+                          borderRadius: '999px',
+                        }}
+                      >
+                        🔒 {b.solved}/{b.total} Solved
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
             );
@@ -159,7 +192,20 @@ export default function AssignedCoursesWidget() {
       )}
 
       {allBadges.length > 4 && (
-        <Link href="/skills" style={{ display: 'block', textAlign: 'center', marginTop: '0.6rem', fontSize: '0.75rem', color: 'var(--text-muted)', textDecoration: 'none', paddingTop: '0.5rem', borderTop: '1px solid var(--border)' }}>
+        <Link
+          href="/skills"
+          style={{
+            display: 'block',
+            textAlign: 'center',
+            marginTop: '0.75rem',
+            fontSize: '0.78rem',
+            fontWeight: 600,
+            color: 'var(--text-muted)',
+            textDecoration: 'none',
+            paddingTop: '0.6rem',
+            borderTop: '1px solid var(--border)',
+          }}
+        >
           +{allBadges.length - 4} more skills &amp; badges →
         </Link>
       )}

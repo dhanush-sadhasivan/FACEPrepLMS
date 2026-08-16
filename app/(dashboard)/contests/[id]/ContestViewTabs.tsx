@@ -37,9 +37,14 @@ export default function ContestViewTabs({
   );
   const [openTopics, setOpenTopics] = useState<Record<string, boolean>>({});
 
+  // Filter out disabled questions for trainer view unless admin
+  const visibleQuestions = isAdminOrManager
+    ? questions
+    : questions.filter((q: any) => q.is_enabled !== false);
+
   // Group questions by domain/topic
   const domainMap = new Map<string, QuestionItem[]>();
-  questions.forEach(q => {
+  visibleQuestions.forEach(q => {
     const domain = q.domain || 'General';
     if (!domainMap.has(domain)) {
       domainMap.set(domain, []);
@@ -54,17 +59,17 @@ export default function ContestViewTabs({
   };
 
   return (
-    <div style={{ marginTop: '1.5rem' }}>
+    <div style={{ marginTop: '0.75rem' }}>
       {/* Tab Navigation Buttons */}
       <div style={{
-        display: 'flex', gap: '0.5rem', borderBottom: '1px solid var(--border)',
-        marginBottom: '1.5rem', paddingBottom: '0.25rem', flexWrap: 'wrap',
+        display: 'flex', gap: '0.4rem', borderBottom: '1px solid var(--border)',
+        marginBottom: '0.85rem', paddingBottom: '0.4rem', flexWrap: 'wrap',
       }}>
         {isAdminOrManager && (
           <button
             onClick={() => setActiveTab('leaderboard')}
-            className={`btn ${activeTab === 'leaderboard' ? 'btn-primary' : 'btn-secondary'}`}
-            style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600 }}
+            className={`btn ${activeTab === 'leaderboard' ? 'btn-primary' : 'btn-secondary'} btn-sm`}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 700, fontSize: '0.82rem' }}
           >
             🏆 Full Leaderboard ({leaderboard.length})
           </button>
@@ -72,8 +77,8 @@ export default function ContestViewTabs({
 
         <button
           onClick={() => setActiveTab('topics')}
-          className={`btn ${activeTab === 'topics' ? 'btn-primary' : 'btn-secondary'}`}
-          style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600 }}
+          className={`btn ${activeTab === 'topics' ? 'btn-primary' : 'btn-secondary'} btn-sm`}
+          style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 700, fontSize: '0.82rem' }}
         >
           📂 Topic-wise Questions ({domains.length} Topics · {questions.length} Questions)
         </button>
@@ -81,8 +86,8 @@ export default function ContestViewTabs({
         {isAdminOrManager && (
           <button
             onClick={() => setActiveTab('manage')}
-            className={`btn ${activeTab === 'manage' ? 'btn-primary' : 'btn-secondary'}`}
-            style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600, marginLeft: 'auto' }}
+            className={`btn ${activeTab === 'manage' ? 'btn-primary' : 'btn-secondary'} btn-sm`}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontWeight: 700, fontSize: '0.82rem', marginLeft: 'auto' }}
           >
             ⚙️ Manage Questions ({questions.length})
           </button>

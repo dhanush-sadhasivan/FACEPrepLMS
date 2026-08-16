@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import TrainerDetailModal from './TrainerDetailModal';
 import Papa from 'papaparse';
@@ -26,13 +26,18 @@ const STEP_LABELS: Record<string, string> = {
   done: '✅ Complete!',
 };
 
-export default function LeaderboardTable({ contestId, data, lastScraped, questions, isAdminOrManager }: any) {
+export default function LeaderboardTable({ contestId, data = [], lastScraped, questions = [], isAdminOrManager }: any) {
   const router = useRouter();
   const [scraping, setScraping] = useState(false);
   const [jobStatus, setJobStatus] = useState<JobStatus | null>(null);
   const [scrapeMessage, setScrapeMessage] = useState('');
   const [scrapeError, setScrapeError] = useState('');
   const [selectedTrainer, setSelectedTrainer] = useState<any>(null);
+  
+  // Search & Filter State
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedTeam, setSelectedTeam] = useState<string>('all');
+
   const pollRef = useRef<NodeJS.Timeout | null>(null);
   const jobIdRef = useRef<string | null>(null);
 
@@ -54,12 +59,10 @@ export default function LeaderboardTable({ contestId, data, lastScraped, questio
       try {
         const res = await fetch(`/api/scrape/status?jobId=${jobId}`);
         if (!res.ok) {
-          // Job not found — might have expired or scraper restarted
           if (elapsed > 15_000) {
-            // After 15s with no job found, assume something went wrong
             clearInterval(pollRef.current!);
             pollRef.current = null;
-            setScrapeError('Lost contact with scraper job. The scraper may have restarted. Try again.');
+            setScrapeError('Lost contact with scraper job. The scraper service may have restarted.');
             setScraping(false);
           }
           return;
@@ -94,7 +97,7 @@ export default function LeaderboardTable({ contestId, data, lastScraped, questio
         clearInterval(pollRef.current!);
         pollRef.current = null;
         setScraping(false);
-        setScrapeError('Scrape timed out after 10 minutes. The scraper may still be working — refresh the page in a minute to check.');
+        setScrapeError('Scrape timed out after 10 minutes.');
         setJobStatus(null);
       }
     }, intervalMs);
@@ -119,8 +122,7 @@ export default function LeaderboardTable({ contestId, data, lastScraped, questio
         jobIdRef.current = result.jobId;
         pollJobStatus(result.jobId);
       } else {
-        // Fallback: no jobId means old scraper without status tracking — use basic polling
-        setScrapeMessage(result.message || 'Scraping started! Refresh in ~60 seconds.');
+        setScrapeMessage(result.message || 'Scraping started! Refresh in ~30 seconds.');
         setTimeout(() => {
           router.refresh();
           setScraping(false);
@@ -128,7 +130,7 @@ export default function LeaderboardTable({ contestId, data, lastScraped, questio
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Network error';
-      setScrapeError(`Failed to connect to scraper: ${msg}. Is the scraper service running?`);
+      setScrapeError(`Failed to connect to scraper: ${msg}`);
       setScraping(false);
     }
   };
@@ -160,19 +162,131 @@ export default function LeaderboardTable({ contestId, data, lastScraped, questio
     return str;
   };
 
+  // Distinct Teams for Filter Dropdown
+  const distinctTeams = useMemo(() => {
+    const set = new Set<string>();
+    data.forEach((d: any) => {
+      const t = cleanDisplay(d.team);
+      if (t !== '—') set.add(t);
+    });
+    return Array.from(set);
+  }, [data]);
+
+  // Filtered & Sorted Leaderboard Rows
+  const filteredData = useMemo(() => {
+    return data.filter((row: any) => {
+      const q = searchTerm.toLowerCase().trim();
+      const nameMatch = (row.name || '').toLowerCase().includes(q);
+      const empMatch = (row.emp_id || '').toLowerCase().includes(q);
+      const teamMatch = (row.team || '').toLowerCase().includes(q);
+      const matchesSearch = q === '' || nameMatch || empMatch || teamMatch;
+
+      const rowTeam = cleanDisplay(row.team);
+      const matchesTeam = selectedTeam === 'all' || rowTeam === selectedTeam;
+
+      return matchesSearch && matchesTeam;
+    });
+  }, [data, searchTerm, selectedTeam]);
+
+  // Summary Metrics
+  const totalCount = data.length;
+  const fullMasteredCount = data.filter((d: any) => d.total > 0 && d.solved >= d.total).length;
+  const avgCompletionPct = totalCount > 0
+    ? Math.round(data.reduce((acc: number, curr: any) => acc + (curr.total > 0 ? (curr.solved / curr.total) * 100 : 0), 0) / totalCount)
+    : 0;
+  const topPerformer = data.length > 0 ? data[0] : null;
+
   return (
     <div>
-      {/* Controls */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '1rem' }}>
-        <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }} suppressHydrationWarning>
-          Last scraped: {lastScraped ? new Date(lastScraped).toLocaleString() : 'Never'}
+      {/* ── Top Overview Stats Summary Bar ──────────────────────────────── */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.65rem', marginBottom: '0.85rem' }}>
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '12px', padding: '0.6rem 0.85rem', display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+          <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--surface-3)', color: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.1rem', fontWeight: 800 }}>👥</div>
+          <div>
+            <div style={{ fontSize: '1.1rem', fontWeight: 900, color: 'var(--text-primary)', lineHeight: 1 }}>{totalCount}</div>
+            <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginTop: '0.15rem' }}>Assigned Trainers</div>
+          </div>
         </div>
-        <div style={{ display: 'flex', gap: '0.5rem' }}>
+
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '12px', padding: '0.6rem 0.85rem', display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+          <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'rgba(16,185,129,0.12)', color: 'var(--success)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.1rem', fontWeight: 800 }}>👑</div>
+          <div>
+            <div style={{ fontSize: '1.1rem', fontWeight: 900, color: 'var(--success)', lineHeight: 1 }}>{fullMasteredCount}</div>
+            <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginTop: '0.15rem' }}>100% Mastered</div>
+          </div>
+        </div>
+
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '12px', padding: '0.6rem 0.85rem', display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+          <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'rgba(99,102,241,0.12)', color: 'var(--indigo)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.1rem', fontWeight: 800 }}>📊</div>
+          <div>
+            <div style={{ fontSize: '1.1rem', fontWeight: 900, color: 'var(--indigo)', lineHeight: 1 }}>{avgCompletionPct}%</div>
+            <div style={{ fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginTop: '0.15rem' }}>Avg Completion</div>
+          </div>
+        </div>
+
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '12px', padding: '0.6rem 0.85rem', display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+          <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'rgba(245,158,11,0.15)', color: '#f59e0b', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.1rem', fontWeight: 800 }}>🥇</div>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: '0.86rem', fontWeight: 900, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1 }}>
+              {topPerformer ? topPerformer.name : '—'}
+            </div>
+            <div style={{ fontSize: '0.68rem', fontWeight: 700, color: '#f59e0b', textTransform: 'uppercase', marginTop: '0.15rem' }}>
+              {topPerformer ? `${topPerformer.score} pts (#1)` : 'Top Performer'}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Search, Team Filter & Action Controls ───────────────────────── */}
+      <div className="search-filter-bar" style={{ marginBottom: '0.85rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flexWrap: 'wrap', flex: 1 }}>
+          {/* Search Box */}
+          <div className="search-box-wrapper" style={{ maxWidth: 300 }}>
+            <span className="search-box-icon">🔍</span>
+            <input
+              type="text"
+              className="search-box-input"
+              placeholder="Search trainer, emp ID, or team..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+
+          {/* Team Dropdown Filter */}
+          {distinctTeams.length > 0 && (
+            <select
+              value={selectedTeam}
+              onChange={(e) => setSelectedTeam(e.target.value)}
+              style={{
+                padding: '0.45rem 0.75rem',
+                borderRadius: '8px',
+                border: '1px solid var(--border)',
+                background: 'var(--surface-2)',
+                color: 'var(--text-primary)',
+                fontSize: '0.82rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                outline: 'none',
+              }}
+            >
+              <option value="all">All Teams ({distinctTeams.length})</option>
+              {distinctTeams.map((t) => (
+                <option key={t} value={t}>Team: {t}</option>
+              ))}
+            </select>
+          )}
+
+          <div style={{ color: 'var(--text-muted)', fontSize: '0.78rem', marginLeft: 'auto' }} suppressHydrationWarning>
+            Last synced: <strong>{lastScraped ? new Date(lastScraped).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : 'Never'}</strong>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', gap: '0.45rem', flexShrink: 0 }}>
           {isAdminOrManager && (
-            <button className="btn btn-primary" onClick={triggerScrape} disabled={scraping}>
+            <button className="btn btn-primary btn-sm" onClick={triggerScrape} disabled={scraping} style={{ fontSize: '0.8rem' }}>
               {scraping ? (
-                <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <span style={{ display: 'inline-block', width: 14, height: 14, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <span style={{ display: 'inline-block', width: 12, height: 12, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
                   Scraping…
                 </span>
               ) : (
@@ -181,29 +295,31 @@ export default function LeaderboardTable({ contestId, data, lastScraped, questio
             </button>
           )}
           {data.length > 0 && (
-            <button className="btn btn-secondary" onClick={exportCsv}>📥 Export CSV</button>
+            <button className="btn btn-secondary btn-sm" onClick={exportCsv} style={{ fontSize: '0.8rem' }}>
+              📥 Export CSV
+            </button>
           )}
         </div>
       </div>
 
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
 
-      {/* Live job status */}
+      {/* ── Live Scraper Job Status Bar ──────────────────────────────────── */}
       {scraping && jobStatus && (
-        <div style={{ background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.3)', borderRadius: 10, padding: '1rem 1.25rem', marginBottom: '1rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem' }}>
-            <span style={{ display: 'inline-block', width: 16, height: 16, border: '2.5px solid rgba(99,102,241,0.3)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-            <span style={{ fontWeight: 600, fontSize: '0.92rem' }}>
+        <div style={{ background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.3)', borderRadius: 10, padding: '0.75rem 1rem', marginBottom: '0.85rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.5rem' }}>
+            <span style={{ display: 'inline-block', width: 14, height: 14, border: '2px solid rgba(99,102,241,0.3)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+            <span style={{ fontWeight: 700, fontSize: '0.86rem', color: 'var(--text-primary)' }}>
               {jobStatus.message || (jobStatus.step ? (STEP_LABELS[jobStatus.step] || `Working: ${jobStatus.step}…`) : 'Scraping progress…')}
             </span>
           </div>
           {((jobStatus.total && jobStatus.total > 0) || (jobStatus.userCount && jobStatus.userCount > 0)) && (
-            <div style={{ marginLeft: '1.75rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', color: 'var(--text-muted)', marginBottom: '0.35rem' }}>
-                <span>Processing users…</span>
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                <span>Processing trainers…</span>
                 <span>{jobStatus.progress ?? jobStatus.processedUsers ?? 0}/{jobStatus.total ?? jobStatus.userCount ?? 0}</span>
               </div>
-              <div style={{ width: '100%', height: 6, background: 'var(--border)', borderRadius: 999, overflow: 'hidden' }}>
+              <div style={{ width: '100%', height: 5, background: 'var(--border)', borderRadius: 999, overflow: 'hidden' }}>
                 <div style={{
                   height: '100%',
                   width: `${Math.round(((jobStatus.progress ?? jobStatus.processedUsers ?? 0) / (jobStatus.total ?? jobStatus.userCount ?? 1)) * 100)}%`,
@@ -217,71 +333,190 @@ export default function LeaderboardTable({ contestId, data, lastScraped, questio
         </div>
       )}
 
-      {/* Success message */}
+      {/* Messages */}
       {scrapeMessage && (
-        <div style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid var(--success)', borderRadius: 8, padding: '0.75rem 1rem', marginBottom: '1rem', color: 'var(--success)', fontSize: '0.85rem' }}>
+        <div style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid var(--success)', borderRadius: 8, padding: '0.65rem 0.95rem', marginBottom: '0.85rem', color: 'var(--success)', fontSize: '0.84rem' }}>
           {scrapeMessage}
         </div>
       )}
 
-      {/* Error message */}
       {scrapeError && (
-        <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid var(--error)', borderRadius: 8, padding: '0.75rem 1rem', marginBottom: '1rem', color: 'var(--error)', fontSize: '0.85rem' }}>
+        <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid var(--error)', borderRadius: 8, padding: '0.65rem 0.95rem', marginBottom: '0.85rem', color: 'var(--error)', fontSize: '0.84rem' }}>
           ⚠️ {scrapeError}
         </div>
       )}
 
-      {/* Leaderboard table or empty state */}
-      {data.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '3rem', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12 }}>
-          <div style={{ fontSize: '2.5rem', marginBottom: '0.75rem' }}>📊</div>
-          <h3 style={{ fontWeight: 600, marginBottom: '0.5rem' }}>No Assigned Participants Found</h3>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', maxWidth: 460, margin: '0 auto' }}>
-            Make sure this contest has assigned Groups or Teams, and that users have their HackerRank IDs set in their profiles.
+      {/* ── Main Leaderboard Table / Empty State ───────────────────────── */}
+      {filteredData.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: '2.5rem 1rem', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12 }}>
+          <div style={{ fontSize: '2.5rem', marginBottom: '0.5rem' }}>🏆</div>
+          <h3 style={{ fontWeight: 800, fontSize: '1.05rem', margin: '0 0 0.35rem', color: 'var(--text-primary)' }}>
+            {searchTerm || selectedTeam !== 'all' ? 'No matching trainers found' : 'No Assigned Participants Found'}
+          </h3>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.84rem', maxWidth: 460, margin: '0 auto' }}>
+            {searchTerm || selectedTeam !== 'all'
+              ? 'Try clearing your search query or team filter to view all participants.'
+              : 'Make sure this contest has assigned Groups or Teams, and that users have their HackerRank IDs set in their profiles.'}
           </p>
         </div>
       ) : (
-        <div style={{ overflowX: 'auto', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10 }}>
+        <div style={{ overflowX: 'auto', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: 'var(--shadow-sm)' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
-              <tr style={{ borderBottom: '2px solid var(--border)' }}>
-                <th style={{ padding: '0.75rem 1rem', textAlign: 'left', fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Rank</th>
-                <th style={{ padding: '0.75rem 1rem', textAlign: 'left', fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Name</th>
-                <th style={{ padding: '0.75rem 1rem', textAlign: 'left', fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Emp ID</th>
-                <th style={{ padding: '0.75rem 1rem', textAlign: 'left', fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Team</th>
-                <th style={{ padding: '0.75rem 1rem', textAlign: 'left', fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Progress</th>
-                <th style={{ padding: '0.75rem 1rem', textAlign: 'left', fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Score</th>
-                <th style={{ padding: '0.75rem 1rem', textAlign: 'left', fontSize: '0.8rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Last Active</th>
+              <tr style={{ borderBottom: '2px solid var(--border)', background: 'var(--surface-2)' }}>
+                <th style={{ padding: '0.65rem 0.85rem', textAlign: 'center', fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', width: 65 }}>Rank</th>
+                <th style={{ padding: '0.65rem 0.85rem', textAlign: 'left', fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Trainer Name</th>
+                <th style={{ padding: '0.65rem 0.85rem', textAlign: 'left', fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Emp ID</th>
+                <th style={{ padding: '0.65rem 0.85rem', textAlign: 'left', fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Team</th>
+                <th style={{ padding: '0.65rem 0.85rem', textAlign: 'left', fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', minWidth: 190 }}>Questions Progress</th>
+                <th style={{ padding: '0.65rem 0.85rem', textAlign: 'right', fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Total Score</th>
+                <th style={{ padding: '0.65rem 0.85rem', textAlign: 'right', fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Last Active</th>
               </tr>
             </thead>
             <tbody>
-              {data.map((row: any, i: number) => {
+              {filteredData.map((row: any, i: number) => {
+                const actualRank = data.findIndex((d: any) => d.user_id === row.user_id) + 1;
+                const displayRank = actualRank > 0 ? actualRank : i + 1;
                 const pct = row.total > 0 ? Math.round((row.solved / row.total) * 100) : 0;
+                const isMastered = row.total > 0 && row.solved >= row.total;
+                const rankBadgeBg =
+                  displayRank === 1 ? '#f59e0b' :
+                  displayRank === 2 ? '#94a3b8' :
+                  displayRank === 3 ? '#b45309' :
+                  'var(--surface-3)';
+
+                const initial = (row.name || '?').charAt(0).toUpperCase();
+
                 return (
                   <tr
-                    key={row.user_id}
+                    key={row.user_id || i}
                     onClick={() => setSelectedTrainer(row)}
-                    style={{ borderBottom: '1px solid var(--border)', cursor: 'pointer', transition: 'background 0.15s' }}
-                    onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-2)')}
-                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                    style={{
+                      borderBottom: '1px solid var(--border)',
+                      cursor: 'pointer',
+                      height: '46px',
+                      transition: 'all 0.15s ease',
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--surface-2)')}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                   >
-                    <td style={{ padding: '0.75rem 1rem', fontWeight: 600 }}>
-                      {i === 0 && row.score > 0 ? '🥇' : i === 1 && row.score > 0 ? '🥈' : i === 2 && row.score > 0 ? '🥉' : i + 1}
+                    {/* Rank Badge */}
+                    <td style={{ padding: '0.5rem 0.95rem', textAlign: 'center', verticalAlign: 'middle' }}>
+                      <span
+                        style={{
+                          fontWeight: 800,
+                          fontSize: '0.78rem',
+                          color: displayRank <= 3 ? '#fff' : 'var(--text-secondary)',
+                          background: rankBadgeBg,
+                          display: 'inline-flex',
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '0.25rem',
+                          whiteSpace: 'nowrap',
+                          height: '24px',
+                          minWidth: '58px',
+                          padding: '0 0.55rem',
+                          borderRadius: '999px',
+                          lineHeight: 1,
+                          boxSizing: 'border-box',
+                        }}
+                      >
+                        {displayRank === 1 ? '🥇 #1' : displayRank === 2 ? '🥈 #2' : displayRank === 3 ? '🥉 #3' : `#${displayRank}`}
+                      </span>
                     </td>
-                    <td style={{ padding: '0.75rem 1rem', fontWeight: 500 }}>{cleanDisplay(row.name)}</td>
-                    <td style={{ padding: '0.75rem 1rem', color: 'var(--text-muted)' }}>{cleanDisplay(row.emp_id)}</td>
-                    <td style={{ padding: '0.75rem 1rem', color: 'var(--text-muted)' }}>{cleanDisplay(row.team)}</td>
-                    <td style={{ padding: '0.75rem 1rem' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <span style={{ fontSize: '0.85rem', minWidth: '3rem', fontWeight: row.solved > 0 ? 600 : 400 }}>{row.solved}/{row.total}</span>
-                        <div style={{ width: 96, height: 8, background: 'var(--bg)', borderRadius: 999, overflow: 'hidden', border: '1px solid var(--border)' }}>
-                          <div style={{ height: '100%', width: `${pct}%`, background: 'var(--accent)', borderRadius: 999, transition: 'width 0.3s' }} />
+
+                    {/* Trainer Name & Initial Avatar */}
+                    <td style={{ padding: '0.5rem 0.95rem', verticalAlign: 'middle' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                        <div
+                          style={{
+                            width: 28,
+                            height: 28,
+                            borderRadius: '50%',
+                            background: 'var(--surface-3)',
+                            color: 'var(--accent)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontWeight: 800,
+                            fontSize: '0.8rem',
+                            flexShrink: 0,
+                            border: '1px solid var(--border)',
+                            lineHeight: 1,
+                          }}
+                        >
+                          {initial}
+                        </div>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontWeight: 700, fontSize: '0.86rem', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1.25 }}>
+                            {cleanDisplay(row.name)}
+                          </div>
                         </div>
                       </div>
                     </td>
-                    <td style={{ padding: '0.75rem 1rem', fontWeight: 600, color: row.score > 0 ? 'var(--accent)' : 'inherit' }}>{row.score} pts</td>
-                    <td style={{ padding: '0.75rem 1rem', fontSize: '0.85rem', color: 'var(--text-muted)' }} suppressHydrationWarning>
-                      {row.lastActive ? new Date(row.lastActive).toLocaleString() : '—'}
+
+                    {/* Emp ID */}
+                    <td style={{ padding: '0.5rem 0.95rem', color: 'var(--text-muted)', fontSize: '0.82rem', fontFamily: 'monospace', verticalAlign: 'middle' }}>
+                      {cleanDisplay(row.emp_id)}
+                    </td>
+
+                    {/* Team Badge */}
+                    <td style={{ padding: '0.5rem 0.95rem', verticalAlign: 'middle' }}>
+                      <span
+                        style={{
+                          fontSize: '0.72rem',
+                          background: 'rgba(99,102,241,0.1)',
+                          color: 'var(--indigo)',
+                          border: '1px solid rgba(99,102,241,0.25)',
+                          padding: '0.12rem 0.5rem',
+                          borderRadius: '999px',
+                          fontWeight: 700,
+                          display: 'inline-block',
+                          lineHeight: 1.2,
+                        }}
+                      >
+                        {cleanDisplay(row.team)}
+                      </span>
+                    </td>
+
+                    {/* Questions Progress Bar */}
+                    <td style={{ padding: '0.5rem 0.95rem', verticalAlign: 'middle' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                        <span style={{ fontSize: '0.82rem', fontWeight: 800, minWidth: '3.2rem', color: isMastered ? 'var(--success)' : 'var(--text-primary)' }}>
+                          {row.solved}/{row.total}
+                        </span>
+
+                        <div style={{ flex: 1, height: 6, background: 'var(--surface-3)', borderRadius: 999, overflow: 'hidden', minWidth: 70 }}>
+                          <div
+                            style={{
+                              height: '100%',
+                              width: `${pct}%`,
+                              background: isMastered
+                                ? 'linear-gradient(90deg, #10b981 0%, #059669 100%)'
+                                : 'linear-gradient(90deg, var(--accent) 0%, var(--indigo) 100%)',
+                              borderRadius: 999,
+                              transition: 'width 0.3s ease',
+                            }}
+                          />
+                        </div>
+
+                        {isMastered && (
+                          <span style={{ fontSize: '0.65rem', background: 'rgba(16,185,129,0.15)', color: '#10b981', padding: '0.08rem 0.35rem', borderRadius: '999px', fontWeight: 800, flexShrink: 0 }}>
+                            100%
+                          </span>
+                        )}
+                      </div>
+                    </td>
+
+                    {/* Total Score */}
+                    <td style={{ padding: '0.5rem 0.95rem', textAlign: 'right', fontWeight: 900, fontSize: '0.9rem', color: row.score > 0 ? 'var(--accent)' : 'var(--text-muted)', verticalAlign: 'middle' }}>
+                      {row.score} pts
+                    </td>
+
+                    {/* Last Active */}
+                    <td style={{ padding: '0.5rem 0.95rem', textAlign: 'right', fontSize: '0.8rem', color: 'var(--text-muted)', verticalAlign: 'middle' }} suppressHydrationWarning>
+                      {row.lastActive ? new Date(row.lastActive).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : '—'}
                     </td>
                   </tr>
                 );
@@ -291,6 +526,7 @@ export default function LeaderboardTable({ contestId, data, lastScraped, questio
         </div>
       )}
 
+      {/* Trainer Detail Drilldown Modal */}
       {selectedTrainer && (
         <TrainerDetailModal
           trainer={selectedTrainer}

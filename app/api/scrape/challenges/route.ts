@@ -63,8 +63,14 @@ export async function POST(request: Request) {
     if (!res.ok) {
       const errorText = await res.text();
       console.error(`[scrape/challenges] Scraper returned ${res.status}: ${errorText}`);
+      let message = errorText;
+      try {
+        const parsed = JSON.parse(errorText);
+        if (parsed.error) message = parsed.error;
+      } catch {}
+
       return NextResponse.json(
-        { error: `Scraper failed (HTTP ${res.status}): ${errorText}` },
+        { error: message },
         { status: res.status }
       );
     }

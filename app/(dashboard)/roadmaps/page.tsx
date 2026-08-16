@@ -530,44 +530,69 @@ export default function RoadmapsPage() {
   }
 
   // ── 2. CATALOG VIEW (All Assigned Roadmaps) ──────────────────────────────
+  const inProgressCount = roadmaps.filter(r => r.progress?.status === 'in_progress').length;
+  const completedCount = roadmaps.filter(r => r.progress?.status === 'completed').length;
+  const totalSolvedQsCount = roadmaps.reduce((acc, r) => acc + (r.progress?.completed_topic_ids?.length || 0), 0);
+
   return (
     <div className="roadmaps-page">
       {/* Header */}
-      <header className="roadmaps-header">
+      <header className="roadmaps-header" style={{ marginBottom: '0.75rem', paddingBottom: '0.65rem' }}>
         <div>
-          <h1 className="roadmaps-title">Topic Roadmaps</h1>
-          <p className="roadmaps-subtitle">
+          <h1 className="roadmaps-title" style={{ fontSize: '1.45rem', fontWeight: 900, display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
+            <span>🗺️</span> Topic Roadmaps
+          </h1>
+          <p className="roadmaps-subtitle" style={{ fontSize: '0.84rem', marginTop: '0.15rem' }}>
             Select a roadmap to view its topics (e.g. Looping, Arrays 1D, LinkedList) and solve questions
           </p>
         </div>
-        <div className="roadmaps-summary">
-          {canInitiateScrape && (
-            <button
-              className="btn-sync-scrape"
-              onClick={() => handleSyncScrape(null)}
-              disabled={isSyncing}
-            >
-              {isSyncing ? '🔄 Syncing...' : '🔄 Initiate Scrape & Sync'}
-            </button>
-          )}
-          <div className="roadmaps-summary-item">
-            <span className="roadmaps-summary-val">{roadmaps.length}</span>
-            <span className="roadmaps-summary-label">Total</span>
-          </div>
-          <div className="roadmaps-summary-item">
-            <span className="roadmaps-summary-val" style={{ color: 'var(--accent)' }}>
-              {roadmaps.filter(r => r.progress?.status === 'in_progress').length}
-            </span>
-            <span className="roadmaps-summary-label">In Progress</span>
-          </div>
-          <div className="roadmaps-summary-item">
-            <span className="roadmaps-summary-val" style={{ color: 'var(--success)' }}>
-              {roadmaps.filter(r => r.progress?.status === 'completed').length}
-            </span>
-            <span className="roadmaps-summary-label">Completed</span>
+
+        {canInitiateScrape && (
+          <button
+            className="btn btn-sm btn-primary"
+            onClick={() => handleSyncScrape(null)}
+            disabled={isSyncing}
+            style={{ fontSize: '0.78rem', fontWeight: 800 }}
+          >
+            {isSyncing ? '🔄 Syncing...' : '🔄 Initiate Scrape & Sync'}
+          </button>
+        )}
+      </header>
+
+      {/* ── Top Overview Stats Widgets ────────────────────────────────────────── */}
+      <div className="stats-overview-grid">
+        <div className="stat-card-widget">
+          <div className="stat-widget-icon" style={{ color: 'var(--accent)' }}>🗺️</div>
+          <div>
+            <div className="stat-widget-val" style={{ color: 'var(--accent)' }}>{roadmaps.length}</div>
+            <div className="stat-widget-label">Total Roadmaps</div>
           </div>
         </div>
-      </header>
+
+        <div className="stat-card-widget">
+          <div className="stat-widget-icon" style={{ color: 'var(--indigo)' }}>⚡</div>
+          <div>
+            <div className="stat-widget-val" style={{ color: 'var(--indigo)' }}>{inProgressCount}</div>
+            <div className="stat-widget-label">In Progress</div>
+          </div>
+        </div>
+
+        <div className="stat-card-widget">
+          <div className="stat-widget-icon" style={{ color: 'var(--success)' }}>✅</div>
+          <div>
+            <div className="stat-widget-val" style={{ color: 'var(--success)' }}>{completedCount}</div>
+            <div className="stat-widget-label">Completed</div>
+          </div>
+        </div>
+
+        <div className="stat-card-widget">
+          <div className="stat-widget-icon" style={{ color: '#f59e0b' }}>📊</div>
+          <div>
+            <div className="stat-widget-val" style={{ color: '#f59e0b' }}>{totalSolvedQsCount}</div>
+            <div className="stat-widget-label">Solved Problems</div>
+          </div>
+        </div>
+      </div>
 
       {/* Sync Alert Banner */}
       {syncMessage && (

@@ -19,26 +19,80 @@ export default async function UsersPage() {
 
   const typedUsers: User[] = users || [];
 
+  const adminCount = typedUsers.filter((u) => u.role?.toLowerCase() === 'admin').length;
+  const managerCount = typedUsers.filter((u) => u.role?.toLowerCase() === 'manager').length;
+  const trainerCount = typedUsers.filter((u) => u.role?.toLowerCase() === 'trainer').length;
+
   return (
     <div className="users-page">
+      {/* Header */}
       <div className="page-header">
         <div>
           <h1 className="page-title">User Management</h1>
-          <p className="page-subtitle">Manage users, roles, and teams. Total users: {typedUsers.length}</p>
-        </div>
-        <div className="header-actions">
-          {/* Add user button is handled inside UserTable for modal state, or we can lift it up. 
-              We'll let UserTable handle the single Add User modal to keep state contained. */}
+          <p className="page-subtitle">
+            Manage user accounts, roles, group assignments, and batch credentials.
+          </p>
         </div>
       </div>
 
-      <div className="card mt-6">
-        <UserTable initialUsers={typedUsers} />
+      {/* Top Stats Overview Widgets */}
+      <div className="stats-overview-grid">
+        <div className="stat-card-widget">
+          <div className="stat-widget-icon" style={{ color: 'var(--text-primary)' }}>👥</div>
+          <div>
+            <div className="stat-widget-val">{typedUsers.length}</div>
+            <div className="stat-widget-label">Total Users</div>
+          </div>
+        </div>
+
+        <div className="stat-card-widget">
+          <div className="stat-widget-icon" style={{ color: 'var(--accent)' }}>👑</div>
+          <div>
+            <div className="stat-widget-val" style={{ color: 'var(--accent)' }}>{adminCount}</div>
+            <div className="stat-widget-label">System Admins</div>
+          </div>
+        </div>
+
+        <div className="stat-card-widget">
+          <div className="stat-widget-icon" style={{ color: 'var(--indigo)' }}>🛡️</div>
+          <div>
+            <div className="stat-widget-val" style={{ color: 'var(--indigo)' }}>{managerCount}</div>
+            <div className="stat-widget-label">Managers</div>
+          </div>
+        </div>
+
+        <div className="stat-card-widget">
+          <div className="stat-widget-icon" style={{ color: 'var(--success)' }}>🎓</div>
+          <div>
+            <div className="stat-widget-val" style={{ color: 'var(--success)' }}>{trainerCount}</div>
+            <div className="stat-widget-label">Trainers</div>
+          </div>
+        </div>
       </div>
-      
-      <div className="card mt-6">
-        <BulkImport />
+
+      {/* Section Separator */}
+      <div className="section-separator">
+        <div className="separator-line" />
+        <div className="separator-badge">
+          <span>👥</span> USER DIRECTORY & CREDENTIALS
+        </div>
+        <div className="separator-line" />
       </div>
+
+      {/* Main User Table */}
+      <UserTable initialUsers={typedUsers} />
+
+      {/* Section Separator */}
+      <div className="section-separator">
+        <div className="separator-line" />
+        <div className="separator-badge">
+          <span>📥</span> CSV BATCH ACCOUNTS IMPORT
+        </div>
+        <div className="separator-line" />
+      </div>
+
+      {/* Bulk Import Tool */}
+      <BulkImport />
     </div>
   );
 }

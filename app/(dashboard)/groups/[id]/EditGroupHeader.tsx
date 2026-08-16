@@ -31,7 +31,7 @@ export default function EditGroupHeader({ group }: { group: any }) {
   };
 
   const handleDelete = async () => {
-    if (!confirm(`Are you sure you want to delete ${group.name}?`)) return;
+    if (!confirm(`Are you sure you want to delete ${group.name}? This action cannot be undone.`)) return;
     try {
       const res = await fetch(`/api/groups/${group.id}`, { method: 'DELETE' });
       if (res.ok) {
@@ -43,24 +43,51 @@ export default function EditGroupHeader({ group }: { group: any }) {
   };
 
   return (
-    <div className="page-header flex justify-between items-start">
-      {isEditing ? (
-        <div className="flex gap-2 items-center">
-          <input className="input text-xl font-bold" value={name} onChange={e => setName(e.target.value)} autoFocus />
-          <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={isSubmitting}>Save</button>
-          <button className="btn btn-secondary btn-sm" onClick={() => { setIsEditing(false); setName(group.name); }}>Cancel</button>
-        </div>
-      ) : (
+    <div className="group-detail-banner">
+      <div className="group-header-info">
+        <div className="group-avatar-icon">👥</div>
         <div>
-          <h1 className="page-title flex items-center gap-4">
-            {group.name}
-            <button className="btn btn-ghost btn-sm" onClick={() => setIsEditing(true)}>✎ Edit</button>
-          </h1>
-          <p className="page-subtitle">Created {new Date(group.created_at).toLocaleDateString()}</p>
+          {isEditing ? (
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+              <input
+                className="input"
+                style={{ fontSize: '1.2rem', fontWeight: 800, padding: '0.3rem 0.6rem' }}
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                autoFocus
+              />
+              <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={isSubmitting}>
+                💾 Save
+              </button>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={() => {
+                  setIsEditing(false);
+                  setName(group.name);
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <div>
+              <h1 className="group-header-title">
+                {group.name}
+                <button className="edit-name-btn" onClick={() => setIsEditing(true)}>
+                  ✏️ Edit
+                </button>
+              </h1>
+              <p className="page-subtitle" style={{ margin: 0 }}>
+                Created on {new Date(group.created_at).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })}
+              </p>
+            </div>
+          )}
         </div>
-      )}
-      
-      <button className="btn btn-danger btn-sm" onClick={handleDelete}>Delete Group</button>
+      </div>
+
+      <button className="btn btn-secondary btn-sm" onClick={handleDelete} style={{ color: 'var(--error)', borderColor: 'rgba(239,68,68,0.3)' }}>
+        🗑️ Delete Group
+      </button>
     </div>
   );
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import Papa from 'papaparse';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/components/Toast';
@@ -15,6 +15,9 @@ interface BulkResult {
 export default function BulkImport() {
   const router = useRouter();
   const { showToast } = useToast();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [fileName, setFileName] = useState<string>('');
   const [parsedData, setParsedData] = useState<any[]>([]);
   const [isImporting, setIsImporting] = useState(false);
   const [result, setResult] = useState<BulkResult | null>(null);
@@ -23,18 +26,29 @@ export default function BulkImport() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    setFileName(file.name);
     Papa.parse(file, {
       header: true,
       skipEmptyLines: true,
       complete: (results) => {
         setParsedData(results.data);
         setResult(null);
+        showToast(`Parsed ${results.data.length} records from ${file.name}`, 'info');
       },
       error: (error) => {
         console.error('CSV Parse Error:', error);
-        showToast('Failed to parse CSV file', 'error');
-      }
+        showToast('Failed to parse CSV file. Please check file formatting.', 'error');
+      },
     });
+  };
+
+  const handleClear = () => {
+    setParsedData([]);
+    setFileName('');
+    setResult(null);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
   };
 
   const handleImport = async () => {
@@ -53,21 +67,24 @@ export default function BulkImport() {
       if (res.ok) {
         setResult(data);
         setParsedData([]);
-        showToast(`Successfully created ${data.created} user(s)!`, 'success');
+        setFileName('');
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        showToast(`🎉 Successfully created ${data.created} user(s)!`, 'success');
         router.refresh();
       } else {
         showToast(data.error || 'Failed to bulk import users.', 'error');
       }
     } catch (err) {
       console.error(err);
-      showToast('An error occurred during import.', 'error');
+      showToast('An error occurred during bulk import.', 'error');
     } finally {
       setIsImporting(false);
     }
   };
 
   const downloadTemplate = () => {
-    const csv = 'emp_id,full_name,email,team,manager,hackerrank_id,role,temp_password\n1001,Jane Doe,jane@example.com,Engineering,John Smith,janedoe_hr,trainer,TempPass123!\n1002,Mark Johnson,mark@example.com,Data Science,Sarah Connor,markj_hr,trainer,';
+    const csv =
+      'emp_id,full_name,email,team,manager,hackerrank_id,role,temp_password\n1001,Jane Doe,jane@example.com,Engineering,John Smith,janedoe_hr,trainer,TempPass123!\n1002,Mark Johnson,mark@example.com,Data Science,Sarah Connor,markj_hr,trainer,';
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -75,6 +92,16 @@ export default function BulkImport() {
     a.download = 'user_import_template.csv';
     a.click();
     window.URL.revokeObjectURL(url);
+    showToast('Downloaded user_import_template.csv', 'info');
+  };
+
+  const copyAllCredentials = () => {
+    if (!result?.createdUsers || result.createdUsers.length === 0) return;
+    const text = result.createdUsers
+      .map((u) => `Name: ${u.full_name}\nEmail: ${u.email}\nTemp Password: ${u.tempPassword}\nRole: ${u.role}`)
+      .join('\n\n------------------------\n\n');
+    navigator.clipboard.writeText(text);
+    showToast(`Copied ${result.createdUsers.length} user credentials to clipboard!`, 'success');
   };
 
   const cleanDisplay = (val: any) => {
@@ -85,39 +112,73 @@ export default function BulkImport() {
   };
 
   return (
-    <div className="bulk-import-section">
-      <div className="flex justify-between items-center mb-4" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+    <div className="bulk-import-card">
+      <div className="bulk-header">
         <div>
-          <h2 className="text-xl font-bold">Bulk Import Users</h2>
-          <p className="text-sm text-muted">Upload a CSV file to create multiple user accounts at once.</p>
+          <h2 className="bulk-title">
+            <span>📥</span> Bulk Import Users
+          </h2>
+          <p className="page-subtitle" style={{ marginTop: '0.2rem' }}>
+            Upload a CSV spreadsheet to create multiple trainer/manager accounts in batch.
+          </p>
         </div>
         <button className="btn btn-secondary btn-sm" onClick={downloadTemplate}>
-          📥 Download CSV Template
+          📄 Download Sample CSV Template
         </button>
       </div>
 
-      <div className="upload-area mb-4">
-        <label className="label">Upload CSV File (.csv)</label>
+      {/* CSV Dropzone */}
+      <div
+        className="csv-dropzone"
+        onClick={() => fileInputRef.current?.click()}
+      >
         <input
           type="file"
           accept=".csv"
-          className="input file-input"
+          ref={fileInputRef}
           onChange={handleFileUpload}
+          style={{ display: 'none' }}
         />
-        <p className="text-sm text-muted mt-2">
-          Expected CSV columns: <code>emp_id, full_name, email, team, manager, hackerrank_id, role, temp_password</code> (temp_password is optional).
+
+        <span className="csv-dropzone-icon">📁</span>
+        <h3 style={{ fontSize: '1rem', fontWeight: 700, margin: '0.25rem 0', color: 'var(--text-primary)' }}>
+          {fileName ? `Selected File: ${fileName}` : 'Click to Browse or Drag CSV File Here'}
+        </h3>
+        <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', margin: '0.25rem 0' }}>
+          Accepts <code>.csv</code> files formatted with required user headers.
         </p>
+
+        <div className="column-pills-list">
+          <span className="col-pill">emp_id</span>
+          <span className="col-pill">full_name</span>
+          <span className="col-pill">email</span>
+          <span className="col-pill">team</span>
+          <span className="col-pill">manager</span>
+          <span className="col-pill">hackerrank_id</span>
+          <span className="col-pill">role</span>
+          <span className="col-pill">temp_password</span>
+        </div>
       </div>
 
+      {/* CSV Data Preview Area */}
       {parsedData.length > 0 && (
-        <div className="preview-area" style={{ marginTop: '1.5rem' }}>
-          <h3 className="text-lg font-medium mb-2">Preview ({parsedData.length} records ready to import)</h3>
-          <div className="table-container max-h-64 overflow-y-auto mb-4" style={{ overflowX: 'auto' }}>
-            <table className="data-table">
+        <div style={{ marginTop: '1.5rem', paddingTop: '1.25rem', borderTop: '1px solid var(--border)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+            <h3 style={{ fontSize: '1rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+              Preview Ready: <span style={{ color: 'var(--accent)' }}>{parsedData.length} Users</span>
+            </h3>
+            <button className="btn btn-secondary btn-sm" onClick={handleClear}>
+              ❌ Clear File
+            </button>
+          </div>
+
+          <div className="users-table-container" style={{ maxHeight: 320, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--radius)' }}>
+            <table className="users-table">
               <thead>
                 <tr>
+                  <th>#</th>
                   <th>Emp ID</th>
-                  <th>Name</th>
+                  <th>Full Name</th>
                   <th>Email</th>
                   <th>Team</th>
                   <th>Role</th>
@@ -125,53 +186,84 @@ export default function BulkImport() {
                 </tr>
               </thead>
               <tbody>
-                {parsedData.slice(0, 5).map((row, i) => (
-                  <tr key={i}>
-                    <td>{cleanDisplay(row.emp_id)}</td>
-                    <td>{cleanDisplay(row.full_name)}</td>
-                    <td>{cleanDisplay(row.email || row.emp_email)}</td>
+                {parsedData.slice(0, 10).map((row, idx) => (
+                  <tr key={idx}>
+                    <td style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>{idx + 1}</td>
+                    <td><span className="emp-id-badge">{cleanDisplay(row.emp_id)}</span></td>
+                    <td style={{ fontWeight: 700 }}>{cleanDisplay(row.full_name)}</td>
+                    <td style={{ color: 'var(--text-muted)' }}>{cleanDisplay(row.email || row.emp_email)}</td>
                     <td>{cleanDisplay(row.team)}</td>
-                    <td>{cleanDisplay(row.role)}</td>
-                    <td style={{ fontFamily: 'monospace', color: 'var(--accent)' }}>
-                      {row.temp_password || row.password ? cleanDisplay(row.temp_password || row.password) : '(auto-generate)'}
+                    <td><span className="role-badge trainer">{cleanDisplay(row.role || 'trainer')}</span></td>
+                    <td style={{ fontFamily: 'monospace', color: 'var(--accent)', fontWeight: 'bold' }}>
+                      {row.temp_password || row.password ? cleanDisplay(row.temp_password || row.password) : '(Auto Generated)'}
                     </td>
                   </tr>
                 ))}
-                {parsedData.length > 5 && (
+                {parsedData.length > 10 && (
                   <tr>
-                    <td colSpan={6} className="text-center text-muted">...and {parsedData.length - 5} more rows</td>
+                    <td colSpan={7} style={{ textAlign: 'center', color: 'var(--text-muted)', fontStyle: 'italic', padding: '0.75rem' }}>
+                      ...and {parsedData.length - 10} more rows
+                    </td>
                   </tr>
                 )}
               </tbody>
             </table>
           </div>
 
-          <button
-            className="btn btn-primary mt-2"
-            onClick={handleImport}
-            disabled={isImporting}
-          >
-            {isImporting ? 'Importing Users...' : `🚀 Import ${parsedData.length} User(s)`}
-          </button>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.25rem' }}>
+            <button
+              className="btn btn-primary"
+              onClick={handleImport}
+              disabled={isImporting}
+              style={{ padding: '0.75rem 1.5rem', fontSize: '0.95rem' }}
+            >
+              {isImporting ? '⏳ Importing Users to Database...' : `🚀 Create & Import ${parsedData.length} Users`}
+            </button>
+          </div>
         </div>
       )}
 
+      {/* Import Results Summary Card */}
       {result && (
-        <div className="import-results mt-4 p-4 rounded-md border border-border bg-surface" style={{ background: 'var(--surface-2)', padding: '1.25rem', borderRadius: 8, border: '1px solid var(--border)' }}>
-          <h3 className="font-bold text-lg mb-2">Import Results</h3>
-          <p style={{ color: 'var(--success)', fontWeight: 600 }}>✅ Successfully created: {result.created}</p>
-          {result.skipped > 0 && (
-            <p style={{ color: 'var(--warning)', fontWeight: 600 }}>⚠️ Skipped: {result.skipped}</p>
-          )}
+        <div style={{ marginTop: '1.5rem', paddingTop: '1.25rem', borderTop: '1px solid var(--border)' }}>
+          <h3 style={{ fontSize: '1.05rem', fontWeight: 800, marginBottom: '1rem', color: 'var(--text-primary)' }}>
+            🎉 Import Complete Summary
+          </h3>
+
+          <div className="results-summary-grid">
+            <div className="summary-card" style={{ borderColor: 'var(--success)', background: 'var(--success-muted)' }}>
+              <div className="summary-card-val" style={{ color: 'var(--success)' }}>{result.created}</div>
+              <div className="summary-card-label">Created</div>
+            </div>
+
+            <div className="summary-card" style={{ borderColor: result.skipped > 0 ? 'var(--warning)' : 'var(--border)' }}>
+              <div className="summary-card-val" style={{ color: result.skipped > 0 ? 'var(--warning)' : 'var(--text-muted)' }}>{result.skipped}</div>
+              <div className="summary-card-label">Skipped / Existed</div>
+            </div>
+
+            <div className="summary-card" style={{ borderColor: result.errors.length > 0 ? 'var(--error)' : 'var(--border)' }}>
+              <div className="summary-card-val" style={{ color: result.errors.length > 0 ? 'var(--error)' : 'var(--text-muted)' }}>{result.errors.length}</div>
+              <div className="summary-card-label">Errors</div>
+            </div>
+          </div>
 
           {result.createdUsers && result.createdUsers.length > 0 && (
-            <div className="mt-4">
-              <h4 className="font-semibold mb-2">Generated Account Credentials:</h4>
-              <div className="table-container max-h-48 overflow-y-auto">
-                <table className="data-table">
+            <div style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '1.25rem', marginTop: '1rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.85rem' }}>
+                <h4 style={{ fontSize: '0.92rem', fontWeight: 800, margin: 0, color: 'var(--text-primary)' }}>
+                  🔑 Generated Account Credentials ({result.createdUsers.length})
+                </h4>
+
+                <button className="btn btn-secondary btn-sm" onClick={copyAllCredentials}>
+                  📋 Copy All Credentials
+                </button>
+              </div>
+
+              <div className="users-table-container" style={{ maxHeight: 240, overflowY: 'auto' }}>
+                <table className="users-table">
                   <thead>
                     <tr>
-                      <th>Name</th>
+                      <th>Full Name</th>
                       <th>Email</th>
                       <th>Role</th>
                       <th>Temporary Password</th>
@@ -180,10 +272,10 @@ export default function BulkImport() {
                   <tbody>
                     {result.createdUsers.map((u, idx) => (
                       <tr key={idx}>
-                        <td>{u.full_name}</td>
-                        <td>{u.email}</td>
-                        <td>{u.role}</td>
-                        <td style={{ color: 'var(--accent)', fontWeight: 'bold', fontFamily: 'monospace' }}>
+                        <td style={{ fontWeight: 700 }}>{u.full_name}</td>
+                        <td style={{ color: 'var(--text-muted)' }}>{u.email}</td>
+                        <td><span className="role-badge trainer">{u.role}</span></td>
+                        <td style={{ color: 'var(--accent)', fontWeight: 800, fontFamily: 'monospace' }}>
                           {u.tempPassword}
                         </td>
                       </tr>
@@ -195,11 +287,13 @@ export default function BulkImport() {
           )}
 
           {result.errors.length > 0 && (
-            <div className="mt-3">
-              <p className="text-danger font-medium">Errors / Warnings:</p>
-              <ul className="list-disc list-inside text-sm text-danger max-h-32 overflow-y-auto">
+            <div style={{ marginTop: '1rem', background: 'var(--error-muted)', border: '1px solid var(--error)', borderRadius: 'var(--radius-sm)', padding: '0.85rem 1rem' }}>
+              <h5 style={{ color: 'var(--error)', fontWeight: 800, margin: '0 0 0.4rem 0', fontSize: '0.88rem' }}>
+                ⚠️ Errors / Skipped Log
+              </h5>
+              <ul style={{ margin: 0, paddingLeft: '1.25rem', color: 'var(--error)', fontSize: '0.82rem' }}>
                 {result.errors.map((err, i) => (
-                  <li key={i}>{err}</li>
+                  <li key={i} style={{ marginBottom: '0.2rem' }}>{err}</li>
                 ))}
               </ul>
             </div>

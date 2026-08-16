@@ -356,6 +356,22 @@
   border-radius: var(--radius-sm);
 }
 
+/* Mobile Overlay Backdrop */
+.sidebar-mobile-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 95;
+  animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 /* ─────────────────────────────────────────────────────
    MOBILE RESPONSIVENESS
 ───────────────────────────────────────────────────── */
@@ -365,13 +381,26 @@
     top: 0;
     left: 0;
     bottom: 0;
+    height: 100vh;
     z-index: 100;
     transform: translateX(-100%);
     transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    width: 250px !important;
+    width: 270px !important;
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.3);
   }
 
   .sidebar.mobile-open {
     transform: translateX(0);
+  }
+
+  /* Force labels and full logo on mobile regardless of desktop collapsed state */
+  .sidebar.mobile-open .nav-item-label,
+  .sidebar.mobile-open .nav-label {
+    opacity: 1 !important;
+    width: auto !important;
+  }
+
+  .sidebar-collapse-btn {
+    display: none !important;
   }
 }

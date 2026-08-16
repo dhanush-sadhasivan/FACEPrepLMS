@@ -115,6 +115,7 @@ export async function POST(request: Request) {
         hackerrank_url: q.hackerrank_url || `https://www.hackerrank.com/contests/${slug}/challenges/${q.slug}`,
         difficulty: q.difficulty || 'Medium',
         max_score: q.max_score || 10,
+        is_enabled: true,
         order_index: idx
       }));
 
@@ -139,6 +140,44 @@ export async function POST(request: Request) {
       if (aError) {
         console.error(`[POST /api/contests] Assignments insert error: ${aError.message}`);
         throw aError;
+      }
+
+      // 4. Generate Notifications for Assigned Users
+      try {
+        const targetUserIds = new Set<string>();
+
+        if (groups && groups.length > 0) {
+          const { data: gMembers } = await supabaseAdmin
+            .from('group_members')
+            .select('user_id')
+            .in('group_id', groups);
+          (gMembers || []).forEach((gm: any) => targetUserIds.add(gm.user_id));
+        }
+
+        if (teams && teams.length > 0) {
+          const { data: tUsers } = await supabaseAdmin
+            .from('users')
+            .select('id')
+            .in('team', teams);
+          (tUsers || []).forEach((tu: any) => targetUserIds.add(tu.id));
+        }
+
+        if (targetUserIds.size > 0) {
+          const notifs = Array.from(targetUserIds).map((uid) => ({
+            user_id: uid,
+            type: 'contest_assigned',
+            title: `🏆 New Contest Assigned: ${title}`,
+            message: `You have been assigned to contest "${title}". Click to view questions and start solving!`,
+            link: `/contests/${contest.id}`,
+            related_id: contest.id,
+            is_read: false,
+          }));
+
+          await supabaseAdmin.from('notifications').insert(notifs);
+          console.log(`[POST /api/contests] Generated ${notifs.length} contest assignment notification(s)`);
+        }
+      } catch (nErr: any) {
+        console.error(`[POST /api/contests] Notification generation error: ${nErr.message}`);
       }
     }
 
