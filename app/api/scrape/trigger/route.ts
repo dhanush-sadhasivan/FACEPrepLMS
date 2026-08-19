@@ -97,7 +97,7 @@ export async function POST(request: Request) {
     );
   }
 
-  // 4. Collect user IDs from assigned groups/teams AND all users with HackerRank IDs
+  // 4. Collect user IDs from assigned groups/teams only
   const userIds = new Set<string>();
 
   if (groupIds.length > 0) {
@@ -116,41 +116,33 @@ export async function POST(request: Request) {
     (teamUsers || []).forEach((u: { id: string }) => userIds.add(u.id));
   }
 
-  // Also include all users with configured hackerrank_id so every trainer gets updated
-  const { data: allHkUsers } = await supabase
-    .from('users')
-    .select('id')
-    .neq('role', 'admin')
-    .not('hackerrank_id', 'is', null);
-
-  (allHkUsers || []).forEach((u: { id: string }) => userIds.add(u.id));
-
-  console.log(`[scrape/trigger] Total target user IDs to scrape: ${userIds.size}`);
+  console.log(`[scrape/trigger] Total assigned user IDs to scrape: ${userIds.size}`);
 
   if (userIds.size === 0) {
     return NextResponse.json(
-      { error: 'No users with a HackerRank ID configured found in the database.' },
+      { error: 'No trainers found in the groups or teams assigned to this contest.' },
       { status: 400 }
     );
   }
 
-  // 5. Fetch hackerrank_ids for collected users
+  // 5. Fetch hackerrank_ids for assigned users (excluding admin accounts)
   const { data: users } = await supabase
     .from('users')
-    .select('id, hackerrank_id')
+    .select('id, hackerrank_id, role')
     .in('id', Array.from(userIds))
+    .neq('role', 'admin')
     .not('hackerrank_id', 'is', null);
 
   const validUsers = (users || []).filter(u => u.hackerrank_id && u.hackerrank_id.trim() !== '');
 
   if (validUsers.length === 0) {
     return NextResponse.json(
-      { error: 'None of the target users have a valid HackerRank ID configured. Update user profiles first.' },
+      { error: 'None of the trainers assigned to this contest have a valid HackerRank ID configured. Update user profiles first.' },
       { status: 400 }
     );
   }
 
-  console.log(`[scrape/trigger] Sending ${validUsers.length} user(s) to scraper for contest "${contest.hackerrank_slug}"`);
+  console.log(`[scrape/trigger] Sending ${validUsers.length} assigned user(s) to scraper for contest "${contest.hackerrank_slug}"`);
 
   // 6. Trigger Railway scraper
   const scraperUrl = process.env.RAILWAY_SCRAPER_URL;

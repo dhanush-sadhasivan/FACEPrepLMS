@@ -9,6 +9,7 @@ import AssignedCoursesWidget from './AssignedCoursesWidget';
 import TopPerformersWidget from './TopPerformersWidget';
 import HelpdeskWidget from './HelpdeskWidget';
 import TrainerCompletionAnalytics, { ContestCompletionStat, RoadmapCompletionStat } from './TrainerCompletionAnalytics';
+import TrainerAnnouncementsBanner from './TrainerAnnouncementsBanner';
 import './page.css';
 
 export const dynamic = 'force-dynamic';
@@ -22,13 +23,19 @@ export default async function DashboardPage() {
     redirect('/login');
   }
 
-  const [userRes, contestsHeadRes] = await Promise.all([
+  const [userRes, contestsHeadRes, userNotificationsRes] = await Promise.all([
     supabase.from('users').select('*').eq('id', user.id).single(),
     supabase.from('contests').select('*', { count: 'exact', head: true }),
+    supabase.from('notifications').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(10),
   ]);
 
   const userData = userRes.data;
   const contestsCount = contestsHeadRes.count || 0;
+  const allUserNotifications = userNotificationsRes.data || [];
+  const userAnnouncements = allUserNotifications.filter(
+    (n: any) => n.type === 'announcement' || (n.title && n.title.includes('📢'))
+  );
+  const userUnreadNotifsCount = allUserNotifications.filter((n: any) => !n.is_read).length;
 
   const role = userData?.role || 'trainer';
   const isAdminOrManager = role === 'admin' || role === 'manager';
@@ -56,7 +63,8 @@ export default async function DashboardPage() {
   while (true) {
     const { data: pageRows, error: pErr } = await dbAdmin
       .from('progress')
-      .select('user_id, question_id, score, status')
+      .select('user_id, question_id, score, status, contest_id')
+      .not('contest_id', 'is', null)
       .or('score.gt.0,status.eq.solved')
       .range(pFrom, pFrom + pStep - 1);
 
@@ -119,7 +127,8 @@ export default async function DashboardPage() {
       dbAdmin.from('questions').select('id, contest_id, topic, domain'),
       dbAdmin.from('roadmaps').select('id, title, domain, level, topics'),
       dbAdmin.from('user_roadmap_progress').select('user_id, roadmap_id, completed_topic_ids, status'),
-      dbAdmin.from('contest_assignments').select('contest_id, user_id, group_id'),
+      dbAdmin.from('contest_assignments').select('contest_id, group_id, team'),
+      dbAdmin.from('group_members').select('group_id, user_id'),
       dbAdmin.from('roadmap_assignments').select('roadmap_id, user_id, group_id'),
     ]);
 
@@ -141,7 +150,23 @@ export default async function DashboardPage() {
     const allContestsData = contests;
     const allQsData = allQsRes.data || [];
     const allContestAssignData = allContestAssignRes.data || [];
+    const allGroupMembersData = (allRoadmapAssignRes as any)?.data || []; // Note index mapping below
     const totalTrainersCount = globalUserMap.size || 1;
+
+    // Helper maps for contest assignment resolution
+    const groupMembersMap = new Map<string, string[]>();
+    (allContestAssignRes && (await dbAdmin.from('group_members').select('group_id, user_id'))?.data || []).forEach((gm: any) => {
+      if (!groupMembersMap.has(gm.group_id)) groupMembersMap.set(gm.group_id, []);
+      groupMembersMap.get(gm.group_id)!.push(gm.user_id);
+    });
+
+    const teamUsersMap = new Map<string, string[]>();
+    (allUserProfiles || []).forEach((u: any) => {
+      if (u.team) {
+        if (!teamUsersMap.has(u.team)) teamUsersMap.set(u.team, []);
+        teamUsersMap.get(u.team)!.push(u.id);
+      }
+    });
 
     // 1. Contest Completion Analytics
     contestStats = allContestsData.slice(0, 5).map((c: any) => {
@@ -150,15 +175,22 @@ export default async function DashboardPage() {
 
       const assignedUserIds = new Set<string>();
       allContestAssignData.forEach((a: any) => {
-        if (a.contest_id === c.id && a.user_id) assignedUserIds.add(a.user_id);
+        if (a.contest_id === c.id) {
+          if (a.group_id) {
+            (groupMembersMap.get(a.group_id) || []).forEach((uid: string) => assignedUserIds.add(uid));
+          }
+          if (a.team) {
+            (teamUsersMap.get(a.team) || []).forEach((uid: string) => assignedUserIds.add(uid));
+          }
+        }
       });
-      const assignedCount = assignedUserIds.size > 0 ? assignedUserIds.size : totalTrainersCount;
+      const assignedCount = assignedUserIds.size;
 
       let completedTrainers = 0;
       let totalSolvedSum = 0;
 
-      globalUserMap.forEach((userEntry, userId) => {
-        if (cQs.length > 0) {
+      if (assignedCount > 0 && cQs.length > 0) {
+        assignedUserIds.forEach((userId) => {
           const userSolvedInContest = cQs.filter((q: any) =>
             allProgressRows.some((p: any) => p.user_id === userId && p.question_id === q.id && (p.status === 'solved' || p.score > 0))
           ).length;
@@ -166,11 +198,11 @@ export default async function DashboardPage() {
           if (userSolvedInContest >= cQs.length) {
             completedTrainers++;
           }
-        }
-      });
+        });
+      }
 
       const maxPossibleSolved = (qCount || 1) * assignedCount;
-      const pct = maxPossibleSolved > 0 ? Math.min(100, Math.round((totalSolvedSum / maxPossibleSolved) * 100)) : 0;
+      const pct = (maxPossibleSolved > 0 && assignedCount > 0) ? Math.min(100, Math.round((totalSolvedSum / maxPossibleSolved) * 100)) : 0;
 
       return {
         contestId: c.id,
@@ -357,23 +389,27 @@ export default async function DashboardPage() {
     });
     trainerProgress = { score: totalScore, solved: solvedCount };
 
-    const [contestAssignRes, groupContestAssignRes, allContestsRes, allQsRes] = await Promise.all([
-      supabase.from('contest_assignments').select('contest_id').eq('user_id', user.id),
-      groupIds.length > 0 ? supabase.from('contest_assignments').select('contest_id').in('group_id', groupIds) : Promise.resolve({ data: [] }),
+    const conditions: string[] = [];
+    if (userData?.team) conditions.push(`team.eq.${userData.team}`);
+    if (groupIds.length > 0) conditions.push(`group_id.in.(${groupIds.join(',')})`);
+
+    let assignedContestIds: string[] = [];
+    if (conditions.length > 0) {
+      const { data: matchedAssignments } = await supabase
+        .from('contest_assignments')
+        .select('contest_id')
+        .or(conditions.join(','));
+      assignedContestIds = (matchedAssignments || []).map((a: any) => a.contest_id);
+    }
+
+    const [allContestsRes, allQsRes] = await Promise.all([
       supabase.from('contests').select('id, title, start_date, end_date'),
       supabase.from('questions').select('id, contest_id'),
     ]);
 
-    const directContestIds = (contestAssignRes.data || []).map((a: any) => a.contest_id);
-    const groupContestIds = ((groupContestAssignRes.data || []) as any[]).map((a: any) => a.contest_id);
     const roadmapContestIds = trainerRoadmaps.map((rm: any) => rm.contest_id).filter(Boolean);
-
-    let myContestIds = Array.from(new Set([...directContestIds, ...groupContestIds, ...roadmapContestIds]));
+    const myContestIds = Array.from(new Set([...assignedContestIds, ...roadmapContestIds]));
     const availableContests = allContestsRes.data || [];
-
-    if (myContestIds.length === 0 && availableContests.length > 0) {
-      myContestIds = availableContests.map((c: any) => c.id);
-    }
 
     const myContests = availableContests.filter((c: any) => myContestIds.includes(c.id));
     assignedContestsCount = myContests.length;
@@ -431,6 +467,12 @@ export default async function DashboardPage() {
               <Link href="/skills" className="btn btn-secondary btn-sm">
                 🏆 Skills &amp; Badges
               </Link>
+              <Link href="/notifications" className="btn btn-secondary btn-sm" style={{ position: 'relative' }}>
+                🔔 Announcements
+                {userUnreadNotifsCount > 0 && (
+                  <span className="quick-action-badge">{userUnreadNotifsCount}</span>
+                )}
+              </Link>
               <Link href="/profile" className="btn btn-secondary btn-sm">
                 ✏️ Edit Profile
               </Link>
@@ -438,6 +480,12 @@ export default async function DashboardPage() {
           )}
         </div>
       </header>
+
+      {/* Broadcast Announcements Banner */}
+      <TrainerAnnouncementsBanner
+        initialAnnouncements={userAnnouncements}
+        userRole={role}
+      />
 
       {/* Stats Grid */}
       <div className="stats-grid">

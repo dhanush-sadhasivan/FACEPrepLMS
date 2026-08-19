@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/components/Toast';
 import { Notification } from '@/lib/types';
+import CreateAnnouncementModal from './CreateAnnouncementModal';
 
 interface NotificationListProps {
   initialNotifications: Notification[];
@@ -13,11 +14,14 @@ interface NotificationListProps {
 
 export default function NotificationList({ initialNotifications, userRole }: NotificationListProps) {
   const [notifications, setNotifications] = useState<Notification[]>(initialNotifications);
-  const [filter, setFilter] = useState<'All' | 'Unread' | 'access_request' | 'contest_assigned' | 'system'>('All');
+  const [filter, setFilter] = useState<'All' | 'Unread' | 'announcement' | 'access_request' | 'contest_assigned' | 'system'>('All');
   const [isMarkingAll, setIsMarkingAll] = useState(false);
+  const [isAnnouncementModalOpen, setIsAnnouncementModalOpen] = useState(false);
   const router = useRouter();
   const { showToast } = useToast();
   const supabase = createClient();
+
+  const isAdminOrManager = userRole === 'admin' || userRole === 'manager';
 
   const handleMarkAsRead = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -26,6 +30,10 @@ export default function NotificationList({ initialNotifications, userRole }: Not
     setNotifications(prev => 
       prev.map(n => n.id === id ? { ...n, is_read: true } : n)
     );
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('notification-updated'));
+    }
 
     try {
       const res = await fetch(`/api/notifications/${id}/read`, {
@@ -40,6 +48,9 @@ export default function NotificationList({ initialNotifications, userRole }: Not
       setNotifications(prev => 
         prev.map(n => n.id === id ? { ...n, is_read: false } : n)
       );
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('notification-updated'));
+      }
     }
   };
 
@@ -48,6 +59,10 @@ export default function NotificationList({ initialNotifications, userRole }: Not
     
     // Optimistic update
     setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('notification-updated'));
+    }
 
     try {
       const res = await fetch('/api/notifications/read-all', {
@@ -63,6 +78,9 @@ export default function NotificationList({ initialNotifications, userRole }: Not
       router.refresh();
     } finally {
       setIsMarkingAll(false);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new Event('notification-updated'));
+      }
     }
   };
 
@@ -89,14 +107,26 @@ export default function NotificationList({ initialNotifications, userRole }: Not
     }
   };
 
-  const getIcon = (type: string) => {
+  const isAnnouncement = (n: Notification) => {
+    return n.type === 'announcement' || (n.title && n.title.includes('📢'));
+  };
+
+  const getIcon = (type: string, notification?: Notification) => {
+    if (notification && isAnnouncement(notification)) {
+      return (
+        <span style={{ fontSize: '1.25rem' }}>📢</span>
+      );
+    }
+
     switch (type) {
+      case 'access_request':
       case 'Access Requests':
         return (
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
           </svg>
         );
+      case 'contest_assigned':
       case 'Contest Assignments':
         return (
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -132,6 +162,7 @@ export default function NotificationList({ initialNotifications, userRole }: Not
   const filteredNotifications = notifications.filter(n => {
     if (filter === 'All') return true;
     if (filter === 'Unread') return !n.is_read;
+    if (filter === 'announcement') return isAnnouncement(n);
     return n.type === filter;
   });
 
@@ -139,10 +170,18 @@ export default function NotificationList({ initialNotifications, userRole }: Not
 
   return (
     <div className="notification-list-container">
+      {/* Controls Bar */}
       <div className="notification-controls">
         <div className="notification-filters">
-          {(['All', 'Unread', 'access_request', 'contest_assigned', 'system'] as const).map(f => {
-            const label: Record<string, string> = { All: 'All', Unread: 'Unread', access_request: 'Access Requests', contest_assigned: 'Assignments', system: 'System' };
+          {(['All', 'Unread', 'announcement', 'access_request', 'contest_assigned', 'system'] as const).map(f => {
+            const label: Record<string, string> = {
+              All: 'All',
+              Unread: 'Unread',
+              announcement: '📢 Announcements',
+              access_request: 'Access Requests',
+              contest_assigned: 'Assignments',
+              system: 'System Updates',
+            };
             return (
               <button
                 key={f}
@@ -154,17 +193,31 @@ export default function NotificationList({ initialNotifications, userRole }: Not
             );
           })}
         </div>
-        {unreadCount > 0 && (
-          <button 
-            className="mark-all-read-btn" 
-            onClick={handleMarkAllAsRead}
-            disabled={isMarkingAll}
-          >
-            {isMarkingAll ? 'Marking...' : 'Mark all as read'}
-          </button>
-        )}
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          {isAdminOrManager && (
+            <button
+              className="btn btn-primary"
+              style={{ fontSize: '0.82rem', fontWeight: 800, padding: '0.35rem 0.85rem' }}
+              onClick={() => setIsAnnouncementModalOpen(true)}
+            >
+              📢 Broadcast Announcement
+            </button>
+          )}
+
+          {unreadCount > 0 && (
+            <button 
+              className="mark-all-read-btn" 
+              onClick={handleMarkAllAsRead}
+              disabled={isMarkingAll}
+            >
+              {isMarkingAll ? 'Marking...' : 'Mark all as read'}
+            </button>
+          )}
+        </div>
       </div>
 
+      {/* Notifications List */}
       <div className="notifications-list">
         {filteredNotifications.length === 0 ? (
           <div className="notifications-empty">
@@ -173,59 +226,82 @@ export default function NotificationList({ initialNotifications, userRole }: Not
               <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
             </svg>
             <p>No notifications found.</p>
-            <span className="empty-subtext">You're all caught up!</span>
+            <span className="empty-subtext">You&apos;re all caught up!</span>
           </div>
         ) : (
-          filteredNotifications.map(notification => (
-            <div 
-              key={notification.id} 
-              className={`notification-item ${!notification.is_read ? 'unread' : ''}`}
-              onClick={(e) => {
-                 if (!notification.is_read) handleMarkAsRead(notification.id, e);
-              }}
-            >
-              <div className="notification-icon">
-                {getIcon(notification.type)}
-              </div>
-              <div className="notification-content">
-                <div className="notification-header">
-                  <h4>{notification.title}</h4>
-                  <span className="notification-time">{timeAgo(notification.created_at)}</span>
+          filteredNotifications.map(notification => {
+            const isAnn = isAnnouncement(notification);
+            return (
+              <div 
+                key={notification.id} 
+                className={`notification-item ${!notification.is_read ? 'unread' : ''} ${isAnn ? 'announcement-item' : ''}`}
+                style={isAnn ? { borderLeft: '4px solid var(--accent, #6366f1)', background: !notification.is_read ? 'rgba(99, 102, 241, 0.07)' : 'var(--surface)' } : {}}
+                onClick={(e) => {
+                   if (!notification.is_read) handleMarkAsRead(notification.id, e);
+                }}
+              >
+                <div className="notification-icon" style={isAnn ? { background: 'rgba(99, 102, 241, 0.15)', color: 'var(--accent)' } : {}}>
+                  {getIcon(notification.type, notification)}
                 </div>
-                <p>{notification.message}</p>
-                
-                {notification.type === 'access_request' && notification.related_id && !notification.is_read && (userRole === 'admin' || userRole === 'manager') && (
-                  <div className="notification-actions">
-                    <button
-                      className="btn-approve"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleAccessRequest(notification.id, notification.related_id!, 'approved');
-                      }}
-                    >
-                      Approve
-                    </button>
-                    <button
-                      className="btn-deny"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleAccessRequest(notification.id, notification.related_id!, 'denied');
-                      }}
-                    >
-                      Deny
-                    </button>
+                <div className="notification-content">
+                  <div className="notification-header">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', flexWrap: 'wrap' }}>
+                      <h4 style={{ margin: 0 }}>{notification.title}</h4>
+                      {isAnn && (
+                        <span style={{ fontSize: '0.7rem', fontWeight: 800, background: 'var(--accent-muted, rgba(99,102,241,0.15))', color: 'var(--accent, #6366f1)', padding: '0.1rem 0.45rem', borderRadius: '6px', textTransform: 'uppercase' }}>
+                          Announcement
+                        </span>
+                      )}
+                    </div>
+                    <span className="notification-time">{timeAgo(notification.created_at)}</span>
+                  </div>
+                  <p style={{ whiteSpace: 'pre-wrap', lineHeight: 1.5, marginTop: '0.35rem' }}>
+                    {notification.message}
+                  </p>
+                  
+                  {notification.type === 'access_request' && notification.related_id && !notification.is_read && isAdminOrManager && (
+                    <div className="notification-actions">
+                      <button
+                        className="btn-approve"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleAccessRequest(notification.id, notification.related_id!, 'approved');
+                        }}
+                      >
+                        Approve
+                      </button>
+                      <button
+                        className="btn-deny"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleAccessRequest(notification.id, notification.related_id!, 'denied');
+                        }}
+                      >
+                        Deny
+                      </button>
+                    </div>
+                  )}
+                </div>
+                {!notification.is_read && (
+                  <div className="unread-indicator" title="Mark as read" onClick={(e) => handleMarkAsRead(notification.id, e)}>
+                    <div className="indicator-dot"></div>
                   </div>
                 )}
               </div>
-              {!notification.is_read && (
-                <div className="unread-indicator" title="Mark as read" onClick={(e) => handleMarkAsRead(notification.id, e)}>
-                  <div className="indicator-dot"></div>
-                </div>
-              )}
-            </div>
-          ))
+            );
+          })
         )}
       </div>
+
+      {/* Broadcast Announcement Modal */}
+      <CreateAnnouncementModal
+        isOpen={isAnnouncementModalOpen}
+        onClose={() => setIsAnnouncementModalOpen(false)}
+        onSuccess={() => {
+          router.refresh();
+        }}
+      />
     </div>
   );
 }
+

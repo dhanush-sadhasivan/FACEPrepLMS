@@ -145,24 +145,7 @@ export default async function ContestDetailPage({ params }: { params: Promise<{ 
     });
   }
 
-  if (userMap.size === 0) {
-    allUsersMap.forEach((u: any) => {
-      userMap.set(u.id, {
-        user_id: u.id,
-        name: u.full_name,
-        emp_id: u.emp_id,
-        team: u.team || 'N/A',
-        solved: 0,
-        total: enabledQuestionsList.length,
-        score: 0,
-        maxScore: totalContestMaxScore,
-        lastActive: null,
-        progress: [],
-      });
-    });
-  }
-
-  // 3. Overlay progress data from database (only for enabled questions)
+  // 3. Overlay progress data from database (only for enabled questions and assigned trainers)
   let progress: any[] = [];
   let from = 0;
   const step = 1000;
@@ -188,21 +171,7 @@ export default async function ContestDetailPage({ params }: { params: Promise<{ 
     // Strictly skip progress for disabled questions
     if (!enabledQuestionIdsSet.has(p.question_id)) return;
 
-    if (!userMap.has(p.user_id)) {
-      const userProfile = allUsersMap.get(p.user_id);
-      userMap.set(p.user_id, {
-        user_id: p.user_id,
-        name: userProfile?.full_name || 'Participant',
-        emp_id: userProfile?.emp_id || '—',
-        team: userProfile?.team || 'N/A',
-        solved: 0,
-        total: enabledQuestionsList.length,
-        score: 0,
-        maxScore: totalContestMaxScore,
-        lastActive: null,
-        progress: [],
-      });
-    }
+    // Only update progress for trainers who are assigned to this contest
     const u = userMap.get(p.user_id);
     if (u) {
       if (p.status === 'solved') u.solved++;

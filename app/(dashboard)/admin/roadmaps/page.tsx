@@ -70,9 +70,14 @@ export default function AdminRoadmapsPage() {
             Build, manage, and track contest-linked learning paths for trainer cohorts.
           </p>
         </div>
-        <Link href="/admin/roadmaps/new" className="btn btn-primary">
-          ➕ Create New Roadmap
-        </Link>
+        <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center' }}>
+          <Link href="/roadmaps" className="btn btn-secondary" style={{ fontSize: '0.85rem' }}>
+            👁️ Trainer View Mode
+          </Link>
+          <Link href="/admin/roadmaps/new" className="btn btn-primary">
+            ➕ Create New Roadmap
+          </Link>
+        </div>
       </header>
 
       {/* Top Overview Stats Widgets */}
@@ -186,7 +191,14 @@ export default function AdminRoadmapsPage() {
               <div key={rm.id} className="admin-roadmap-card">
                 <div className="admin-roadmap-card-header">
                   <div>
-                    <h3 className="admin-roadmap-card-title">{rm.title}</h3>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                      <h3 className="admin-roadmap-card-title">{rm.title}</h3>
+                      {rm.is_it_roadmap && (
+                        <span style={{ fontSize: '0.72rem', fontWeight: 800, background: 'rgba(99, 102, 241, 0.15)', color: 'var(--accent)', border: '1px solid rgba(99, 102, 241, 0.3)', padding: '0.15rem 0.5rem', borderRadius: '6px' }}>
+                          🎓 IT Training
+                        </span>
+                      )}
+                    </div>
                     <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginTop: '0.35rem' }}>
                       <span className="admin-chip-domain">{rm.domain || 'General'}</span>
                       <span className="admin-chip-level">{rm.level || 'Beginner'}</span>
@@ -264,9 +276,11 @@ export default function AdminRoadmapsPage() {
                     )}
                   </div>
 
-                  <Link href={`/admin/roadmaps/${rm.id}/edit`} className="btn btn-secondary btn-sm" style={{ fontSize: '0.8rem' }}>
-                    ✏️ Edit Roadmap
-                  </Link>
+                  <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                    <Link href={`/admin/roadmaps/${rm.id}/edit`} className="btn btn-secondary btn-sm" style={{ fontSize: '0.8rem' }}>
+                      ✏️ Edit &amp; Day Plan
+                    </Link>
+                  </div>
                 </div>
               </div>
             );

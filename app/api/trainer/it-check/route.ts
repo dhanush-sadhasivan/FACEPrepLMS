@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { getAdminClient } from '@/lib/supabase/admin';
+import { recordITAttendance } from '@/lib/it-day-counter';
 
 export async function GET() {
   const supabaseServer = await createClient();
@@ -29,8 +30,12 @@ export async function GET() {
     return NextResponse.json({ needsCheck: false, itDaysCount: 0 });
   }
 
-  const lastCheckedDate = profile.last_it_check_date || user.user_metadata?.last_it_check_date || null;
-  const itDaysCount = profile.it_days_count ?? user.user_metadata?.it_days_count ?? 0;
+  // Fetch fresh auth user data
+  const { data: authUserData } = await supabase.auth.admin.getUserById(user.id);
+  const metadata = authUserData?.user?.user_metadata || {};
+
+  const lastCheckedDate = profile.last_it_check_date || metadata.last_it_check_date || null;
+  const itDaysCount = profile.it_days_count ?? metadata.it_days_count ?? 0;
 
   const needsCheck = lastCheckedDate !== today;
 
@@ -51,43 +56,12 @@ export async function POST(req: Request) {
   }
 
   const { didIT } = await req.json();
-  const supabase = getAdminClient();
-  const today = new Date().toISOString().split('T')[0];
 
-  const { data: profile } = await supabase
-    .from('users')
-    .select('*')
-    .eq('id', user.id)
-    .single();
-
-  const currentCount = profile?.it_days_count ?? user.user_metadata?.it_days_count ?? 0;
-  const newCount = didIT ? currentCount + 1 : currentCount;
-
-  // Try updating users table columns (or user_metadata as fallback)
   try {
-    await supabase
-      .from('users')
-      .update({
-        it_days_count: newCount,
-        last_it_check_date: today,
-      })
-      .eq('id', user.id);
-  } catch {
-    // ignore if columns don't exist yet
+    const result = await recordITAttendance(user.id, Boolean(didIT));
+    return NextResponse.json(result);
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message || 'Failed to update IT attendance' }, { status: 500 });
   }
-
-  // Always update Supabase auth user_metadata as well for multi-session sync
-  await supabase.auth.admin.updateUserById(user.id, {
-    user_metadata: {
-      ...user.user_metadata,
-      it_days_count: newCount,
-      last_it_check_date: today,
-    },
-  });
-
-  return NextResponse.json({
-    success: true,
-    newCount,
-    today,
-  });
 }
+

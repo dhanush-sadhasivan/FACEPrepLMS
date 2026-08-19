@@ -78,6 +78,7 @@ export async function POST(request: Request) {
     estimated_hours,
     topics,
     contest_id,
+    is_it_roadmap,
     target_group_ids,
     target_user_ids,
   } = body;
@@ -101,6 +102,7 @@ export async function POST(request: Request) {
       estimated_hours: estimated_hours || 20,
       topics,
       contest_id: contest_id || null,
+      is_it_roadmap: Boolean(is_it_roadmap),
       created_by: user.id,
     })
     .select()

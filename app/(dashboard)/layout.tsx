@@ -22,9 +22,14 @@ export default async function DashboardLayout({
     .single();
 
   const role = userData?.role || 'trainer';
+  const currentUser = {
+    id: user.id,
+    full_name: userData?.full_name || user.user_metadata?.full_name || 'User',
+    role: role,
+  };
 
   return (
-    <DashboardLayoutClient role={role}>
+    <DashboardLayoutClient role={role} currentUser={currentUser}>
       {children}
     </DashboardLayoutClient>
   );

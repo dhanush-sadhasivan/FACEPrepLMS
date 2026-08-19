@@ -2,7 +2,8 @@ export type UserRole = 'admin' | 'manager' | 'trainer'
 export type ContestStatus = 'upcoming' | 'active' | 'past'
 export type QuestionStatus = 'solved' | 'attempted' | 'unattempted'
 export type AccessRequestStatus = 'pending' | 'approved' | 'denied'
-export type NotificationType = 'access_request' | 'contest_assigned' | 'access_approved' | 'access_denied' | 'system'
+export type NotificationType = 'access_request' | 'contest_assigned' | 'access_approved' | 'access_denied' | 'system' | 'announcement'
+
 
 export interface User {
   id: string
@@ -125,6 +126,7 @@ export interface Roadmap {
   topics: RoadmapTopic[]
   contest_id?: string | null
   contest_title?: string
+  is_it_roadmap?: boolean
   created_by: string
   created_at: string
 }
@@ -177,3 +179,94 @@ export interface TrainerTodo {
   created_at: string
   updated_at: string
 }
+
+// ── Internal Training Dashboard Types ─────────────────────────────────────
+
+export type QuestionLinkType = 'hackerrank' | 'custom'
+
+export interface ITRoadmapConfig {
+  id: string
+  roadmap_id: string
+  start_date_mode: string
+  working_days: number[] // 1=Mon, 2=Tue, 3=Wed, 4=Thu, 5=Fri, 6=Sat, 7=Sun
+  default_extension_days: number
+  created_by?: string
+  created_at?: string
+  updated_at?: string
+}
+
+export interface ITDayQuestion {
+  id: string
+  day_plan_id: string
+  question_type: QuestionLinkType
+  question_id?: string | null
+  title: string
+  description?: string | null
+  url: string
+  order_index: number
+  difficulty?: string
+  max_score?: number
+  created_at?: string
+  // Dynamic fields from completions/scraper
+  clicked_at?: string | null
+  is_completed?: boolean
+  completed_at?: string | null
+  score?: number
+}
+
+export interface ITDayPlan {
+  id: string
+  roadmap_id: string
+  day_number: number
+  topic_title: string
+  description?: string | null
+  resources: { title: string; url: string }[]
+  created_by?: string
+  created_at?: string
+  updated_at?: string
+  questions?: ITDayQuestion[]
+  calculated_date?: string // Computed date string e.g. "2026-08-19"
+}
+
+export interface ITTrainerProgress {
+  id: string
+  user_id: string
+  roadmap_id: string
+  started_at: string | null // ISO date string "YYYY-MM-DD"
+  current_day: number
+  extended_days: number
+  extension_count: number
+  created_at?: string
+  updated_at?: string
+}
+
+export interface ITQuestionCompletion {
+  id: string
+  user_id: string
+  day_question_id: string
+  clicked_at: string | null
+  completed_at: string | null
+  is_completed: boolean
+  created_at?: string
+}
+
+export interface ITTrainerOverviewItem {
+  user_id: string
+  full_name: string
+  emp_id: string
+  team: string
+  email: string
+  roadmap_id: string
+  roadmap_title: string
+  started_at: string | null
+  current_day: number
+  total_days: number
+  completed_questions_count: number
+  total_questions_count: number
+  pending_questions_count: number
+  it_days_count: number
+  extended_days: number
+  extension_count: number
+  is_online?: boolean
+}
+

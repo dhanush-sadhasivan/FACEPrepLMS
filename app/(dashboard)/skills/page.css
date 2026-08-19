@@ -1,61 +1,217 @@
 /* ─────────────────────────────────────────────────────
-   SKILLS & BADGES STYLING (Standardized UI)
+   SKILLS & BADGES STYLING (Modern Gamified UI)
 ───────────────────────────────────────────────────── */
 @import '../courses/page.css';
 
-/* Overview Stats Grid */
+/* ── Hero Mastery Showcase Banner ───────────────────── */
+.skills-hero-banner {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(16, 185, 129, 0.06) 100%);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 1.25rem 1.5rem;
+  margin-bottom: 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  position: relative;
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+
+.skills-hero-banner::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent) 0%, var(--success, #10b981) 100%);
+}
+
+.skills-hero-left {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.skills-hero-avatar-emblem {
+  width: 64px;
+  height: 64px;
+  border-radius: 14px;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1.5px solid rgba(16, 185, 129, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2rem;
+  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.15);
+  flex-shrink: 0;
+}
+
+.skills-hero-rank-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.74rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 0.15rem 0.6rem;
+  border-radius: 999px;
+  background: rgba(16, 185, 129, 0.12);
+  color: var(--success, #10b981);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  margin-bottom: 0.35rem;
+}
+
+.skills-hero-title {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+
+.skills-hero-subtitle {
+  margin: 0.2rem 0 0;
+  font-size: 0.83rem;
+  color: var(--text-secondary);
+}
+
+.skills-hero-stats {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  flex-shrink: 0;
+}
+
+.skills-hero-stat-item {
+  text-align: center;
+}
+
+.skills-hero-stat-val {
+  font-size: 1.5rem;
+  font-weight: 900;
+  line-height: 1;
+  color: var(--text-primary);
+}
+
+.skills-hero-stat-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-top: 0.25rem;
+}
+
+/* ── Overview Stats Grid ────────────────────────────── */
 .stats-overview-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 0.65rem;
-  margin-bottom: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
 }
 
 .stat-card-widget {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 0.55rem 0.85rem;
+  padding: 0.75rem 1rem;
   display: flex;
   align-items: center;
-  gap: 0.65rem;
+  gap: 0.75rem;
   box-shadow: var(--shadow-sm);
+  transition: all 0.2s ease;
+}
+
+.stat-card-widget:hover {
+  transform: translateY(-2px);
+  border-color: var(--border-hover, var(--accent));
+  box-shadow: var(--shadow);
 }
 
 .stat-widget-icon {
-  font-size: 1.25rem;
+  font-size: 1.45rem;
   flex-shrink: 0;
 }
 
 .stat-widget-val {
-  font-size: 1.25rem;
+  font-size: 1.35rem;
   font-weight: 900;
   line-height: 1;
   color: var(--text-primary);
 }
 
 .stat-widget-label {
-  font-size: 0.68rem;
+  font-size: 0.7rem;
   font-weight: 700;
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  margin-top: 0.15rem;
+  margin-top: 0.2rem;
 }
 
-/* Compact Badge Grid */
-.badges-compact-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 0.85rem;
+/* ── Filter Toolbar ─────────────────────────────────── */
+.skills-filter-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
   margin-bottom: 1rem;
 }
 
-.badge-card-compact {
+.skills-filter-tabs {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.skills-filter-btn {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  padding: 0.4rem 0.8rem;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.skills-filter-btn:hover {
+  background: var(--surface-3);
+  color: var(--text-primary);
+}
+
+.skills-filter-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #ffffff;
+  box-shadow: 0 2px 10px var(--accent-glow);
+}
+
+/* ── Badges Grid & Cards ────────────────────────────── */
+.badges-modern-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.badge-modern-card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: 0.85rem 1.15rem;
+  border-radius: 12px;
+  padding: 1.15rem;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -66,66 +222,102 @@
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.badge-card-compact::before {
+.badge-modern-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow);
+}
+
+/* Mastered Tier */
+.badge-modern-card.tier-mastered {
+  background: var(--surface);
+  border-color: rgba(16, 185, 129, 0.3);
+}
+
+.badge-modern-card.tier-mastered::before {
   content: '';
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
   height: 3px;
-  background: linear-gradient(90deg, #f59e0b 0%, #eab308 100%);
-  opacity: 0.85;
-  transition: opacity 0.2s ease;
+  background: linear-gradient(90deg, #10b981 0%, #059669 100%);
 }
 
-.badge-card-compact:hover {
-  transform: translateY(-2px);
-  border-color: #f59e0b;
-  box-shadow: var(--shadow);
+.badge-modern-card.tier-mastered:hover {
+  border-color: #10b981;
 }
 
-.badge-card-compact:hover::before {
-  opacity: 1;
+/* In-Progress Tier */
+.badge-modern-card.tier-in-progress {
+  background: var(--surface);
+  border-color: rgba(99, 102, 241, 0.3);
 }
 
-.badge-card-compact.in-progress::before {
-  background: linear-gradient(90deg, #6366f1 0%, #4f46e5 100%);
+.badge-modern-card.tier-in-progress::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #6366f1 0%, #38bdf8 100%);
 }
 
-.badge-card-compact.in-progress:hover {
+.badge-modern-card.tier-in-progress:hover {
   border-color: #6366f1;
-  box-shadow: var(--shadow);
 }
 
-/* Badge Icon Frame */
-.badge-icon-frame {
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-  background: rgba(245, 158, 11, 0.12);
-  border: 1px solid rgba(245, 158, 11, 0.35);
+/* Locked Tier */
+.badge-modern-card.tier-locked {
+  background: var(--surface);
+  opacity: 0.72;
+}
+
+.badge-modern-card.tier-locked:hover {
+  opacity: 0.95;
+  border-color: var(--border-hover, var(--text-muted));
+}
+
+/* Badge Icon Emblems */
+.badge-emblem-frame {
+  width: 48px;
+  height: 48px;
+  border-radius: 10px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.45rem;
-  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.12);
-  margin-bottom: 0.5rem;
+  font-size: 1.5rem;
   flex-shrink: 0;
+  transition: transform 0.2s ease;
 }
 
-.badge-card-compact.in-progress .badge-icon-frame {
-  background: rgba(99, 102, 241, 0.12);
-  border-color: rgba(99, 102, 241, 0.35);
-  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.12);
+.badge-modern-card:hover .badge-emblem-frame {
+  transform: scale(1.05);
 }
 
-/* Badge Modal */
+.badge-emblem-frame.mastered {
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.badge-emblem-frame.in-progress {
+  background: rgba(99, 102, 241, 0.1);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+}
+
+.badge-emblem-frame.locked {
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+
+/* Badge Detail Modal */
 .badge-modal-backdrop {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.75);
-  backdrop-filter: blur(8px);
-  z-index: 1000;
+  backdrop-filter: blur(10px);
+  z-index: 9999;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -134,12 +326,12 @@
 }
 
 .badge-modal-card {
-  background: var(--surface);
+  background: var(--surface, #1e293b);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: 16px;
   max-width: 480px;
   width: 100%;
-  padding: 1.5rem;
+  padding: 2rem 1.75rem;
   box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
   position: relative;
   overflow: hidden;
@@ -152,40 +344,57 @@
   top: 0;
   left: 0;
   right: 0;
-  height: 4px;
-  background: linear-gradient(90deg, var(--accent) 0%, var(--indigo) 100%);
+  height: 3.5px;
+  background: linear-gradient(90deg, #10b981 0%, #6366f1 100%);
 }
 
 .badge-modal-icon-circle {
-  width: 72px;
-  height: 72px;
+  width: 76px;
+  height: 76px;
   border-radius: 50%;
-  background: linear-gradient(135deg, rgba(245, 158, 11, 0.2) 0%, rgba(99, 102, 241, 0.2) 100%);
-  border: 2px solid rgba(245, 158, 11, 0.5);
+  background: rgba(16, 185, 129, 0.12);
+  border: 2px solid rgba(16, 185, 129, 0.35);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 2.5rem;
+  font-size: 2.6rem;
   margin: 0 auto 1rem;
-  box-shadow: 0 0 24px rgba(245, 158, 11, 0.25);
 }
 
 .badge-modal-title {
-  font-size: 1.25rem;
-  font-weight: 900;
+  font-size: 1.35rem;
+  font-weight: 800;
   color: var(--text-primary);
-  margin: 0 0 0.35rem;
-  line-height: 1.2;
+  margin: 0 0 0.4rem;
+  line-height: 1.25;
 }
 
 .badge-modal-desc {
-  font-size: 0.85rem;
-  color: var(--text-muted);
-  line-height: 1.5;
+  font-size: 0.88rem;
+  color: var(--text-secondary);
+  line-height: 1.55;
   margin: 0.85rem 0 1.25rem;
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; transform: scale(0.96); }
+  from { opacity: 0; transform: scale(0.95); }
   to { opacity: 1; transform: scale(1); }
+}
+
+@media (max-width: 768px) {
+  .skills-hero-banner {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .skills-hero-stats {
+    width: 100%;
+    justify-content: space-around;
+    border-top: 1px solid var(--border);
+    padding-top: 1rem;
+  }
+
+  .badges-modern-grid {
+    grid-template-columns: 1fr;
+  }
 }

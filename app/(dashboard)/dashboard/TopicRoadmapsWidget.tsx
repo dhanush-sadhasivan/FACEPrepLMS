@@ -92,8 +92,14 @@ export default function TopicRoadmapsWidget({ roadmaps }: TopicRoadmapsWidgetPro
             return (
               <Link key={rm.id} href={`/roadmaps`} style={{ textDecoration: 'none' }}>
                 <div style={{
-                  padding: '0.75rem 0.9rem', background: 'var(--surface-2)', border: '1px solid var(--border)',
-                  borderLeft: `3px solid ${dc.color}`, borderRadius: 'var(--radius)', cursor: 'pointer',
+                  padding: '0.75rem 0.9rem',
+                  background: 'var(--surface-2)',
+                  borderTop: '1px solid var(--border)',
+                  borderRight: '1px solid var(--border)',
+                  borderBottom: '1px solid var(--border)',
+                  borderLeft: `3px solid ${dc.color}`,
+                  borderRadius: 'var(--radius)',
+                  cursor: 'pointer',
                   transition: 'all 0.2s ease',
                 }}
                   onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.borderColor = dc.color; (e.currentTarget as HTMLDivElement).style.transform = 'translateX(3px)'; }}

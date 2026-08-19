@@ -144,13 +144,22 @@ export async function GET() {
 
   // In-progress topics for training goals
   const inProgressTopics = topicBadgesRaw.filter(b => !b.isCompleted && b.solved > 0);
+  const lockedTopics = topicBadgesRaw.filter(b => b.solved === 0);
+
+  const allBadgesCombined = [
+    ...topicBadgesRaw,
+    ...contestBadgesRaw,
+  ];
 
   return NextResponse.json({
     user: userProfile,
     totalSolved: solvedQuestionIds.size,
+    totalQuestions: allQuestions?.length || 0,
     topicBadges: earnedTopicBadges,
     contestBadges: earnedContestBadges,
     inProgressTopics,
+    lockedTopics,
+    allBadges: allBadgesCombined,
     allTopicsCount: topicBadgesRaw.length,
   });
 }

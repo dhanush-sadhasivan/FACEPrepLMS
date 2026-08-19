@@ -3,38 +3,10 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 
-// Priority calculator for higher level badges
-function getBadgePriority(badge: any): number {
-  let score = 0;
-
-  // Unlocked badges get top priority (+1000)
-  if (badge.isCompleted) score += 1000;
-
-  // Level priority
-  if (badge.type === 'contest') {
-    score += 500; // Contest Champions are highest level!
-  } else {
-    const title = (badge.title || '').toLowerCase();
-    if (title.includes('linked list') || title.includes('linkedlist')) score += 300;
-    else if (title.includes('dynamic') || title.includes('dp')) score += 290;
-    else if (title.includes('tree') || title.includes('graph')) score += 280;
-    else if (title.includes('recursion') || title.includes('backtrack')) score += 270;
-    else if (title.includes('array')) score += 200;
-    else if (title.includes('stack') || title.includes('queue')) score += 190;
-    else if (title.includes('string')) score += 180;
-    else if (title.includes('sort') || title.includes('search')) score += 170;
-    else score += 100;
-  }
-
-  // Secondary tie-breaker by total questions
-  score += Math.min(badge.total, 99);
-
-  return score;
-}
-
 export default function AssignedCoursesWidget() {
   const [skillsData, setSkillsData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<'all' | 'earned' | 'in_progress'>('all');
 
   useEffect(() => {
     async function loadSkills() {
@@ -52,161 +24,376 @@ export default function AssignedCoursesWidget() {
     loadSkills();
   }, []);
 
-  const allBadges = [
-    ...(skillsData?.topicBadges || []),
-    ...(skillsData?.contestBadges || []),
-  ];
+  const earnedTopicBadges = skillsData?.topicBadges || [];
+  const earnedContestBadges = skillsData?.contestBadges || [];
+  const inProgressTopics = skillsData?.inProgressTopics || [];
+  const earnedBadges = [...earnedTopicBadges, ...earnedContestBadges];
 
-  // Sort by priority (completed & high level badges first!)
-  const sortedBadges = [...allBadges].sort((a, b) => getBadgePriority(b) - getBadgePriority(a));
-  const displayBadges = sortedBadges.slice(0, 4);
+  // Highest % in-progress topic to feature as "Next Milestone"
+  const nextMilestone = inProgressTopics.length > 0
+    ? [...inProgressTopics].sort((a: any, b: any) => b.pct - a.pct)[0]
+    : null;
 
-  const unlockedCount = allBadges.filter((b) => b.isCompleted).length;
+  // Decide what to display based on active tab
+  let displayList: any[] = [];
+  if (activeTab === 'earned') {
+    displayList = earnedBadges;
+  } else if (activeTab === 'in_progress') {
+    displayList = inProgressTopics;
+  } else {
+    // Show earned badges first, then highest in-progress topics
+    displayList = [
+      ...earnedBadges,
+      ...[...inProgressTopics].sort((a: any, b: any) => b.pct - a.pct),
+    ];
+  }
+
+  const itemsToShow = displayList.slice(0, 4);
 
   return (
-    <div className="widget-card" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.85rem' }}>
-        <h3 className="widget-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.95rem' }}>
-          <span>🏆</span>
-          Skills &amp; Badges Obtained
-          {unlockedCount > 0 && (
-            <span style={{ fontSize: '0.7rem', background: 'rgba(245,158,11,0.15)', color: '#f59e0b', padding: '0.1rem 0.55rem', borderRadius: '999px', fontWeight: 800 }}>
-              {unlockedCount} Earned
+    <div
+      className="widget-card"
+      style={{
+        flex: 1,
+        display: 'flex',
+        flexDirection: 'column',
+        position: 'relative',
+        overflow: 'hidden',
+      }}
+    >
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <span style={{ fontSize: '1.15rem' }}>🏆</span>
+          <h3 className="widget-title" style={{ margin: 0, fontSize: '0.95rem', fontWeight: 800 }}>
+            Skills &amp; Badges
+          </h3>
+          {earnedBadges.length > 0 ? (
+            <span
+              style={{
+                fontSize: '0.72rem',
+                fontWeight: 800,
+                background: 'rgba(16, 185, 129, 0.12)',
+                color: 'var(--success, #10b981)',
+                border: '1px solid rgba(16, 185, 129, 0.3)',
+                padding: '0.12rem 0.55rem',
+                borderRadius: '999px',
+              }}
+            >
+              {earnedBadges.length} Earned
+            </span>
+          ) : (
+            <span
+              style={{
+                fontSize: '0.72rem',
+                fontWeight: 800,
+                background: 'rgba(99, 102, 241, 0.12)',
+                color: 'var(--accent, #6366f1)',
+                border: '1px solid rgba(99, 102, 241, 0.25)',
+                padding: '0.12rem 0.55rem',
+                borderRadius: '999px',
+              }}
+            >
+              {inProgressTopics.length} In Progress
             </span>
           )}
-        </h3>
-        <Link href="/skills" style={{ color: 'var(--accent)', fontSize: '0.78rem', fontWeight: 600, textDecoration: 'none' }}>
-          View Badges →
+        </div>
+
+        <Link
+          href="/skills"
+          style={{
+            color: 'var(--accent)',
+            fontSize: '0.78rem',
+            fontWeight: 700,
+            textDecoration: 'none',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.2rem',
+          }}
+        >
+          View Library →
         </Link>
       </div>
 
+      {/* Sub-Tabs / Filter Switcher */}
+      <div style={{ display: 'flex', gap: '0.35rem', marginBottom: '0.75rem' }}>
+        <button
+          type="button"
+          onClick={() => setActiveTab('all')}
+          style={{
+            fontSize: '0.74rem',
+            fontWeight: 700,
+            padding: '0.25rem 0.6rem',
+            borderRadius: '6px',
+            border: `1px solid ${activeTab === 'all' ? 'var(--accent)' : 'var(--border)'}`,
+            background: activeTab === 'all' ? 'rgba(99, 102, 241, 0.12)' : 'var(--surface-2)',
+            color: activeTab === 'all' ? 'var(--accent)' : 'var(--text-muted)',
+            cursor: 'pointer',
+            transition: 'all 0.15s ease',
+          }}
+        >
+          Featured ({earnedBadges.length + inProgressTopics.length})
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('earned')}
+          style={{
+            fontSize: '0.74rem',
+            fontWeight: 700,
+            padding: '0.25rem 0.6rem',
+            borderRadius: '6px',
+            border: `1px solid ${activeTab === 'earned' ? 'var(--success, #10b981)' : 'var(--border)'}`,
+            background: activeTab === 'earned' ? 'rgba(16, 185, 129, 0.12)' : 'var(--surface-2)',
+            color: activeTab === 'earned' ? 'var(--success, #10b981)' : 'var(--text-muted)',
+            cursor: 'pointer',
+            transition: 'all 0.15s ease',
+          }}
+        >
+          ✓ Mastered ({earnedBadges.length})
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('in_progress')}
+          style={{
+            fontSize: '0.74rem',
+            fontWeight: 700,
+            padding: '0.25rem 0.6rem',
+            borderRadius: '6px',
+            border: `1px solid ${activeTab === 'in_progress' ? 'var(--indigo)' : 'var(--border)'}`,
+            background: activeTab === 'in_progress' ? 'rgba(99, 102, 241, 0.12)' : 'var(--surface-2)',
+            color: activeTab === 'in_progress' ? 'var(--indigo)' : 'var(--text-muted)',
+            cursor: 'pointer',
+            transition: 'all 0.15s ease',
+          }}
+        >
+          ⚡ In Progress ({inProgressTopics.length})
+        </button>
+      </div>
+
+      {/* Next Milestone Teaser (If available) */}
+      {nextMilestone && !loading && (
+        <div
+          style={{
+            background: 'var(--surface-2)',
+            borderTop: '1px solid var(--border)',
+            borderRight: '1px solid var(--border)',
+            borderBottom: '1px solid var(--border)',
+            borderLeft: '3.5px solid var(--accent)',
+            borderRadius: '8px',
+            padding: '0.45rem 0.75rem',
+            marginBottom: '0.75rem',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '0.5rem',
+          }}
+        >
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.72rem', fontWeight: 800, color: 'var(--accent)' }}>
+              <span>🎯 NEXT UNLOCK:</span>
+              <span style={{ color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {nextMilestone.title}
+              </span>
+            </div>
+            <div style={{ height: '4px', background: 'var(--surface-3)', borderRadius: '999px', marginTop: '0.3rem', overflow: 'hidden' }}>
+              <div
+                style={{
+                  height: '100%',
+                  width: `${nextMilestone.pct}%`,
+                  background: 'linear-gradient(90deg, var(--accent), #10b981)',
+                  borderRadius: '999px',
+                }}
+              />
+            </div>
+          </div>
+          <div style={{ textAlign: 'right', flexShrink: 0 }}>
+            <div style={{ fontSize: '0.76rem', fontWeight: 800, color: 'var(--accent)' }}>
+              {nextMilestone.pct}%
+            </div>
+            <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>
+              {nextMilestone.total - nextMilestone.solved} to go
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Content */}
       {loading ? (
-        <div style={{ textAlign: 'center', padding: '1.5rem 0', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+        <div style={{ textAlign: 'center', padding: '2rem 0', color: 'var(--text-muted)', fontSize: '0.82rem' }}>
+          <div className="courses-spinner" style={{ margin: '0 auto 0.5rem' }} />
           Loading skills &amp; badges...
         </div>
-      ) : displayBadges.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '1.5rem 1rem', background: 'var(--surface-2)', borderRadius: '12px', border: '1px dashed var(--border)', flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ fontSize: '1.8rem', marginBottom: '0.35rem' }}>🎯</div>
+      ) : itemsToShow.length === 0 ? (
+        <div
+          style={{
+            textAlign: 'center',
+            padding: '1.75rem 1rem',
+            background: 'var(--surface-2)',
+            borderRadius: '12px',
+            borderTop: '1px dashed var(--border)',
+            borderRight: '1px dashed var(--border)',
+            borderBottom: '1px dashed var(--border)',
+            borderLeft: '1px dashed var(--border)',
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <div style={{ fontSize: '2rem', marginBottom: '0.35rem' }}>🎯</div>
           <div style={{ fontWeight: 800, fontSize: '0.88rem', color: 'var(--text-primary)' }}>
-            No Badges Unlocked Yet
+            {activeTab === 'earned' ? 'No Mastered Badges Yet' : 'Start Solving to Earn Badges'}
           </div>
-          <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '0.25rem 0 0 0', maxWidth: 280 }}>
-            Complete 100% of questions in any topic or contest to earn your official skill badges!
+          <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', margin: '0.25rem 0 0 0', maxWidth: 260, lineHeight: 1.4 }}>
+            Solve 100% of questions in any roadmap topic or contest to unlock your official verified badges!
           </p>
+          <Link
+            href="/roadmaps"
+            className="btn btn-primary btn-sm"
+            style={{ marginTop: '0.85rem', fontSize: '0.76rem', fontWeight: 700 }}
+          >
+            Explore Roadmaps →
+          </Link>
         </div>
       ) : (
-        /* ── Flexible Dynamic Badge List Grid ─────────────────────────────────── */
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '0.75rem', flex: 1, alignContent: 'start' }}>
-          {displayBadges.map((b) => {
+        /* Dynamic Badges List (2 columns on medium/large screens) */
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '0.6rem', flex: 1, alignContent: 'start' }}>
+          {itemsToShow.map((b) => {
             const isCompleted = b.isCompleted;
             return (
-              <div
+              <Link
                 key={b.id}
-                style={{
-                  background: isCompleted ? 'rgba(245, 158, 11, 0.08)' : 'var(--surface-2)',
-                  border: isCompleted ? '1.5px solid rgba(245, 158, 11, 0.4)' : '1px solid var(--border)',
-                  borderRadius: '12px',
-                  padding: '0.75rem 0.85rem',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.75rem',
-                  boxShadow: isCompleted ? '0 4px 12px rgba(245, 158, 11, 0.12)' : 'none',
-                  transition: 'all 0.15s ease',
-                  cursor: 'pointer',
-                  position: 'relative',
-                  overflow: 'hidden',
-                }}
-                title={isCompleted ? `${b.title} (100% Completed)` : `${b.title} (${b.solved}/${b.total} Solved)`}
+                href="/skills"
+                style={{ textDecoration: 'none' }}
               >
-                {/* Badge Icon Emblem */}
                 <div
                   style={{
-                    width: 44,
-                    height: 44,
+                    background: 'var(--surface-2)',
+                    borderTop: '1px solid var(--border)',
+                    borderRight: '1px solid var(--border)',
+                    borderBottom: '1px solid var(--border)',
+                    borderLeft: `3px solid ${isCompleted ? 'var(--success, #10b981)' : 'var(--accent, #6366f1)'}`,
                     borderRadius: '10px',
-                    background: isCompleted ? 'rgba(245, 158, 11, 0.15)' : 'var(--surface-3)',
-                    border: isCompleted ? '1px solid rgba(245, 158, 11, 0.35)' : '1px solid var(--border)',
+                    padding: '0.65rem 0.75rem',
                     display: 'flex',
                     alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '1.45rem',
-                    flexShrink: 0,
-                    boxShadow: isCompleted ? '0 2px 8px rgba(245, 158, 11, 0.2)' : 'none',
+                    gap: '0.65rem',
+                    boxShadow: 'var(--shadow-sm)',
+                    transition: 'all 0.15s ease',
+                    cursor: 'pointer',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.transform = 'translateY(-2px)';
+                    e.currentTarget.style.borderColor = isCompleted ? 'var(--success, #10b981)' : 'var(--accent, #6366f1)';
+                    e.currentTarget.style.boxShadow = 'var(--shadow)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = 'none';
+                    e.currentTarget.style.borderColor = 'var(--border)';
+                    e.currentTarget.style.borderLeftColor = isCompleted ? 'var(--success, #10b981)' : 'var(--accent, #6366f1)';
+                    e.currentTarget.style.boxShadow = 'var(--shadow-sm)';
                   }}
                 >
-                  {b.badgeIcon || '🏆'}
-                </div>
-
-                {/* Badge Content */}
-                <div style={{ flex: 1, minWidth: 0 }}>
+                  {/* Emblem Icon */}
                   <div
                     style={{
-                      fontSize: '0.84rem',
-                      fontWeight: 800,
-                      color: 'var(--text-primary)',
-                      lineHeight: 1.2,
-                      whiteSpace: 'nowrap',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
+                      width: 38,
+                      height: 38,
+                      borderRadius: '8px',
+                      background: isCompleted
+                        ? 'rgba(16, 185, 129, 0.1)'
+                        : 'rgba(99, 102, 241, 0.1)',
+                      border: `1px solid ${isCompleted ? 'rgba(16, 185, 129, 0.25)' : 'rgba(99, 102, 241, 0.25)'}`,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '1.25rem',
+                      flexShrink: 0,
                     }}
                   >
-                    {b.title}
+                    {b.badgeIcon || (isCompleted ? '🏆' : '⚡')}
                   </div>
-                  
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginTop: '0.25rem' }}>
-                    {isCompleted ? (
-                      <span
-                        style={{
-                          fontSize: '0.65rem',
-                          fontWeight: 900,
-                          background: 'linear-gradient(135deg, #f59e0b, #eab308)',
-                          color: '#000',
-                          padding: '0.12rem 0.5rem',
-                          borderRadius: '999px',
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.3px',
-                        }}
-                      >
-                        🏆 100% MASTERED
-                      </span>
-                    ) : (
-                      <span
-                        style={{
-                          fontSize: '0.65rem',
-                          fontWeight: 700,
-                          background: 'var(--surface-3)',
-                          color: 'var(--text-muted)',
-                          padding: '0.12rem 0.5rem',
-                          borderRadius: '999px',
-                        }}
-                      >
-                        🔒 {b.solved}/{b.total} Solved
-                      </span>
-                    )}
+
+                  {/* Title & Status */}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div
+                      style={{
+                        fontSize: '0.84rem',
+                        fontWeight: 700,
+                        color: 'var(--text-primary)',
+                        lineHeight: 1.25,
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                      }}
+                      title={b.title}
+                    >
+                      {b.title}
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', marginTop: '0.25rem' }}>
+                      {isCompleted ? (
+                        <span
+                          style={{
+                            fontSize: '0.68rem',
+                            fontWeight: 700,
+                            background: 'rgba(16, 185, 129, 0.12)',
+                            color: 'var(--success, #10b981)',
+                            border: '1px solid rgba(16, 185, 129, 0.25)',
+                            padding: '0.1rem 0.45rem',
+                            borderRadius: '6px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.2rem',
+                          }}
+                        >
+                          <span>✓</span> Mastered
+                        </span>
+                      ) : (
+                        <span
+                          style={{
+                            fontSize: '0.68rem',
+                            fontWeight: 700,
+                            background: 'rgba(99, 102, 241, 0.12)',
+                            color: 'var(--accent, #6366f1)',
+                            border: '1px solid rgba(99, 102, 241, 0.25)',
+                            padding: '0.1rem 0.45rem',
+                            borderRadius: '6px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.2rem',
+                          }}
+                        >
+                          <span>⚡</span> {b.solved}/{b.total} ({b.pct}%)
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
+              </Link>
             );
           })}
         </div>
       )}
 
-      {allBadges.length > 4 && (
+      {/* Footer link */}
+      {displayList.length > 4 && (
         <Link
           href="/skills"
           style={{
             display: 'block',
             textAlign: 'center',
-            marginTop: '0.75rem',
-            fontSize: '0.78rem',
-            fontWeight: 600,
-            color: 'var(--text-muted)',
+            marginTop: '0.65rem',
+            fontSize: '0.76rem',
+            fontWeight: 700,
+            color: 'var(--accent)',
             textDecoration: 'none',
-            paddingTop: '0.6rem',
+            paddingTop: '0.5rem',
             borderTop: '1px solid var(--border)',
           }}
         >
-          +{allBadges.length - 4} more skills &amp; badges →
+          +{displayList.length - 4} more badges in library →
         </Link>
       )}
     </div>

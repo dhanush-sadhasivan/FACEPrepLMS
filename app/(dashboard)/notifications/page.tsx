@@ -34,17 +34,18 @@ export default async function NotificationsPage() {
 
   const allNotifications = notifications || [];
   const unreadCount = allNotifications.filter((n) => !n.is_read).length;
+  const announcementsCount = allNotifications.filter((n) => n.type === 'announcement' || (n.title && n.title.includes('📢'))).length;
   const accessRequestsCount = allNotifications.filter((n) => n.type === 'access_request').length;
-  const systemAlertsCount = allNotifications.filter((n) => n.type === 'system' || n.type === 'contest_assigned').length;
+  const systemAlertsCount = allNotifications.filter((n) => (n.type === 'system' || n.type === 'contest_assigned') && !(n.title && n.title.includes('📢'))).length;
 
   return (
     <div className="notifications-page">
       {/* Header */}
       <header className="notifications-header">
         <div>
-          <h1 className="notifications-title">Notifications &amp; Alerts</h1>
+          <h1 className="notifications-title">Notifications &amp; Announcements</h1>
           <p className="notifications-subtitle">
-            Stay informed about contest assignments, platform updates, and access requests.
+            Stay informed about broadcast announcements, contest assignments, platform updates, and access requests.
           </p>
         </div>
       </header>
@@ -68,18 +69,18 @@ export default async function NotificationsPage() {
         </div>
 
         <div className="stat-card-widget">
-          <div className="stat-widget-icon" style={{ color: 'var(--indigo)' }}>🔒</div>
+          <div className="stat-widget-icon" style={{ color: 'var(--accent)' }}>📢</div>
           <div>
-            <div className="stat-widget-val" style={{ color: 'var(--indigo)' }}>{accessRequestsCount}</div>
-            <div className="stat-widget-label">Access Requests</div>
+            <div className="stat-widget-val" style={{ color: 'var(--accent)' }}>{announcementsCount}</div>
+            <div className="stat-widget-label">Announcements</div>
           </div>
         </div>
 
         <div className="stat-card-widget">
-          <div className="stat-widget-icon" style={{ color: 'var(--success)' }}>⚡</div>
+          <div className="stat-widget-icon" style={{ color: 'var(--indigo)' }}>🔒</div>
           <div>
-            <div className="stat-widget-val" style={{ color: 'var(--success)' }}>{systemAlertsCount}</div>
-            <div className="stat-widget-label">Updates &amp; Contests</div>
+            <div className="stat-widget-val" style={{ color: 'var(--indigo)' }}>{accessRequestsCount}</div>
+            <div className="stat-widget-label">Access Requests</div>
           </div>
         </div>
       </div>

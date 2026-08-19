@@ -7,10 +7,16 @@ import { UserRole } from '@/lib/types';
 import { createClient } from '@/lib/supabase/client';
 import { useToast } from '@/components/Toast';
 import { SessionManager } from '@/components/SessionManager';
+import { PresenceProvider } from '@/components/PresenceProvider';
 import './layout.css';
 
 interface DashboardLayoutClientProps {
   role: UserRole;
+  currentUser?: {
+    id: string;
+    full_name?: string;
+    role?: string;
+  } | null;
   children: React.ReactNode;
 }
 
@@ -18,7 +24,7 @@ import GlobalFloatingTodo from '@/components/GlobalFloatingTodo';
 import ITAttendanceModal from '@/components/ITAttendanceModal';
 import GlobalSupportModal from '@/components/GlobalSupportModal';
 
-export default function DashboardLayoutClient({ role, children }: DashboardLayoutClientProps) {
+export default function DashboardLayoutClient({ role, currentUser, children }: DashboardLayoutClientProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [supportOpen, setSupportOpen] = useState(false);
   const [mustChangePassword, setMustChangePassword] = useState(false);
@@ -75,82 +81,84 @@ export default function DashboardLayoutClient({ role, children }: DashboardLayou
   };
 
   return (
-    <SessionManager>
-      <div className="layout">
-        <Sidebar
-          role={role}
-          mobileOpen={mobileOpen}
-          onCloseMobile={() => setMobileOpen(false)}
-        />
-        <main className="main-content">
-          <TopBar
-            userRole={role}
-            onToggleSidebar={() => setMobileOpen(!mobileOpen)}
+    <PresenceProvider currentUser={currentUser}>
+      <SessionManager>
+        <div className="layout">
+          <Sidebar
+            role={role}
+            mobileOpen={mobileOpen}
+            onCloseMobile={() => setMobileOpen(false)}
           />
-          {children}
-        </main>
+          <main className="main-content">
+            <TopBar
+              userRole={role}
+              onToggleSidebar={() => setMobileOpen(!mobileOpen)}
+            />
+            {children}
+          </main>
 
-        {/* Global Floating To-Do Notes Widget */}
-        <GlobalFloatingTodo />
+          {/* Global Floating To-Do Notes Widget */}
+          <GlobalFloatingTodo />
 
-        {/* Daily Internal Training (IT) Check Modal for Trainers */}
-        <ITAttendanceModal />
+          {/* Daily Internal Training (IT) Check Modal for Trainers */}
+          <ITAttendanceModal />
 
-        {/* Global Helpdesk & Support Ticket Request Modal */}
-        <GlobalSupportModal
-          isOpen={supportOpen}
-          onClose={() => setSupportOpen(false)}
-        />
+          {/* Global Helpdesk & Support Ticket Request Modal */}
+          <GlobalSupportModal
+            isOpen={supportOpen}
+            onClose={() => setSupportOpen(false)}
+          />
 
-        {/* Force Password Change Modal overlay */}
-        {mustChangePassword && (
-          <div className="modal-overlay" style={{ zIndex: 9999, background: 'rgba(0,0,0,0.85)' }}>
-            <div className="modal" style={{ maxWidth: 460, padding: '2rem' }}>
-              <div style={{ textAlign: 'center', marginBottom: '1.25rem' }}>
-                <div style={{ fontSize: '2.5rem', marginBottom: '0.5rem' }}>🔐</div>
-                <h2 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0 }}>Action Required: Set New Password</h2>
-                <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '0.35rem' }}>
-                  You logged in with a temporary password. Please set a new permanent password to continue.
-                </p>
+          {/* Force Password Change Modal overlay */}
+          {mustChangePassword && (
+            <div className="modal-overlay" style={{ zIndex: 9999, background: 'rgba(0,0,0,0.85)' }}>
+              <div className="modal" style={{ maxWidth: 460, padding: '2rem' }}>
+                <div style={{ textAlign: 'center', marginBottom: '1.25rem' }}>
+                  <div style={{ fontSize: '2.5rem', marginBottom: '0.5rem' }}>🔐</div>
+                  <h2 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0 }}>Action Required: Set New Password</h2>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '0.35rem' }}>
+                    You logged in with a temporary password. Please set a new permanent password to continue.
+                  </p>
+                </div>
+
+                {errorMsg && (
+                  <div style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid var(--error)', borderRadius: 6, padding: '0.6rem 0.85rem', color: 'var(--error)', fontSize: '0.85rem', marginBottom: '1rem' }}>
+                    ⚠️ {errorMsg}
+                  </div>
+                )}
+
+                <form onSubmit={handleForceUpdatePassword}>
+                  <div className="form-group mb-3">
+                    <label className="label">New Password *</label>
+                    <input
+                      type="password"
+                      className="input"
+                      placeholder="Min 6 characters"
+                      value={newPassword}
+                      onChange={e => setNewPassword(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div className="form-group mb-4">
+                    <label className="label">Confirm New Password *</label>
+                    <input
+                      type="password"
+                      className="input"
+                      placeholder="Confirm password"
+                      value={confirmPassword}
+                      onChange={e => setConfirmPassword(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <button type="submit" className="btn btn-primary w-full" style={{ width: '100%', padding: '0.75rem' }} disabled={isSubmitting}>
+                    {isSubmitting ? 'Updating Password...' : '🔒 Save New Password & Continue'}
+                  </button>
+                </form>
               </div>
-
-              {errorMsg && (
-                <div style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid var(--error)', borderRadius: 6, padding: '0.6rem 0.85rem', color: 'var(--error)', fontSize: '0.85rem', marginBottom: '1rem' }}>
-                  ⚠️ {errorMsg}
-                </div>
-              )}
-
-              <form onSubmit={handleForceUpdatePassword}>
-                <div className="form-group mb-3">
-                  <label className="label">New Password *</label>
-                  <input
-                    type="password"
-                    className="input"
-                    placeholder="Min 6 characters"
-                    value={newPassword}
-                    onChange={e => setNewPassword(e.target.value)}
-                    required
-                  />
-                </div>
-                <div className="form-group mb-4">
-                  <label className="label">Confirm New Password *</label>
-                  <input
-                    type="password"
-                    className="input"
-                    placeholder="Confirm password"
-                    value={confirmPassword}
-                    onChange={e => setConfirmPassword(e.target.value)}
-                    required
-                  />
-                </div>
-                <button type="submit" className="btn btn-primary w-full" style={{ width: '100%', padding: '0.75rem' }} disabled={isSubmitting}>
-                  {isSubmitting ? 'Updating Password...' : '🔒 Save New Password & Continue'}
-                </button>
-              </form>
             </div>
-          </div>
-        )}
-      </div>
-    </SessionManager>
+          )}
+        </div>
+      </SessionManager>
+    </PresenceProvider>
   );
 }

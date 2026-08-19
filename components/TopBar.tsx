@@ -2,6 +2,7 @@
 
 import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { NotificationBell } from './NotificationBell';
 import './TopBar.css';
 
 interface TopBarProps {
@@ -38,6 +39,7 @@ export function TopBar({ userRole, onToggleSidebar }: TopBarProps) {
       if (part === 'contests') label = 'Contests';
       if (part === 'skills') label = 'Skills & Badges';
       if (part === 'groups') label = 'Groups';
+      if (part === 'notifications') label = 'Notifications';
       if (part === 'new') label = 'Create New';
       if (part === 'edit') label = 'Edit';
       if (part.length > 20) label = 'Details';
@@ -96,8 +98,10 @@ export function TopBar({ userRole, onToggleSidebar }: TopBarProps) {
         </nav>
       </div>
 
-      {/* TopBar Right: Support Ticket & Floating Notes Trigger Buttons */}
+      {/* TopBar Right: Notifications Bell, Support Ticket & Floating Notes Trigger Buttons */}
       <div className="topbar-right" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+        <NotificationBell />
+
         <button
           onClick={() => window.dispatchEvent(new Event('open-global-support'))}
           className="btn btn-secondary btn-sm"

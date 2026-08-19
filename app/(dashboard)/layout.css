@@ -6,15 +6,15 @@
 
 .main-content {
   flex: 1;
-  padding: 1rem 1.25rem;
+  padding: 1.5rem 2rem;
   overflow-y: auto;
-  max-width: 1440px;
+  max-width: 1480px;
   width: 100%;
   min-width: 0;
 }
 
 @media (max-width: 768px) {
   .main-content {
-    padding: 0.85rem 0.85rem;
+    padding: 1rem;
   }
 }

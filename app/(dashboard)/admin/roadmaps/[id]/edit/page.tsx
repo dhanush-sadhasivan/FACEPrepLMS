@@ -4,6 +4,7 @@ import { useState, useEffect, use } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Contest, Question, Group } from '@/lib/types';
+import DayPlanTab from './DayPlanTab';
 import '../../new/page.css';
 
 interface TopicCategory {
@@ -78,12 +79,16 @@ export default function EditRoadmapPage({ params }: { params: Promise<{ id: stri
   const { id } = use(params);
   const router = useRouter();
 
+  // Active Tab: 'details' (standard topic builder) or 'dayplan' (IT day-wise plan)
+  const [activeTab, setActiveTab] = useState<'details' | 'dayplan'>('details');
+
   // Form basic fields
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [domain, setDomain] = useState('DSA');
   const [level, setLevel] = useState('Intermediate');
   const [estimatedHours, setEstimatedHours] = useState(30);
+  const [isItRoadmap, setIsItRoadmap] = useState(false);
 
   // Contests & Groups lists for selectors
   const [contests, setContests] = useState<Contest[]>([]);
@@ -134,6 +139,7 @@ export default function EditRoadmapPage({ params }: { params: Promise<{ id: stri
           setEstimatedHours(rm.estimated_hours || 30);
           setSelectedContestId(rm.contest_id || '');
           setSelectedGroupIds(rm.target_group_ids || []);
+          setIsItRoadmap(Boolean(rm.is_it_roadmap));
 
           // Parse topics from existing roadmap
           const topics = rm.topics || [];
@@ -350,6 +356,7 @@ export default function EditRoadmapPage({ params }: { params: Promise<{ id: stri
       estimated_hours: Number(estimatedHours),
       topics: formattedTopics,
       contest_id: selectedContestId || null,
+      is_it_roadmap: isItRoadmap,
       target_group_ids: selectedGroupIds,
     };
 
@@ -406,44 +413,115 @@ export default function EditRoadmapPage({ params }: { params: Promise<{ id: stri
   return (
     <div className="create-roadmap-page">
       {/* Header */}
-      <header className="create-roadmap-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+      <header className="create-roadmap-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.3rem' }}>
             <Link href="/admin/roadmaps" style={{ color: 'var(--text-muted)', textDecoration: 'none', fontSize: '0.85rem' }}>
               ← Back to Roadmaps
             </Link>
           </div>
-          <h1 className="create-roadmap-title">Edit Topic Roadmap</h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', flexWrap: 'wrap' }}>
+            <h1 className="create-roadmap-title" style={{ margin: 0 }}>Edit Topic Roadmap</h1>
+            {isItRoadmap && (
+              <span style={{ fontSize: '0.78rem', fontWeight: 800, background: 'rgba(99, 102, 241, 0.15)', color: 'var(--accent)', border: '1px solid rgba(99, 102, 241, 0.3)', padding: '0.2rem 0.6rem', borderRadius: '6px' }}>
+                🎓 IT Training Roadmap
+              </span>
+            )}
+          </div>
           <p className="create-roadmap-subtitle">
-            Update roadmap details, strictly extracted hyphen (-) prefixes, and unclassified question mappings
+            Update roadmap configuration, modules, and internal training day-wise schedule.
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={handleDelete}
-          disabled={deleting}
-          className="btn btn-secondary"
-          style={{ color: 'var(--error)', borderColor: 'var(--error-muted)' }}
-        >
-          {deleting ? 'Deleting…' : '🗑️ Delete Roadmap'}
-        </button>
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+          <button
+            type="button"
+            onClick={handleDelete}
+            disabled={deleting}
+            className="btn btn-secondary"
+            style={{ color: 'var(--error)', borderColor: 'var(--error-muted)', fontSize: '0.85rem' }}
+          >
+            {deleting ? 'Deleting…' : '🗑️ Delete Roadmap'}
+          </button>
+        </div>
       </header>
 
-      <form onSubmit={handleSubmit} className="create-roadmap-layout">
-        {/* Left Column: Form & Contest Selector */}
-        <div className="create-roadmap-left">
-          {/* Step 1: Basic Info */}
-          <div className="roadmap-form-section">
-            <h3 className="section-heading">1. Basic Information</h3>
+      {/* Tabs Switcher */}
+      <div style={{ display: 'flex', gap: '0.5rem', borderBottom: '1px solid var(--border)', marginBottom: '1.5rem', paddingBottom: '0.5rem' }}>
+        <button
+          type="button"
+          onClick={() => setActiveTab('details')}
+          style={{
+            padding: '0.6rem 1.25rem',
+            borderRadius: '10px',
+            fontSize: '0.9rem',
+            fontWeight: 800,
+            cursor: 'pointer',
+            border: activeTab === 'details' ? '1px solid var(--accent)' : '1px solid var(--border)',
+            background: activeTab === 'details' ? 'var(--accent)' : 'var(--surface)',
+            color: activeTab === 'details' ? '#ffffff' : 'var(--text-secondary)',
+            transition: 'all 0.2s ease',
+          }}
+        >
+          🛠️ Roadmap Details &amp; Topics
+        </button>
 
-            <div className="form-group mb-3">
-              <label className="label">Roadmap Title *</label>
-              <input
-                type="text"
-                className="input"
-                value={title}
-                onChange={e => setTitle(e.target.value)}
+        <button
+          type="button"
+          onClick={() => setActiveTab('dayplan')}
+          style={{
+            padding: '0.6rem 1.25rem',
+            borderRadius: '10px',
+            fontSize: '0.9rem',
+            fontWeight: 800,
+            cursor: 'pointer',
+            border: activeTab === 'dayplan' ? '1px solid var(--accent)' : '1px solid var(--border)',
+            background: activeTab === 'dayplan' ? 'var(--accent)' : 'var(--surface)',
+            color: activeTab === 'dayplan' ? '#ffffff' : 'var(--text-secondary)',
+            transition: 'all 0.2s ease',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.4rem',
+          }}
+        >
+          <span>📅</span> Internal Training Day Plan
+        </button>
+      </div>
+
+      {activeTab === 'dayplan' ? (
+        <DayPlanTab roadmapId={id} roadmapTitle={title || 'Roadmap'} />
+      ) : (
+        <form onSubmit={handleSubmit} className="create-roadmap-layout">
+          {/* Left Column: Form & Contest Selector */}
+          <div className="create-roadmap-left">
+            {/* Step 1: Basic Info */}
+            <div className="roadmap-form-section">
+              <h3 className="section-heading">1. Basic Information</h3>
+
+              <div className="form-group mb-3">
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', marginBottom: '0.75rem', padding: '0.6rem 0.85rem', background: 'var(--surface-2)', borderRadius: '10px', border: '1px solid var(--border)' }}>
+                  <input
+                    type="checkbox"
+                    checked={isItRoadmap}
+                    onChange={(e) => setIsItRoadmap(e.target.checked)}
+                    style={{ width: 18, height: 18, accentColor: 'var(--accent)' }}
+                  />
+                  <div>
+                    <strong style={{ fontSize: '0.88rem', color: 'var(--text-primary)' }}>🎓 Flag as Internal Training (IT) Roadmap</strong>
+                    <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)' }}>
+                      Enables day-wise calendar scheduling and trainer IT day attendance logging.
+                    </div>
+                  </div>
+                </label>
+              </div>
+
+              <div className="form-group mb-3">
+                <label className="label">Roadmap Title *</label>
+                <input
+                  type="text"
+                  className="input"
+                  value={title}
+                  onChange={e => setTitle(e.target.value)}
                 required
               />
             </div>
@@ -773,6 +851,9 @@ export default function EditRoadmapPage({ params }: { params: Promise<{ id: stri
           </div>
         </div>
       </form>
-    </div>
-  );
+    )}
+  </div>
+);
 }
+
+

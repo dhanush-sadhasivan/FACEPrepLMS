@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
 import { Roadmap, UserRoadmapProgress, RoadmapTopic, RoadmapQuestion } from '@/lib/types';
 import './page.css';
 
@@ -548,14 +549,23 @@ export default function RoadmapsPage() {
         </div>
 
         {canInitiateScrape && (
-          <button
-            className="btn btn-sm btn-primary"
-            onClick={() => handleSyncScrape(null)}
-            disabled={isSyncing}
-            style={{ fontSize: '0.78rem', fontWeight: 800 }}
-          >
-            {isSyncing ? '🔄 Syncing...' : '🔄 Initiate Scrape & Sync'}
-          </button>
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+            <Link
+              href="/admin/roadmaps"
+              className="btn btn-sm btn-secondary"
+              style={{ fontSize: '0.78rem', fontWeight: 800 }}
+            >
+              ⚙️ Manage Roadmaps
+            </Link>
+            <button
+              className="btn btn-sm btn-primary"
+              onClick={() => handleSyncScrape(null)}
+              disabled={isSyncing}
+              style={{ fontSize: '0.78rem', fontWeight: 800 }}
+            >
+              {isSyncing ? '🔄 Syncing...' : '🔄 Initiate Scrape & Sync'}
+            </button>
+          </div>
         )}
       </header>
 

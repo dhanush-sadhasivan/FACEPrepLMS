@@ -74,6 +74,7 @@ export async function PUT(
     estimated_hours,
     topics,
     contest_id,
+    is_it_roadmap,
     target_group_ids,
     target_user_ids,
   } = body;
@@ -87,17 +88,22 @@ export async function PUT(
   }
 
   // 1. Update Roadmap row
+  const updatePayload: any = {
+    title: title.trim(),
+    description: description?.trim() || null,
+    domain: domain || 'General',
+    level: level || 'Beginner',
+    estimated_hours: estimated_hours || 20,
+    topics,
+    contest_id: contest_id || null,
+  };
+  if (typeof is_it_roadmap === 'boolean') {
+    updatePayload.is_it_roadmap = is_it_roadmap;
+  }
+
   const { data: roadmap, error: updateError } = await supabase
     .from('roadmaps')
-    .update({
-      title: title.trim(),
-      description: description?.trim() || null,
-      domain: domain || 'General',
-      level: level || 'Beginner',
-      estimated_hours: estimated_hours || 20,
-      topics,
-      contest_id: contest_id || null,
-    })
+    .update(updatePayload)
     .eq('id', id)
     .select()
     .single();
