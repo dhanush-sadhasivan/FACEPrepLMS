@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
+import { getAdminClient } from '@/lib/supabase/admin';
 import NotificationList from './NotificationList';
 import './page.css';
 
@@ -14,8 +15,10 @@ export default async function NotificationsPage() {
     redirect('/login');
   }
 
+  const dbAdmin = getAdminClient();
+
   // Fetch all notifications for user
-  const { data: notifications, error } = await supabase
+  const { data: notifications, error } = await dbAdmin
     .from('notifications')
     .select('*')
     .eq('user_id', user.id)
@@ -26,7 +29,7 @@ export default async function NotificationsPage() {
   }
 
   // Fetch user role for admin/manager views
-  const { data: profile } = await supabase
+  const { data: profile } = await dbAdmin
     .from('users')
     .select('role')
     .eq('id', user.id)

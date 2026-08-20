@@ -335,11 +335,11 @@ export default function ContestListClient({
                     <div style={{ display: 'flex', gap: '0.35rem' }}>
                       <button
                         className="btn btn-ghost btn-sm"
-                        title="Manage Question Topics in DB"
+                        title="Manage Question Categories"
                         onClick={() => setManagingTopicsContest(contest)}
                         style={{ fontSize: '0.78rem' }}
                       >
-                        🏷️ Topics
+                        🏷️ Categories
                       </button>
                       <Link href={`/contests/${contest.id}/edit`} className="btn btn-ghost btn-sm" title="Edit & Manage Assignments" style={{ fontSize: '0.82rem' }}>
                         ⚙️

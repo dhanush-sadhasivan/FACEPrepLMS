@@ -31,6 +31,18 @@ export default function QuestionsPanel({
     return map;
   });
 
+  // Inline category editing state
+  const [domainState, setDomainState] = useState<Record<string, string>>(() => {
+    const map: Record<string, string> = {};
+    questions.forEach((q) => {
+      map[q.id] = q.domain || 'General';
+    });
+    return map;
+  });
+  const [editingDomainId, setEditingDomainId] = useState<string | null>(null);
+  const [editingDomainValue, setEditingDomainValue] = useState('');
+  const [savingDomainId, setSavingDomainId] = useState<string | null>(null);
+
   const toggleQuestionStatus = async (questionId: string, currentEnabled: boolean) => {
     setTogglingId(questionId);
     const newStatus = !currentEnabled;
@@ -60,6 +72,49 @@ export default function QuestionsPanel({
     }
   };
 
+  const startEditingDomain = (questionId: string) => {
+    setEditingDomainId(questionId);
+    setEditingDomainValue(domainState[questionId] || 'General');
+  };
+
+  const cancelEditingDomain = () => {
+    setEditingDomainId(null);
+    setEditingDomainValue('');
+  };
+
+  const saveDomain = async (questionId: string) => {
+    const newDomain = editingDomainValue.trim() || 'General';
+    setSavingDomainId(questionId);
+    try {
+      const res = await fetch(`/api/admin/questions/${questionId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ domain: newDomain }),
+      });
+
+      if (res.ok) {
+        setDomainState((prev) => ({ ...prev, [questionId]: newDomain }));
+        showToast(`Category updated to "${newDomain}"`, 'success');
+        setEditingDomainId(null);
+        setEditingDomainValue('');
+        router.refresh();
+      } else {
+        const data = await res.json();
+        showToast(`Failed to update category: ${data.error || 'Unknown error'}`, 'error');
+      }
+    } catch (err) {
+      console.error(err);
+      showToast('Error updating category', 'error');
+    } finally {
+      setSavingDomainId(null);
+    }
+  };
+
+  // Collect existing domain names for datalist suggestions
+  const allDomains = useMemo(() =>
+    Array.from(new Set(Object.values(domainState).filter(Boolean))),
+    [domainState]
+  );
   const rescrapeQuestions = async () => {
     setScraping(true);
     setScrapeError('');
@@ -116,7 +171,8 @@ export default function QuestionsPanel({
       const search = searchQuery.toLowerCase().trim();
       const titleMatch = (q.title || '').toLowerCase().includes(search);
       const slugMatch = (q.slug || '').toLowerCase().includes(search);
-      const domainMatch = (q.domain || '').toLowerCase().includes(search);
+      const currentDomain = domainState[q.id] || q.domain || '';
+      const domainMatch = currentDomain.toLowerCase().includes(search);
       const matchesSearch = search === '' || titleMatch || slugMatch || domainMatch;
 
       if (!matchesSearch) return false;
@@ -124,20 +180,20 @@ export default function QuestionsPanel({
       if (filterStatus === 'disabled') return !isEnabled;
       return true;
     });
-  }, [questions, enabledState, searchQuery, filterStatus]);
+  }, [questions, enabledState, domainState, searchQuery, filterStatus]);
 
-  // Group filtered questions by domain
+  // Group filtered questions by domain (using live domainState)
   const domainMap = useMemo(() => {
     const map = new Map<string, any[]>();
     filteredQuestions.forEach((q) => {
-      const domain = q.domain || 'General';
+      const domain = domainState[q.id] || q.domain || 'General';
       if (!map.has(domain)) {
         map.set(domain, []);
       }
       map.get(domain)!.push(q);
     });
     return map;
-  }, [filteredQuestions]);
+  }, [filteredQuestions, domainState]);
 
   const domains = Array.from(domainMap.keys());
   const totalEnabled = Object.values(enabledState).filter(Boolean).length;
@@ -291,9 +347,12 @@ export default function QuestionsPanel({
                 </summary>
 
                 <div style={{ marginTop: '0.6rem', display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-                  {domainQs.map((q, idx) => {
+                {domainQs.map((q, idx) => {
                     const isEnabled = enabledState[q.id] !== false;
                     const isToggling = togglingId === q.id;
+                    const isEditingThisDomain = editingDomainId === q.id;
+                    const isSavingThisDomain = savingDomainId === q.id;
+                    const currentDomain = domainState[q.id] || q.domain || 'General';
 
                     return (
                       <div
@@ -334,11 +393,90 @@ export default function QuestionsPanel({
                               {q.title}
                             </div>
 
-                            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.15rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.15rem', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
                               <span className="badge badge-muted" style={{ fontSize: '0.65rem', textTransform: 'capitalize' }}>
                                 {q.difficulty || 'Medium'}
                               </span>
                               <span>⭐ {q.max_score || 10} Points</span>
+
+                              {/* Inline Category Edit */}
+                              {isEditingThisDomain ? (
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                                  <input
+                                    type="text"
+                                    list="inline-domain-list"
+                                    value={editingDomainValue}
+                                    onChange={e => setEditingDomainValue(e.target.value)}
+                                    onKeyDown={e => {
+                                      if (e.key === 'Enter') saveDomain(q.id);
+                                      if (e.key === 'Escape') cancelEditingDomain();
+                                    }}
+                                    autoFocus
+                                    style={{
+                                      fontSize: '0.72rem',
+                                      padding: '0.1rem 0.35rem',
+                                      borderRadius: '4px',
+                                      border: '1px solid var(--accent)',
+                                      background: 'var(--surface)',
+                                      color: 'var(--text-primary)',
+                                      width: '120px',
+                                      fontFamily: 'Outfit, sans-serif',
+                                    }}
+                                  />
+                                  <button
+                                    onClick={() => saveDomain(q.id)}
+                                    disabled={isSavingThisDomain}
+                                    style={{
+                                      background: 'var(--accent)',
+                                      color: '#fff',
+                                      border: 'none',
+                                      borderRadius: '4px',
+                                      fontSize: '0.65rem',
+                                      padding: '0.1rem 0.3rem',
+                                      cursor: 'pointer',
+                                      fontWeight: 700,
+                                    }}
+                                  >
+                                    {isSavingThisDomain ? '…' : '✓'}
+                                  </button>
+                                  <button
+                                    onClick={cancelEditingDomain}
+                                    style={{
+                                      background: 'none',
+                                      color: 'var(--text-muted)',
+                                      border: '1px solid var(--border)',
+                                      borderRadius: '4px',
+                                      fontSize: '0.65rem',
+                                      padding: '0.1rem 0.3rem',
+                                      cursor: 'pointer',
+                                    }}
+                                  >
+                                    ✕
+                                  </button>
+                                </span>
+                              ) : (
+                                <span
+                                  onClick={() => startEditingDomain(q.id)}
+                                  title="Click to change category"
+                                  style={{
+                                    background: 'rgba(99,102,241,0.1)',
+                                    color: 'var(--accent)',
+                                    border: '1px solid rgba(99,102,241,0.25)',
+                                    borderRadius: '4px',
+                                    padding: '0.05rem 0.35rem',
+                                    fontSize: '0.65rem',
+                                    fontWeight: 700,
+                                    cursor: 'pointer',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '0.2rem',
+                                  }}
+                                >
+                                  📂 {currentDomain}
+                                  <span style={{ fontSize: '0.6rem', opacity: 0.6 }}>✎</span>
+                                </span>
+                              )}
+
                               {!isEnabled && (
                                 <span style={{ color: '#ef4444', fontWeight: 800, fontSize: '0.68rem' }}>
                                   [DISABLED / EXCLUDED]
@@ -397,6 +535,13 @@ export default function QuestionsPanel({
             );
           })
         )}
+
+        {/* Domain suggestions datalist for inline editing */}
+        <datalist id="inline-domain-list">
+          {allDomains.map(d => (
+            <option key={d} value={d} />
+          ))}
+        </datalist>
       </div>
     </div>
   );

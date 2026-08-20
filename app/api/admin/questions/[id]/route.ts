@@ -28,6 +28,7 @@ export async function PATCH(
   if (body.topic !== undefined) updatePayload.topic = body.topic ? body.topic.trim() : null;
   if (body.title !== undefined) updatePayload.title = body.title.trim();
   if (body.difficulty !== undefined) updatePayload.difficulty = body.difficulty;
+  if (body.domain !== undefined) updatePayload.domain = body.domain ? body.domain.trim() : 'General';
 
   const { data, error } = await supabase
     .from('questions')
