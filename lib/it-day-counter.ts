@@ -1,4 +1,5 @@
 import { getAdminClient } from '@/lib/supabase/admin';
+import { formatISODate } from '@/lib/it-calendar';
 
 export interface ITAttendanceResult {
   success: boolean;
@@ -16,7 +17,7 @@ export async function recordITAttendance(
   didIT: boolean
 ): Promise<ITAttendanceResult> {
   const supabase = getAdminClient();
-  const today = new Date().toISOString().split('T')[0];
+  const today = formatISODate(new Date());
 
   const { data: profile } = await supabase
     .from('users')
@@ -33,7 +34,7 @@ export async function recordITAttendance(
   const metadata = authUserData?.user?.user_metadata || {};
 
   const lastCheckedDate = profile.last_it_check_date || metadata.last_it_check_date || null;
-  const currentCount = profile.it_days_count ?? metadata.it_days_count ?? 0;
+  const currentCount = Math.max(profile.it_days_count || 0, metadata.it_days_count || 0);
   const alreadyCountedToday = lastCheckedDate === today;
 
   let newCount = currentCount;

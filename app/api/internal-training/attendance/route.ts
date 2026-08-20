@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { getAdminClient } from '@/lib/supabase/admin';
 import { NextResponse } from 'next/server';
+import { formatISODate } from '@/lib/it-calendar';
 
 // POST /api/internal-training/attendance
 // Admin/Manager manually adjusts or increments IT days attendance count for a trainer
@@ -29,7 +30,7 @@ export async function POST(request: Request) {
   }
 
   const dbAdmin = getAdminClient();
-  const today = new Date().toISOString().split('T')[0];
+  const today = formatISODate(new Date());
 
   // 1. Fetch current user data & auth metadata
   const { data: authUserData } = await dbAdmin.auth.admin.getUserById(userId);
@@ -41,7 +42,7 @@ export async function POST(request: Request) {
     .eq('id', userId)
     .single();
 
-  const currentCount = profile?.it_days_count ?? metadata.it_days_count ?? 0;
+  const currentCount = Math.max(profile?.it_days_count || 0, metadata?.it_days_count || 0);
 
   let targetCount = currentCount;
   if (action === 'increment') {

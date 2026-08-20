@@ -67,7 +67,7 @@ export default async function InternalTrainingPage() {
     id: profile.id,
     full_name: profile.full_name,
     role: profile.role,
-    it_days_count: profile.it_days_count ?? metadata.it_days_count ?? 0,
+    it_days_count: Math.max(profile.it_days_count || 0, metadata.it_days_count || 0),
     last_it_check_date: profile.last_it_check_date || metadata.last_it_check_date || null,
   };
 

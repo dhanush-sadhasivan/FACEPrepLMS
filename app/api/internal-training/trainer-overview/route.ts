@@ -221,7 +221,7 @@ export async function GET() {
       });
 
       const authMeta = authMetaMap.get(u.id) || {};
-      const itDays = u.it_days_count ?? authMeta.it_days_count ?? 0;
+      const itDays = Math.max(u.it_days_count || 0, authMeta.it_days_count || 0);
       const lastCheck = u.last_it_check_date || authMeta.last_it_check_date || null;
       const isCountedToday = lastCheck === today;
 

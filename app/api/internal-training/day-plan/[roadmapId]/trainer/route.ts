@@ -63,8 +63,8 @@ export async function GET(
   const { data: authUserData } = await dbAdmin.auth.admin.getUserById(user.id);
   const metadata = authUserData?.user?.user_metadata || {};
 
-  const itDaysCount = profile?.it_days_count ?? metadata.it_days_count ?? 0;
-  const lastItCheckDate = profile?.last_it_check_date || metadata.last_it_check_date || null;
+  const itDaysCount = Math.max(profile?.it_days_count || 0, metadata?.it_days_count || 0);
+  const lastItCheckDate = profile?.last_it_check_date || metadata?.last_it_check_date || null;
   const isITCountedToday = lastItCheckDate === today;
   const needsCheckInToday = !isITCountedToday;
 

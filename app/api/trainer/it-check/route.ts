@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { getAdminClient } from '@/lib/supabase/admin';
 import { recordITAttendance } from '@/lib/it-day-counter';
+import { formatISODate } from '@/lib/it-calendar';
 
 export async function GET() {
   const supabaseServer = await createClient();
@@ -12,7 +13,7 @@ export async function GET() {
   }
 
   const supabase = getAdminClient();
-  const today = new Date().toISOString().split('T')[0];
+  const today = formatISODate(new Date());
 
   // Try to fetch user record
   const { data: profile } = await supabase
@@ -35,7 +36,7 @@ export async function GET() {
   const metadata = authUserData?.user?.user_metadata || {};
 
   const lastCheckedDate = profile.last_it_check_date || metadata.last_it_check_date || null;
-  const itDaysCount = profile.it_days_count ?? metadata.it_days_count ?? 0;
+  const itDaysCount = Math.max(profile.it_days_count || 0, metadata.it_days_count || 0);
 
   const needsCheck = lastCheckedDate !== today;
 
