@@ -71,7 +71,6 @@ export default async function DashboardPage() {
       const { data: pageRows, error: pErr } = await dbAdmin
         .from('progress')
         .select('user_id, question_id, score, status, contest_id')
-        .not('contest_id', 'is', null)
         .or('score.gt.0,status.eq.solved')
         .range(pFrom, pFrom + pStep - 1);
 
