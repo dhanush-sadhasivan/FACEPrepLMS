@@ -49,6 +49,7 @@ export async function GET() {
     groupMembersRes,
     allUsersRes,
     trainerProgressRes,
+    authUsersRes,
   ] = await Promise.all([
     dbAdmin.from('it_roadmap_config').select('*').in('roadmap_id', roadmapIds),
     dbAdmin.from('it_day_plans').select('id, roadmap_id, day_number').in('roadmap_id', roadmapIds),
@@ -56,6 +57,7 @@ export async function GET() {
     dbAdmin.from('group_members').select('group_id, user_id'),
     dbAdmin.from('users').select('id, full_name, emp_id, email, team, role').neq('role', 'admin'),
     dbAdmin.from('it_trainer_progress').select('*').in('roadmap_id', roadmapIds),
+    dbAdmin.auth.admin.listUsers({ perPage: 1000 }).catch(() => ({ data: { users: [] } })),
   ]);
 
   const configs = configsRes.data || [];
@@ -64,6 +66,12 @@ export async function GET() {
   const groupMembers = groupMembersRes.data || [];
   const allUsers = allUsersRes.data || [];
   const trainerProgressList = trainerProgressRes.data || [];
+  const authUsersList = (authUsersRes as any)?.data?.users || [];
+
+  const authMetaMap = new Map<string, any>();
+  authUsersList.forEach((au: any) => {
+    authMetaMap.set(au.id, au.user_metadata || {});
+  });
 
   // Fetch questions for day plans
   const dayPlanIds = dayPlans.map((dp: any) => dp.id);
@@ -212,6 +220,11 @@ export async function GET() {
         }
       });
 
+      const authMeta = authMetaMap.get(u.id) || {};
+      const itDays = u.it_days_count ?? authMeta.it_days_count ?? 0;
+      const lastCheck = u.last_it_check_date || authMeta.last_it_check_date || null;
+      const isCountedToday = lastCheck === today;
+
       overviewList.push({
         user_id: u.id,
         full_name: u.full_name || 'Unnamed Trainer',
@@ -226,10 +239,12 @@ export async function GET() {
         completed_questions_count: completedCount,
         total_questions_count: totalQuestionsCount,
         pending_questions_count: pendingCount,
-        it_days_count: u.it_days_count || 0,
+        it_days_count: itDays,
         extended_days: p?.extended_days || 0,
         extension_count: p?.extension_count || 0,
         is_online: false, // populated on client via Realtime Presence
+        last_it_check_date: lastCheck,
+        is_it_counted_today: isCountedToday,
       });
     });
   });

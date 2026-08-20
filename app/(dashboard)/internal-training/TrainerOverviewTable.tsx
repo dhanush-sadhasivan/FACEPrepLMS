@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useState, useEffect, useMemo } from 'react';
 import { ITTrainerOverviewItem } from '@/lib/types';
@@ -49,6 +49,12 @@ export default function TrainerOverviewTable({ onlineUserIds: propOnlineUserIds 
   const [extendTarget, setExtendTarget] = useState<ITTrainerOverviewItem | null>(null);
   const [extraDays, setExtraDays] = useState(3);
   const [extending, setExtending] = useState(false);
+
+  // Attendance Edit Modal State
+  const [editAttendanceTarget, setEditAttendanceTarget] = useState<ITTrainerOverviewItem | null>(null);
+  const [attendanceDaysInput, setAttendanceDaysInput] = useState<number>(0);
+  const [updatingAttendance, setUpdatingAttendance] = useState(false);
+
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
   const showToast = (msg: string) => {
@@ -75,6 +81,81 @@ export default function TrainerOverviewTable({ onlineUserIds: propOnlineUserIds 
     loadOverview();
   }, []);
 
+  // Quick +1 IT Day handler
+  const handleQuickAddAttendance = async (t: ITTrainerOverviewItem, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    const newTotal = (t.it_days_count || 0) + 1;
+    // Optimistic UI update
+    setTrainers((prev) =>
+      prev.map((item) =>
+        item.user_id === t.user_id ? { ...item, it_days_count: newTotal } : item
+      )
+    );
+    showToast(`🎉 Added +1 IT Day for ${t.full_name}! (Total: ${newTotal} days)`);
+
+    try {
+      const res = await fetch('/api/internal-training/attendance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: t.user_id, action: 'increment' }),
+      });
+      if (!res.ok) {
+        await loadOverview();
+      }
+    } catch (err: any) {
+      showToast(`❌ Error: ${err.message}`);
+      await loadOverview();
+    }
+  };
+
+  // Open Edit Attendance Modal
+  const handleOpenEditAttendance = (t: ITTrainerOverviewItem, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setEditAttendanceTarget(t);
+    setAttendanceDaysInput(t.it_days_count || 0);
+  };
+
+  // Confirm custom attendance count
+  const handleConfirmEditAttendance = async () => {
+    if (!editAttendanceTarget) return;
+    setUpdatingAttendance(true);
+    const targetVal = Math.max(0, Number(attendanceDaysInput) || 0);
+
+    // Optimistic update
+    setTrainers((prev) =>
+      prev.map((item) =>
+        item.user_id === editAttendanceTarget.user_id
+          ? { ...item, it_days_count: targetVal }
+          : item
+      )
+    );
+
+    try {
+      const res = await fetch('/api/internal-training/attendance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: editAttendanceTarget.user_id,
+          newCount: targetVal,
+        }),
+      });
+
+      if (res.ok) {
+        showToast(`✅ Set IT Days to ${targetVal} for ${editAttendanceTarget.full_name}!`);
+        setEditAttendanceTarget(null);
+      } else {
+        const err = await res.json();
+        showToast(`❌ Failed: ${err.error || 'Unknown error'}`);
+        await loadOverview();
+      }
+    } catch (err: any) {
+      showToast(`❌ Error: ${err.message}`);
+      await loadOverview();
+    } finally {
+      setUpdatingAttendance(false);
+    }
+  };
+
   // Filtered trainers list with online status attached
   const enrichedTrainers = useMemo(() => {
     return trainers.map((t) => ({
@@ -97,7 +178,9 @@ export default function TrainerOverviewTable({ onlineUserIds: propOnlineUserIds 
     const online = enrichedTrainers.filter((t) => t.is_online).length;
     const pending = enrichedTrainers.filter((t) => t.pending_questions_count > 0).length;
     const ontrack = enrichedTrainers.filter((t) => t.pending_questions_count === 0).length;
-    return { all: enrichedTrainers.length, online, pending, ontrack };
+    const totalITDays = enrichedTrainers.reduce((sum, t) => sum + (t.it_days_count || 0), 0);
+    const avgITDays = enrichedTrainers.length > 0 ? (totalITDays / enrichedTrainers.length).toFixed(1) : '0';
+    return { all: enrichedTrainers.length, online, pending, ontrack, totalITDays, avgITDays };
   }, [enrichedTrainers]);
 
   const filteredTrainers = useMemo(() => {
@@ -214,6 +297,34 @@ export default function TrainerOverviewTable({ onlineUserIds: propOnlineUserIds 
             </svg>
             <span>Refresh</span>
           </button>
+        </div>
+      </div>
+
+      {/* KPI Overview Summary Strip */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '0.75rem', marginBottom: '1.25rem' }}>
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '12px', padding: '0.85rem 1rem' }}>
+          <div style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Total Enrolled</div>
+          <div style={{ fontSize: '1.45rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: '0.2rem' }}>{counts.all}</div>
+        </div>
+
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '12px', padding: '0.85rem 1rem' }}>
+          <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#10b981', textTransform: 'uppercase' }}>⚡ Active Online</div>
+          <div style={{ fontSize: '1.45rem', fontWeight: 800, color: '#10b981', marginTop: '0.2rem' }}>{counts.online}</div>
+        </div>
+
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '12px', padding: '0.85rem 1rem' }}>
+          <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#6366f1', textTransform: 'uppercase' }}>✓ On Track</div>
+          <div style={{ fontSize: '1.45rem', fontWeight: 800, color: '#6366f1', marginTop: '0.2rem' }}>{counts.ontrack}</div>
+        </div>
+
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '12px', padding: '0.85rem 1rem' }}>
+          <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#ef4444', textTransform: 'uppercase' }}>⚠️ In Backlog</div>
+          <div style={{ fontSize: '1.45rem', fontWeight: 800, color: '#ef4444', marginTop: '0.2rem' }}>{counts.pending}</div>
+        </div>
+
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '12px', padding: '0.85rem 1rem' }}>
+          <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#f59e0b', textTransform: 'uppercase' }}>🎓 Avg IT Days</div>
+          <div style={{ fontSize: '1.45rem', fontWeight: 800, color: '#f59e0b', marginTop: '0.2rem' }}>{counts.avgITDays} <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)' }}>days</span></div>
         </div>
       </div>
 
@@ -480,12 +591,62 @@ export default function TrainerOverviewTable({ onlineUserIds: propOnlineUserIds 
                         )}
                       </td>
 
-                      {/* IT Days Attendance */}
+                      {/* IT Days Attendance with Quick Actions */}
                       <td>
-                        <div className="it-attendance-badge">
-                          <span>🎓</span>
-                          <span className="it-attendance-val">{t.it_days_count}</span>
-                          <span className="it-attendance-unit">days</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                          <div
+                            className="it-attendance-badge"
+                            onClick={(e) => handleOpenEditAttendance(t, e)}
+                            title="Click to edit IT attendance days"
+                            style={{ cursor: 'pointer' }}
+                          >
+                            <span>🎓</span>
+                            <span className="it-attendance-val">{t.it_days_count ?? 0}</span>
+                            <span className="it-attendance-unit">days</span>
+                          </div>
+
+                          {/* Quick +1 Button */}
+                          <button
+                            type="button"
+                            onClick={(e) => handleQuickAddAttendance(t, e)}
+                            title="Add +1 IT Day for this trainer"
+                            style={{
+                              background: 'rgba(16, 185, 129, 0.12)',
+                              border: '1px solid rgba(16, 185, 129, 0.3)',
+                              color: '#10b981',
+                              borderRadius: '6px',
+                              padding: '0.2rem 0.45rem',
+                              fontSize: '0.72rem',
+                              fontWeight: 800,
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.15rem',
+                              transition: 'all 0.15s ease',
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(16, 185, 129, 0.25)'}
+                            onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(16, 185, 129, 0.12)'}
+                          >
+                            +1
+                          </button>
+
+                          {/* Edit Custom Count Button */}
+                          <button
+                            type="button"
+                            onClick={(e) => handleOpenEditAttendance(t, e)}
+                            title="Edit IT Days count"
+                            style={{
+                              background: 'transparent',
+                              border: 'none',
+                              color: 'var(--text-muted)',
+                              cursor: 'pointer',
+                              padding: '0.2rem',
+                              fontSize: '0.75rem',
+                              lineHeight: 1,
+                            }}
+                          >
+                            ✏️
+                          </button>
                         </div>
                       </td>
 
@@ -576,6 +737,70 @@ export default function TrainerOverviewTable({ onlineUserIds: propOnlineUserIds 
                 style={{ fontWeight: 800 }}
               >
                 {extending ? 'Granting…' : `Grant +${extraDays} Days`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Attendance Modal */}
+      {editAttendanceTarget && (
+        <div className="plan-modal-overlay" onClick={() => setEditAttendanceTarget(null)}>
+          <div className="plan-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 420, padding: '1.75rem' }}>
+            <h3 style={{ fontSize: '1.15rem', fontWeight: 800, margin: '0 0 0.5rem 0', color: 'var(--text-primary)' }}>
+              🎓 Edit IT Attendance Days
+            </h3>
+            <p style={{ fontSize: '0.88rem', color: 'var(--text-secondary)', margin: '0 0 1.25rem 0', lineHeight: 1.5 }}>
+              Manually set the total Internal Training (IT) completed days for <strong>{editAttendanceTarget.full_name}</strong>.
+            </p>
+
+            <div className="day-field-group">
+              <label>Total IT Days Completed</label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.35rem' }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => setAttendanceDaysInput(Math.max(0, attendanceDaysInput - 1))}
+                  style={{ width: 38, height: 38, fontSize: '1.1rem', fontWeight: 800 }}
+                >
+                  −
+                </button>
+                <input
+                  type="number"
+                  min="0"
+                  max="365"
+                  className="day-input"
+                  value={attendanceDaysInput}
+                  onChange={(e) => setAttendanceDaysInput(Math.max(0, parseInt(e.target.value) || 0))}
+                  style={{ textAlign: 'center', fontSize: '1.1rem', fontWeight: 800 }}
+                />
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => setAttendanceDaysInput(attendanceDaysInput + 1)}
+                  style={{ width: 38, height: 38, fontSize: '1.1rem', fontWeight: 800 }}
+                >
+                  +
+                </button>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', marginTop: '1.5rem' }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setEditAttendanceTarget(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={handleConfirmEditAttendance}
+                disabled={updatingAttendance}
+                style={{ fontWeight: 800 }}
+              >
+                {updatingAttendance ? 'Saving…' : 'Save Attendance'}
               </button>
             </div>
           </div>

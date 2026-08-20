@@ -268,5 +268,7 @@ export interface ITTrainerOverviewItem {
   extended_days: number
   extension_count: number
   is_online?: boolean
+  last_it_check_date?: string | null
+  is_it_counted_today?: boolean
 }
 
