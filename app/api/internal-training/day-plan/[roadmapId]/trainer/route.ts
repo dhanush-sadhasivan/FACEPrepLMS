@@ -59,7 +59,16 @@ export async function GET(
     rawQuestions = qData || [];
   }
 
-  // 2. Fetch or initialize trainer progress
+  // 2. Fetch auth user data for attendance status
+  const { data: authUserData } = await dbAdmin.auth.admin.getUserById(user.id);
+  const metadata = authUserData?.user?.user_metadata || {};
+
+  const itDaysCount = profile?.it_days_count ?? metadata.it_days_count ?? 0;
+  const lastItCheckDate = profile?.last_it_check_date || metadata.last_it_check_date || null;
+  const isITCountedToday = lastItCheckDate === today;
+  const needsCheckInToday = !isITCountedToday;
+
+  // 3. Fetch or initialize trainer progress
   const { data: existingProgress } = await dbAdmin
     .from('it_trainer_progress')
     .select('*')
@@ -71,14 +80,14 @@ export async function GET(
   let startedAt = progress?.started_at;
 
   if (!progress) {
-    // First time trainer is accessing this day plan -> Day 1 begins today
+    // First time trainer accesses this day plan
     const { data: newProg, error: progErr } = await dbAdmin
       .from('it_trainer_progress')
       .insert({
         user_id: user.id,
         roadmap_id: roadmapId,
         started_at: today,
-        current_day: 1,
+        current_day: isITCountedToday ? Math.max(1, itDaysCount) : 1,
         extended_days: 0,
         extension_count: 0,
       })
@@ -95,13 +104,17 @@ export async function GET(
     startedAt = today;
   }
 
-  // Calculate current day number based on working days
-  let currentDay = computeCurrentDayNumber(startedAt, today, workingDays);
   const totalPlannedDays = rawDayPlans.length;
   let extendedDays = progress?.extended_days || 0;
   let extensionCount = progress?.extension_count || 0;
 
-  // 3. Fetch completion records for this user
+  // ── Attendance-Driven Day Calculation (1:1 Unlock Model) ───────────
+  // Unlocked day corresponds strictly to logged IT days
+  const unlockedDayNumber = isITCountedToday ? Math.max(1, itDaysCount) : itDaysCount;
+  const currentDay = Math.min(Math.max(1, unlockedDayNumber), totalPlannedDays || 1);
+  const nextDayToUnlock = Math.min(itDaysCount + 1, totalPlannedDays || 1);
+
+  // 4. Fetch completion records for this user
   const [completionsRes, hrProgressRes] = await Promise.all([
     dbAdmin.from('it_question_completions').select('*').eq('user_id', user.id),
     dbAdmin.from('progress').select('question_id, status, score').eq('user_id', user.id),
@@ -139,36 +152,37 @@ export async function GET(
     };
   });
 
-  // 4. Auto-extension check
-  // If currentDay > totalPlannedDays + extendedDays AND not all questions completed:
+  // Auto-extension check if trainer reaches end of planned days with remaining questions
   const allowedTotalDays = totalPlannedDays + extendedDays;
-  if (currentDay > allowedTotalDays && completedQuestionsCount < totalQuestionsCount && totalPlannedDays > 0) {
+  if (currentDay >= totalPlannedDays && completedQuestionsCount < totalQuestionsCount && totalPlannedDays > 0) {
     const extraToAdd = config.default_extension_days || 3;
-    extendedDays += extraToAdd;
-    extensionCount += 1;
+    if (extendedDays === 0) {
+      extendedDays += extraToAdd;
+      extensionCount += 1;
 
-    await dbAdmin
-      .from('it_trainer_progress')
-      .update({
-        extended_days: extendedDays,
-        extension_count: extensionCount,
-        current_day: currentDay,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('user_id', user.id)
-      .eq('roadmap_id', roadmapId);
+      await dbAdmin
+        .from('it_trainer_progress')
+        .update({
+          extended_days: extendedDays,
+          extension_count: extensionCount,
+          current_day: currentDay,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('user_id', user.id)
+        .eq('roadmap_id', roadmapId);
 
-    // Send auto-extension notification
-    try {
-      await dbAdmin.from('notifications').insert({
-        user_id: user.id,
-        type: 'system',
-        title: 'Plan Auto-Extended ⏳',
-        message: `Your IT roadmap "${roadmap.title}" has been granted +${extraToAdd} extra days to complete remaining questions.`,
-        related_id: roadmapId,
-      });
-    } catch (e) {
-      console.error('Error inserting extension notification:', e);
+      // Send auto-extension notification
+      try {
+        await dbAdmin.from('notifications').insert({
+          user_id: user.id,
+          type: 'system',
+          title: 'Plan Auto-Extended ⏳',
+          message: `Your IT roadmap "${roadmap.title}" has been granted +${extraToAdd} extra days to complete remaining questions.`,
+          related_id: roadmapId,
+        });
+      } catch (e) {
+        console.error('Error inserting extension notification:', e);
+      }
     }
   } else if (progress && progress.current_day !== currentDay) {
     await dbAdmin
@@ -186,17 +200,21 @@ export async function GET(
     rawDayPlans.map((dp: any) => ({
       ...dp,
       questions: questionsWithState.filter((q: any) => q.day_plan_id === dp.id),
+      is_unlocked: dp.day_number <= unlockedDayNumber,
     })),
     startedAt,
     workingDays
   );
 
   // 6. Partition into Today's Plan and Pending Questions
-  const todayPlan = dayPlansWithDates.find((dp) => dp.day_number === currentDay) || null;
+  // If checked in today -> todayPlan is currentDay's plan
+  // If not checked in today -> todayPlan is null (gate rendered in UI), pendingByDay contains uncompleted questions from days 1..unlockedDayNumber
+  const todayPlan = isITCountedToday ? (dayPlansWithDates.find((dp) => dp.day_number === currentDay) || null) : null;
+  const nextPlanPreview = needsCheckInToday ? (dayPlansWithDates.find((dp) => dp.day_number === nextDayToUnlock) || null) : null;
 
-  // Previous days: day_number < currentDay
-  const previousDays = dayPlansWithDates.filter((dp) => dp.day_number < currentDay);
-  const pendingByDay = previousDays
+  // Previous unlocked days with uncompleted questions
+  const unlockedDays = dayPlansWithDates.filter((dp) => dp.day_number <= (isITCountedToday ? currentDay - 1 : unlockedDayNumber));
+  const pendingByDay = unlockedDays
     .map((dp) => ({
       ...dp,
       questions: dp.questions.filter((q: any) => !q.is_completed),
@@ -204,13 +222,6 @@ export async function GET(
     .filter((dp) => dp.questions.length > 0);
 
   const pendingQuestionsCount = pendingByDay.reduce((acc, dp) => acc + dp.questions.length, 0);
-
-  const { data: authUserData } = await dbAdmin.auth.admin.getUserById(user.id);
-  const metadata = authUserData?.user?.user_metadata || {};
-
-  const itDaysCount = profile?.it_days_count ?? metadata.it_days_count ?? 0;
-  const lastItCheckDate = profile?.last_it_check_date || metadata.last_it_check_date || null;
-  const isITCountedToday = lastItCheckDate === today;
 
   return NextResponse.json({
     roadmap,
@@ -220,18 +231,24 @@ export async function GET(
       roadmap_id: roadmapId,
       started_at: startedAt,
       current_day: currentDay,
+      unlocked_day_number: unlockedDayNumber,
+      next_day_to_unlock: nextDayToUnlock,
       total_days: totalPlannedDays,
       extended_days: extendedDays,
       extension_count: extensionCount,
       completed_questions_count: completedQuestionsCount,
       total_questions_count: totalQuestionsCount,
       pending_questions_count: pendingQuestionsCount,
+      needs_check_in_today: needsCheckInToday,
     },
     todayPlan,
+    nextPlanPreview,
     pendingByDay,
     allDays: dayPlansWithDates,
     itDaysCount,
     isITCountedToday,
+    needsCheckInToday,
+    nextDayToUnlock,
     today,
   });
 }

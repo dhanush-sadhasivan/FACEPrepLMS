@@ -68,6 +68,35 @@ export default function InternalTrainingClient({
     }
   }, [selectedRoadmapId, loadTrainerPlan]);
 
+  const [isCheckingIn, setIsCheckingIn] = useState(false);
+
+  // Handle explicit daily IT check-in to unlock today's curriculum
+  const handleCheckInToday = async () => {
+    setIsCheckingIn(true);
+    try {
+      const res = await fetch('/api/trainer/it-check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ didIT: true }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        showToast(`🎉 Day ${data.newCount} Unlocked! Attendance recorded for today.`);
+        if (selectedRoadmapId) {
+          await loadTrainerPlan(selectedRoadmapId);
+        }
+      } else {
+        showToast('Failed to record check-in');
+      }
+    } catch (err) {
+      console.error('Error during check-in:', err);
+      showToast('Error recording check-in');
+    } finally {
+      setIsCheckingIn(false);
+    }
+  };
+
   // Handle Question Launch & Click Recording
   const handleQuestionClickConfirmed = async (q: ITDayQuestion) => {
     try {
@@ -212,6 +241,11 @@ export default function InternalTrainingClient({
                 currentDay={trainerData?.progress?.current_day || 1}
                 totalDays={trainerData?.progress?.total_days || 0}
                 extendedDays={trainerData?.progress?.extended_days || 0}
+                needsCheckInToday={trainerData?.needsCheckInToday ?? false}
+                nextDayToUnlock={trainerData?.nextDayToUnlock ?? 1}
+                nextPlanPreview={trainerData?.nextPlanPreview || null}
+                onCheckInToday={handleCheckInToday}
+                isCheckingIn={isCheckingIn}
                 onQuestionClickConfirmed={handleQuestionClickConfirmed}
                 onToggleCustomComplete={handleToggleCustomComplete}
               />

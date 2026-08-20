@@ -9,6 +9,11 @@ interface TodaysPlanCardProps {
   currentDay: number;
   totalDays: number;
   extendedDays: number;
+  needsCheckInToday?: boolean;
+  nextDayToUnlock?: number;
+  nextPlanPreview?: ITDayPlan | null;
+  onCheckInToday?: () => Promise<void>;
+  isCheckingIn?: boolean;
   onQuestionClickConfirmed: (question: ITDayQuestion) => Promise<void>;
   onToggleCustomComplete: (questionId: string, isCompleted: boolean) => Promise<void>;
 }
@@ -18,6 +23,11 @@ export default function TodaysPlanCard({
   currentDay,
   totalDays,
   extendedDays,
+  needsCheckInToday = false,
+  nextDayToUnlock = 1,
+  nextPlanPreview = null,
+  onCheckInToday,
+  isCheckingIn = false,
   onQuestionClickConfirmed,
   onToggleCustomComplete,
 }: TodaysPlanCardProps) {
@@ -43,6 +53,90 @@ export default function TodaysPlanCard({
       setUpdatingQId(null);
     }
   };
+
+  // ── Pre-Checkin Gate: If trainer has not logged in today ────────────
+  if (needsCheckInToday) {
+    const targetDay = nextDayToUnlock || 1;
+    return (
+      <div
+        className="todays-plan-card"
+        style={{
+          background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(139, 92, 246, 0.05) 100%)',
+          border: '1.5px solid rgba(99, 102, 241, 0.35)',
+          borderRadius: '16px',
+          padding: '2.25rem 2rem',
+          textAlign: 'center',
+          boxShadow: '0 8px 32px rgba(99, 102, 241, 0.12)',
+        }}
+      >
+        <div style={{ fontSize: '3rem', marginBottom: '0.5rem' }}>
+          👋
+        </div>
+
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', background: 'rgba(99, 102, 241, 0.15)', color: 'var(--accent)', padding: '0.2rem 0.65rem', borderRadius: '999px', fontSize: '0.78rem', fontWeight: 800, textTransform: 'uppercase', marginBottom: '0.75rem' }}>
+          <span>🔓</span> Check-in to Unlock Day {targetDay}
+        </div>
+
+        <h3 style={{ fontSize: '1.35rem', fontWeight: 900, color: 'var(--text-primary)', margin: '0 0 0.5rem 0', lineHeight: 1.3 }}>
+          Ready for Today&apos;s Internal Training?
+        </h3>
+
+        <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', maxWidth: 540, margin: '0 auto 1.5rem', lineHeight: 1.55 }}>
+          Log your attendance today to unlock <strong>Day {targetDay}</strong>
+          {nextPlanPreview?.topic_title ? `: "${nextPlanPreview.topic_title}"` : ''} of your curriculum.
+          Your progress will advance sequentially with every active day you log.
+        </p>
+
+        {/* Check-In CTA Button */}
+        <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            onClick={onCheckInToday}
+            disabled={isCheckingIn}
+            className="btn btn-primary"
+            style={{
+              padding: '0.75rem 1.75rem',
+              fontSize: '0.95rem',
+              fontWeight: 800,
+              background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
+              boxShadow: '0 4px 20px rgba(99, 102, 241, 0.35)',
+              borderRadius: '10px',
+              cursor: isCheckingIn ? 'not-allowed' : 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+            }}
+          >
+            {isCheckingIn ? (
+              <span>⏳ Unlocking Day {targetDay}...</span>
+            ) : (
+              <span>✨ Check In for IT Today (Unlock Day {targetDay})</span>
+            )}
+          </button>
+        </div>
+
+        {/* Teaser Preview */}
+        {nextPlanPreview && (
+          <div style={{ marginTop: '1.5rem', padding: '0.85rem 1.25rem', background: 'var(--surface-2, #1e293b)', borderRadius: '10px', border: '1px solid var(--border)', maxWidth: 500, margin: '1.5rem auto 0', textAlign: 'left' }}>
+            <div style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+              📖 Up Next on Day {targetDay}:
+            </div>
+            <div style={{ fontSize: '0.92rem', fontWeight: 800, color: 'var(--text-primary)', marginTop: '0.2rem' }}>
+              {nextPlanPreview.topic_title}
+            </div>
+            {nextPlanPreview.description && (
+              <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
+                {nextPlanPreview.description}
+              </div>
+            )}
+            <div style={{ fontSize: '0.72rem', color: 'var(--accent)', fontWeight: 700, marginTop: '0.4rem' }}>
+              🎯 {nextPlanPreview.questions?.length || 0} Challenge Problems waiting
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   if (!dayPlan) {
     const isFinished = currentDay > totalDays + extendedDays;
