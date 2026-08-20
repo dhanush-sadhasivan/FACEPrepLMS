@@ -9,12 +9,13 @@ import CreateAnnouncementModal from './CreateAnnouncementModal';
 
 interface NotificationListProps {
   initialNotifications: Notification[];
+  sentNotifications?: Notification[];
   userRole: string;
 }
 
-export default function NotificationList({ initialNotifications, userRole }: NotificationListProps) {
+export default function NotificationList({ initialNotifications, sentNotifications = [], userRole }: NotificationListProps) {
   const [notifications, setNotifications] = useState<Notification[]>(initialNotifications);
-  const [filter, setFilter] = useState<'All' | 'Unread' | 'announcement' | 'access_request' | 'contest_assigned' | 'system'>('All');
+  const [filter, setFilter] = useState<'All' | 'Unread' | 'announcement' | 'sent_by_me' | 'access_request' | 'contest_assigned' | 'system'>('All');
   const [isMarkingAll, setIsMarkingAll] = useState(false);
   const [isAnnouncementModalOpen, setIsAnnouncementModalOpen] = useState(false);
   const router = useRouter();
@@ -23,8 +24,8 @@ export default function NotificationList({ initialNotifications, userRole }: Not
 
   const isAdminOrManager = userRole === 'admin' || userRole === 'manager';
 
-  const handleMarkAsRead = async (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleMarkAsRead = async (id: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
     
     // Optimistic update
     setNotifications(prev => 
@@ -99,7 +100,7 @@ export default function NotificationList({ initialNotifications, userRole }: Not
       showToast(`Access request ${action}`, 'success');
       
       // Mark the notification as read since it was handled
-      await handleMarkAsRead(notificationId, { stopPropagation: () => {} } as React.MouseEvent);
+      await handleMarkAsRead(notificationId);
       router.refresh();
     } catch (error) {
       console.error(error);
@@ -159,7 +160,10 @@ export default function NotificationList({ initialNotifications, userRole }: Not
     return date.toLocaleDateString();
   };
 
-  const filteredNotifications = notifications.filter(n => {
+  const displayList = filter === 'sent_by_me' ? sentNotifications : notifications;
+
+  const filteredNotifications = displayList.filter(n => {
+    if (filter === 'sent_by_me') return true;
     if (filter === 'All') return true;
     if (filter === 'Unread') return !n.is_read;
     if (filter === 'announcement') return isAnnouncement(n);
@@ -168,30 +172,30 @@ export default function NotificationList({ initialNotifications, userRole }: Not
 
   const unreadCount = notifications.filter(n => !n.is_read).length;
 
+  const filterTabs: { id: 'All' | 'Unread' | 'announcement' | 'sent_by_me' | 'access_request' | 'contest_assigned' | 'system'; label: string; count?: number }[] = [
+    { id: 'All', label: 'All', count: notifications.length },
+    { id: 'Unread', label: 'Unread', count: unreadCount },
+    { id: 'announcement', label: '📢 Announcements' },
+    ...(isAdminOrManager && sentNotifications.length > 0 ? [{ id: 'sent_by_me' as const, label: `📤 Sent by Me (${sentNotifications.length})` }] : []),
+    { id: 'access_request', label: 'Access Requests' },
+    { id: 'contest_assigned', label: 'Assignments' },
+    { id: 'system', label: 'System Updates' },
+  ];
+
   return (
     <div className="notification-list-container">
       {/* Controls Bar */}
       <div className="notification-controls">
         <div className="notification-filters">
-          {(['All', 'Unread', 'announcement', 'access_request', 'contest_assigned', 'system'] as const).map(f => {
-            const label: Record<string, string> = {
-              All: 'All',
-              Unread: 'Unread',
-              announcement: '📢 Announcements',
-              access_request: 'Access Requests',
-              contest_assigned: 'Assignments',
-              system: 'System Updates',
-            };
-            return (
-              <button
-                key={f}
-                className={`filter-btn ${filter === f ? 'active' : ''}`}
-                onClick={() => setFilter(f)}
-              >
-                {label[f] ?? f}
-              </button>
-            );
-          })}
+          {filterTabs.map(tab => (
+            <button
+              key={tab.id}
+              className={`filter-btn ${filter === tab.id ? 'active' : ''}`}
+              onClick={() => setFilter(tab.id)}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -205,7 +209,7 @@ export default function NotificationList({ initialNotifications, userRole }: Not
             </button>
           )}
 
-          {unreadCount > 0 && (
+          {unreadCount > 0 && filter !== 'sent_by_me' && (
             <button 
               className="mark-all-read-btn" 
               onClick={handleMarkAllAsRead}
@@ -225,19 +229,22 @@ export default function NotificationList({ initialNotifications, userRole }: Not
               <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
               <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
             </svg>
-            <p>No notifications found.</p>
+            <p>{filter === 'sent_by_me' ? 'No sent announcements yet.' : 'No notifications found.'}</p>
             <span className="empty-subtext">You&apos;re all caught up!</span>
           </div>
         ) : (
           filteredNotifications.map(notification => {
             const isAnn = isAnnouncement(notification);
+            const senderName = notification.sender?.full_name;
+            const senderRole = notification.sender?.role === 'manager' ? 'Manager' : 'Admin';
+
             return (
               <div 
                 key={notification.id} 
-                className={`notification-item ${!notification.is_read ? 'unread' : ''} ${isAnn ? 'announcement-item' : ''}`}
-                style={isAnn ? { borderLeft: '4px solid var(--accent, #6366f1)', background: !notification.is_read ? 'rgba(99, 102, 241, 0.07)' : 'var(--surface)' } : {}}
+                className={`notification-item ${!notification.is_read && !notification.is_sent_by_me ? 'unread' : ''} ${isAnn ? 'announcement-item' : ''}`}
+                style={isAnn ? { borderLeft: '4px solid var(--accent, #6366f1)', background: (!notification.is_read && !notification.is_sent_by_me) ? 'rgba(99, 102, 241, 0.07)' : 'var(--surface)' } : {}}
                 onClick={(e) => {
-                   if (!notification.is_read) handleMarkAsRead(notification.id, e);
+                  if (!notification.is_read && !notification.is_sent_by_me) handleMarkAsRead(notification.id, e);
                 }}
               >
                 <div className="notification-icon" style={isAnn ? { background: 'rgba(99, 102, 241, 0.15)', color: 'var(--accent)' } : {}}>
@@ -255,6 +262,33 @@ export default function NotificationList({ initialNotifications, userRole }: Not
                     </div>
                     <span className="notification-time">{timeAgo(notification.created_at)}</span>
                   </div>
+
+                  {/* Sender attribution badge */}
+                  {senderName && (
+                    <div style={{ marginTop: '0.2rem', marginBottom: '0.25rem' }}>
+                      <span
+                        style={{
+                          fontSize: '0.74rem',
+                          color: 'var(--text-secondary)',
+                          background: 'var(--surface-3, #334155)',
+                          padding: '0.12rem 0.5rem',
+                          borderRadius: '6px',
+                          fontWeight: 600,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.3rem',
+                        }}
+                      >
+                        <span>{notification.is_sent_by_me ? '📤' : '👤'}</span>
+                        {notification.is_sent_by_me ? (
+                          <>Sent by <strong>You</strong> ({senderRole})</>
+                        ) : (
+                          <>Sent by: <strong style={{ color: 'var(--text-primary)' }}>{senderName}</strong> ({senderRole})</>
+                        )}
+                      </span>
+                    </div>
+                  )}
+
                   <p style={{ whiteSpace: 'pre-wrap', lineHeight: 1.5, marginTop: '0.35rem' }}>
                     {notification.message}
                   </p>
@@ -282,7 +316,7 @@ export default function NotificationList({ initialNotifications, userRole }: Not
                     </div>
                   )}
                 </div>
-                {!notification.is_read && (
+                {!notification.is_read && !notification.is_sent_by_me && (
                   <div className="unread-indicator" title="Mark as read" onClick={(e) => handleMarkAsRead(notification.id, e)}>
                     <div className="indicator-dot"></div>
                   </div>

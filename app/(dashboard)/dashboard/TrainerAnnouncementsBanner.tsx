@@ -35,20 +35,18 @@ export default function TrainerAnnouncementsBanner({
     return () => window.removeEventListener('notification-received', handleNewNotif);
   }, []);
 
-  if (announcements.length === 0) {
+  // ONLY show if there are unread announcements targeted to the user
+  if (unreadAnnouncements.length === 0) {
     return null;
   }
 
-  // Active announcement to display (prioritize unread, else latest)
-  const currentList = unreadAnnouncements.length > 0 ? unreadAnnouncements : announcements.slice(0, 1);
-  const currentAnnouncement = currentList[Math.min(activeIndex, currentList.length - 1)];
-
+  const currentAnnouncement = unreadAnnouncements[Math.min(activeIndex, unreadAnnouncements.length - 1)];
   if (!currentAnnouncement) return null;
 
-  const handleMarkAsRead = async (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleMarkAsRead = async (id: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
 
-    // Optimistic update
+    // Optimistic update — remove from unread state immediately
     setAnnouncements((prev) =>
       prev.map((a) => (a.id === id ? { ...a, is_read: true } : a))
     );
@@ -60,7 +58,7 @@ export default function TrainerAnnouncementsBanner({
     try {
       const res = await fetch(`/api/notifications/${id}/read`, { method: 'PATCH' });
       if (!res.ok) throw new Error('Failed to mark as read');
-      showToast('Announcement acknowledged', 'success');
+      showToast('Announcement acknowledged & moved to Notifications', 'success');
     } catch (err) {
       console.error('Error marking announcement as read:', err);
       // Revert optimistic update
@@ -84,29 +82,28 @@ export default function TrainerAnnouncementsBanner({
     return date.toLocaleDateString();
   };
 
-  const isUnread = !currentAnnouncement.is_read;
+  const senderName = currentAnnouncement.sender?.full_name;
+  const senderRole = currentAnnouncement.sender?.role === 'manager' ? 'Manager' : 'Admin';
 
   return (
     <div
       className="announcement-banner-card"
       style={{
-        background: isUnread
-          ? 'linear-gradient(135deg, rgba(99, 102, 241, 0.12) 0%, rgba(240, 82, 55, 0.08) 100%)'
-          : 'var(--surface-2, #1e293b)',
-        borderTop: `1px solid ${isUnread ? 'rgba(99, 102, 241, 0.4)' : 'var(--border, #334155)'}`,
-        borderRight: `1px solid ${isUnread ? 'rgba(99, 102, 241, 0.4)' : 'var(--border, #334155)'}`,
-        borderBottom: `1px solid ${isUnread ? 'rgba(99, 102, 241, 0.4)' : 'var(--border, #334155)'}`,
+        background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.12) 0%, rgba(240, 82, 55, 0.08) 100%)',
+        borderTop: '1px solid rgba(99, 102, 241, 0.4)',
+        borderRight: '1px solid rgba(99, 102, 241, 0.4)',
+        borderBottom: '1px solid rgba(99, 102, 241, 0.4)',
         borderLeft: '5px solid var(--accent, #6366f1)',
         borderRadius: '12px',
         padding: '0.85rem 1.15rem',
         marginBottom: '1rem',
-        boxShadow: isUnread ? '0 4px 20px rgba(99, 102, 241, 0.1)' : 'none',
+        boxShadow: '0 4px 20px rgba(99, 102, 241, 0.1)',
         position: 'relative',
         transition: 'all 0.2s ease',
       }}
     >
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
-        {/* Left: Badge + Title + Message */}
+        {/* Left: Badge + Title + Message + Sender */}
         <div style={{ flex: '1 1 320px', minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.35rem', flexWrap: 'wrap' }}>
             <span
@@ -116,7 +113,7 @@ export default function TrainerAnnouncementsBanner({
                 gap: '0.3rem',
                 fontSize: '0.72rem',
                 fontWeight: 800,
-                background: isUnread ? 'var(--accent, #6366f1)' : 'var(--surface-3, #334155)',
+                background: 'var(--accent, #6366f1)',
                 color: '#ffffff',
                 padding: '0.15rem 0.5rem',
                 borderRadius: '6px',
@@ -124,8 +121,27 @@ export default function TrainerAnnouncementsBanner({
                 letterSpacing: '0.5px',
               }}
             >
-              <span>📢</span> {isUnread ? 'New Announcement' : 'Announcement'}
+              <span>📢</span> New Announcement
             </span>
+
+            {/* Sender attribution */}
+            {senderName && (
+              <span
+                style={{
+                  fontSize: '0.74rem',
+                  color: 'var(--text-secondary)',
+                  background: 'var(--surface-3, #334155)',
+                  padding: '0.12rem 0.5rem',
+                  borderRadius: '6px',
+                  fontWeight: 600,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.3rem',
+                }}
+              >
+                <span>👤</span> Sent by: <strong style={{ color: 'var(--text-primary)' }}>{senderName}</strong> ({senderRole})
+              </span>
+            )}
 
             {unreadAnnouncements.length > 1 && (
               <span
@@ -138,7 +154,7 @@ export default function TrainerAnnouncementsBanner({
                   borderRadius: '999px',
                 }}
               >
-                {activeIndex + 1} of {currentList.length}
+                {activeIndex + 1} of {unreadAnnouncements.length}
               </span>
             )}
 
@@ -198,7 +214,7 @@ export default function TrainerAnnouncementsBanner({
 
         {/* Right: Actions */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0, marginTop: '0.2rem' }}>
-          {currentList.length > 1 && (
+          {unreadAnnouncements.length > 1 && (
             <div style={{ display: 'flex', gap: '0.25rem', marginRight: '0.25rem' }}>
               <button
                 type="button"
@@ -215,9 +231,9 @@ export default function TrainerAnnouncementsBanner({
               </button>
               <button
                 type="button"
-                disabled={activeIndex >= currentList.length - 1}
+                disabled={activeIndex >= unreadAnnouncements.length - 1}
                 onClick={() => {
-                  setActiveIndex((prev) => Math.min(currentList.length - 1, prev + 1));
+                  setActiveIndex((prev) => Math.min(unreadAnnouncements.length - 1, prev + 1));
                   setIsExpanded(false);
                 }}
                 className="btn btn-secondary btn-sm"
@@ -229,27 +245,26 @@ export default function TrainerAnnouncementsBanner({
             </div>
           )}
 
-          {isUnread && (
-            <button
-              type="button"
-              onClick={(e) => handleMarkAsRead(currentAnnouncement.id, e)}
-              className="btn btn-secondary btn-sm"
-              style={{
-                fontSize: '0.78rem',
-                fontWeight: 700,
-                padding: '0.35rem 0.75rem',
-                borderRadius: '8px',
-                background: 'rgba(16, 185, 129, 0.12)',
-                color: 'var(--success, #10b981)',
-                border: '1px solid rgba(16, 185, 129, 0.3)',
-              }}
-            >
-              ✓ Acknowledge
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={(e) => handleMarkAsRead(currentAnnouncement.id, e)}
+            className="btn btn-secondary btn-sm"
+            style={{
+              fontSize: '0.78rem',
+              fontWeight: 700,
+              padding: '0.35rem 0.75rem',
+              borderRadius: '8px',
+              background: 'rgba(16, 185, 129, 0.12)',
+              color: 'var(--success, #10b981)',
+              border: '1px solid rgba(16, 185, 129, 0.3)',
+            }}
+          >
+            ✓ Acknowledge
+          </button>
 
           <Link
             href="/notifications"
+            onClick={() => handleMarkAsRead(currentAnnouncement.id)}
             className="btn btn-primary btn-sm"
             style={{
               fontSize: '0.78rem',
@@ -259,7 +274,7 @@ export default function TrainerAnnouncementsBanner({
               textDecoration: 'none',
             }}
           >
-            All Announcements →
+            View in Notifications →
           </Link>
         </div>
       </div>

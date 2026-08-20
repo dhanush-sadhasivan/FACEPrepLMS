@@ -17,6 +17,15 @@ export default async function NotificationsPage() {
 
   const dbAdmin = getAdminClient();
 
+  // Fetch user role for admin/manager views
+  const { data: profile } = await dbAdmin
+    .from('users')
+    .select('id, full_name, role')
+    .eq('id', user.id)
+    .single();
+
+  const isAdminOrManager = profile?.role === 'admin' || profile?.role === 'manager';
+
   // Fetch all notifications for user
   const { data: notifications, error } = await dbAdmin
     .from('notifications')
@@ -28,14 +37,49 @@ export default async function NotificationsPage() {
     console.error('Error fetching notifications:', error);
   }
 
-  // Fetch user role for admin/manager views
-  const { data: profile } = await dbAdmin
-    .from('users')
-    .select('role')
-    .eq('id', user.id)
-    .single();
+  // If admin/manager, also fetch distinct announcements sent by this user
+  let sentAnnouncements: any[] = [];
+  if (isAdminOrManager) {
+    const { data: sentRows } = await dbAdmin
+      .from('notifications')
+      .select('*')
+      .eq('related_id', user.id)
+      .order('created_at', { ascending: false });
 
-  const allNotifications = notifications || [];
+    // Deduplicate sent announcements by (title, message, and created minute)
+    const seenSent = new Set<string>();
+    (sentRows || []).forEach((s: any) => {
+      const key = `${s.title}|${s.message}|${s.created_at?.substring(0, 16)}`;
+      if (!seenSent.has(key)) {
+        seenSent.add(key);
+        sentAnnouncements.push({
+          ...s,
+          is_sent_by_me: true,
+          sender: {
+            id: user.id,
+            full_name: profile?.full_name || 'You',
+            role: profile?.role || 'admin',
+          },
+        });
+      }
+    });
+  }
+
+  const rawNotifications = notifications || [];
+  
+  // Attach sender info to received notifications
+  const senderIds = Array.from(new Set(rawNotifications.map((n: any) => n.related_id).filter(Boolean)));
+  const sendersMap = new Map();
+  if (senderIds.length > 0) {
+    const { data: senders } = await dbAdmin.from('users').select('id, full_name, role, team').in('id', senderIds);
+    (senders || []).forEach((s: any) => sendersMap.set(s.id, s));
+  }
+
+  const allNotifications = rawNotifications.map((n: any) => ({
+    ...n,
+    sender: n.related_id ? sendersMap.get(n.related_id) || null : null,
+  }));
+
   const unreadCount = allNotifications.filter((n) => !n.is_read).length;
   const announcementsCount = allNotifications.filter((n) => n.type === 'announcement' || (n.title && n.title.includes('📢'))).length;
   const accessRequestsCount = allNotifications.filter((n) => n.type === 'access_request').length;
@@ -100,6 +144,7 @@ export default async function NotificationsPage() {
       <div className="notifications-content">
         <NotificationList 
           initialNotifications={allNotifications} 
+          sentNotifications={sentAnnouncements}
           userRole={profile?.role || 'user'}
         />
       </div>

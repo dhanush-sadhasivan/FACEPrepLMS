@@ -88,9 +88,11 @@ export async function POST(request: Request) {
   const recipientUserIds = new Set<string>();
 
   if (targetType === 'all') {
-    // Send to all users in the system
+    // Send to all users in the system (exclude sender so admin/manager doesn't see their own announcement banner)
     const { data: users } = await dbAdmin.from('users').select('id');
-    (users || []).forEach((u: any) => recipientUserIds.add(u.id));
+    (users || []).forEach((u: any) => {
+      if (u.id !== user.id) recipientUserIds.add(u.id);
+    });
   } else if (targetType === 'team') {
     if (!targetTeams || !Array.isArray(targetTeams) || targetTeams.length === 0) {
       return NextResponse.json({ error: 'Please select at least one target team' }, { status: 400 });
@@ -99,7 +101,7 @@ export async function POST(request: Request) {
     const { data: users } = await dbAdmin.from('users').select('id, team');
     (users || []).forEach((u: any) => {
       if (u.team && cleanTargetTeams.includes(u.team.trim().toLowerCase())) {
-        recipientUserIds.add(u.id);
+        if (u.id !== user.id) recipientUserIds.add(u.id);
       }
     });
   } else if (targetType === 'group') {
@@ -110,7 +112,9 @@ export async function POST(request: Request) {
       .from('group_members')
       .select('user_id')
       .in('group_id', targetGroupIds);
-    (members || []).forEach((m: any) => recipientUserIds.add(m.user_id));
+    (members || []).forEach((m: any) => {
+      if (m.user_id !== user.id) recipientUserIds.add(m.user_id);
+    });
   } else if (targetType === 'individual') {
     if (!targetUserIds || !Array.isArray(targetUserIds) || targetUserIds.length === 0) {
       return NextResponse.json({ error: 'Please select at least one trainer' }, { status: 400 });

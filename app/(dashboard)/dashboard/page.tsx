@@ -27,14 +27,30 @@ export default async function DashboardPage() {
   const [userRes, contestsHeadRes, userNotificationsRes] = await Promise.all([
     supabase.from('users').select('*').eq('id', user.id).single(),
     supabase.from('contests').select('*', { count: 'exact', head: true }),
-    supabase.from('notifications').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(10),
+    supabase.from('notifications').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(20),
   ]);
 
   const userData = userRes.data;
   const contestsCount = contestsHeadRes.count || 0;
-  const allUserNotifications = userNotificationsRes.data || [];
+  const rawUserNotifications = userNotificationsRes.data || [];
+
+  // ── Attach Sender details to notifications ─────────────────────────
+  const dbAdmin = getAdminClient();
+  const senderIds = Array.from(new Set(rawUserNotifications.map((n: any) => n.related_id).filter(Boolean)));
+  const sendersMap = new Map();
+  if (senderIds.length > 0) {
+    const { data: senders } = await dbAdmin.from('users').select('id, full_name, role, team').in('id', senderIds);
+    (senders || []).forEach((s: any) => sendersMap.set(s.id, s));
+  }
+
+  const allUserNotifications = rawUserNotifications.map((n: any) => ({
+    ...n,
+    sender: n.related_id ? sendersMap.get(n.related_id) || null : null,
+  }));
+
+  // Only display UNREAD announcements on the dashboard banner
   const userAnnouncements = allUserNotifications.filter(
-    (n: any) => n.type === 'announcement' || (n.title && n.title.includes('📢'))
+    (n: any) => (n.type === 'announcement' || (n.title && n.title.includes('📢'))) && !n.is_read
   );
   const userUnreadNotifsCount = allUserNotifications.filter((n: any) => !n.is_read).length;
 
@@ -43,7 +59,6 @@ export default async function DashboardPage() {
   const isTrainer = role === 'trainer';
 
   // ── Global Live Top Performers (Cached via Supabase Storage CDN) ───
-  const dbAdmin = getAdminClient();
   let globalPerformers: GlobalPerformer[] = [];
   const cachedData = await getCachedGlobalLeaderboard();
 

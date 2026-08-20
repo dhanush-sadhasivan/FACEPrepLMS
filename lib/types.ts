@@ -83,6 +83,13 @@ export interface Notification {
   related_id: string | null
   is_read: boolean
   created_at: string
+  sender?: {
+    id?: string
+    full_name?: string
+    role?: string
+    team?: string
+  } | null
+  is_sent_by_me?: boolean
 }
 
 // ── Trainer Flow Types ───────────────────────────────────────────────────
