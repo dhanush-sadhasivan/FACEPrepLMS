@@ -4,10 +4,11 @@ import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import LockedContestView from './LockedContestView';
 import ContestViewTabs from './ContestViewTabs';
+import { getCachedContestData } from '@/lib/cdn-cache';
 import '../page.css';
 
 export const dynamic = 'force-dynamic';
-export const revalidate = 0;
+export const revalidate = 60; // Next.js ISR cache
 
 export default async function ContestDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -69,123 +70,130 @@ export default async function ContestDetailPage({ params }: { params: Promise<{ 
     }
   }
 
-  // ── Build Leaderboard data with ALL assigned users ────────────────────────
-  const dbAdmin = getAdminClient();
-
-  const { data: allUserProfiles } = await dbAdmin
-    .from('users')
-    .select('id, full_name, emp_id, team')
-    .neq('role', 'admin');
-  const allUsersMap = new Map((allUserProfiles || []).map((u: any) => [u.id, u]));
-
-  // 1. Fetch contest assignments
-  const { data: assignments } = await dbAdmin
-    .from('contest_assignments')
-    .select('group_id, team')
-    .eq('contest_id', contest.id);
-
-  const groupIds: string[] = [];
-  const teams: string[] = [];
-  (assignments || []).forEach((a: { group_id: string | null; team: string | null }) => {
-    if (a.group_id) groupIds.push(a.group_id);
-    if (a.team) teams.push(a.team);
-  });
-
-  // 2. Fetch assigned user records
-  const userMap = new Map();
   const totalContestMaxScore = enabledQuestionsList.reduce((sum: number, q: any) => sum + (q.max_score || 10), 0);
 
-  if (groupIds.length > 0) {
-    const { data: groupMembers } = await dbAdmin
-      .from('group_members')
-      .select('user_id')
-      .in('group_id', groupIds);
+  // ── Build Leaderboard data (Check CDN Storage Cache first) ───────────────
+  let leaderboard: any[] = [];
+  const cachedContest = await getCachedContestData(contest.id);
 
-    (groupMembers || []).forEach((gm: any) => {
-      const u = allUsersMap.get(gm.user_id);
-      if (u && !userMap.has(u.id)) {
-        userMap.set(u.id, {
-          user_id: u.id,
-          name: u.full_name,
-          emp_id: u.emp_id,
-          team: u.team || 'N/A',
-          solved: 0,
-          total: enabledQuestionsList.length,
-          score: 0,
-          maxScore: totalContestMaxScore,
-          lastActive: null,
-          progress: [],
-        });
-      }
-    });
-  }
+  if (cachedContest && Array.isArray(cachedContest.leaderboard) && cachedContest.leaderboard.length > 0) {
+    leaderboard = cachedContest.leaderboard;
+  } else {
+    // ── Fallback to direct DB query if cache snapshot not yet available ────
+    const dbAdmin = getAdminClient();
 
-  if (teams.length > 0) {
-    const { data: teamUsers } = await dbAdmin
+    const { data: allUserProfiles } = await dbAdmin
       .from('users')
-      .select('id')
-      .in('team', teams);
+      .select('id, full_name, emp_id, team')
+      .neq('role', 'admin');
+    const allUsersMap = new Map((allUserProfiles || []).map((u: any) => [u.id, u]));
 
-    (teamUsers || []).forEach((tu: any) => {
-      const u = allUsersMap.get(tu.id);
-      if (u && !userMap.has(u.id)) {
-        userMap.set(u.id, {
-          user_id: u.id,
-          name: u.full_name,
-          emp_id: u.emp_id,
-          team: u.team || 'N/A',
-          solved: 0,
-          total: enabledQuestionsList.length,
-          score: 0,
-          maxScore: totalContestMaxScore,
-          lastActive: null,
-          progress: [],
-        });
+    // 1. Fetch contest assignments
+    const { data: assignments } = await dbAdmin
+      .from('contest_assignments')
+      .select('group_id, team')
+      .eq('contest_id', contest.id);
+
+    const groupIds: string[] = [];
+    const teams: string[] = [];
+    (assignments || []).forEach((a: { group_id: string | null; team: string | null }) => {
+      if (a.group_id) groupIds.push(a.group_id);
+      if (a.team) teams.push(a.team);
+    });
+
+    // 2. Fetch assigned user records
+    const userMap = new Map();
+    const totalContestMaxScore = enabledQuestionsList.reduce((sum: number, q: any) => sum + (q.max_score || 10), 0);
+
+    if (groupIds.length > 0) {
+      const { data: groupMembers } = await dbAdmin
+        .from('group_members')
+        .select('user_id')
+        .in('group_id', groupIds);
+
+      (groupMembers || []).forEach((gm: any) => {
+        const u = allUsersMap.get(gm.user_id);
+        if (u && !userMap.has(u.id)) {
+          userMap.set(u.id, {
+            user_id: u.id,
+            name: u.full_name,
+            emp_id: u.emp_id,
+            team: u.team || 'N/A',
+            solved: 0,
+            total: enabledQuestionsList.length,
+            score: 0,
+            maxScore: totalContestMaxScore,
+            lastActive: null,
+            progress: [],
+          });
+        }
+      });
+    }
+
+    if (teams.length > 0) {
+      const { data: teamUsers } = await dbAdmin
+        .from('users')
+        .select('id')
+        .in('team', teams);
+
+      (teamUsers || []).forEach((tu: any) => {
+        const u = allUsersMap.get(tu.id);
+        if (u && !userMap.has(u.id)) {
+          userMap.set(u.id, {
+            user_id: u.id,
+            name: u.full_name,
+            emp_id: u.emp_id,
+            team: u.team || 'N/A',
+            solved: 0,
+            total: enabledQuestionsList.length,
+            score: 0,
+            maxScore: totalContestMaxScore,
+            lastActive: null,
+            progress: [],
+          });
+        }
+      });
+    }
+
+    // 3. Overlay progress data from database
+    let progress: any[] = [];
+    let from = 0;
+    const step = 1000;
+
+    while (true) {
+      const { data: pageRows, error: progressError } = await dbAdmin
+        .from('progress')
+        .select('*')
+        .eq('contest_id', contest.id)
+        .range(from, from + step - 1);
+
+      if (progressError) {
+        console.error(`[contest detail] Error fetching progress: ${progressError.message}`);
+        break;
+      }
+      if (!pageRows || pageRows.length === 0) break;
+      progress = progress.concat(pageRows);
+      if (pageRows.length < step) break;
+      from += step;
+    }
+
+    (progress || []).forEach((p: any) => {
+      if (!enabledQuestionIdsSet.has(p.question_id)) return;
+      const u = userMap.get(p.user_id);
+      if (u) {
+        if (p.status === 'solved') u.solved++;
+        u.score += p.score || 0;
+        const isActiveSubmission = p.status === 'solved' || p.status === 'attempted' || (p.score || 0) > 0;
+        const subTime = p.last_submission_at || (isActiveSubmission ? p.updated_at : null);
+        if (subTime && (!u.lastActive || new Date(subTime) > new Date(u.lastActive))) {
+          u.lastActive = subTime;
+        }
+        u.progress.push(p);
       }
     });
+
+    leaderboard = Array.from(userMap.values()).sort((a, b) => b.score - a.score);
   }
-
-  // 3. Overlay progress data from database (only for enabled questions and assigned trainers)
-  let progress: any[] = [];
-  let from = 0;
-  const step = 1000;
-
-  while (true) {
-    const { data: pageRows, error: progressError } = await dbAdmin
-      .from('progress')
-      .select('*')
-      .eq('contest_id', contest.id)
-      .range(from, from + step - 1);
-
-    if (progressError) {
-      console.error(`[contest detail] Error fetching progress: ${progressError.message}`);
-      break;
-    }
-    if (!pageRows || pageRows.length === 0) break;
-    progress = progress.concat(pageRows);
-    if (pageRows.length < step) break;
-    from += step;
-  }
-
-  (progress || []).forEach((p: any) => {
-    // Strictly skip progress for disabled questions
-    if (!enabledQuestionIdsSet.has(p.question_id)) return;
-
-    // Only update progress for trainers who are assigned to this contest
-    const u = userMap.get(p.user_id);
-    if (u) {
-      if (p.status === 'solved') u.solved++;
-      u.score += p.score || 0;
-      const isActiveSubmission = p.status === 'solved' || p.status === 'attempted' || (p.score || 0) > 0;
-      const subTime = p.last_submission_at || (isActiveSubmission ? p.updated_at : null);
-      if (subTime && (!u.lastActive || new Date(subTime) > new Date(u.lastActive))) {
-        u.lastActive = subTime;
-      }
-      u.progress.push(p);
-    }
-  });
-
-  const leaderboard = Array.from(userMap.values()).sort((a, b) => b.score - a.score);
   const totalTopicsCount = Array.from(new Set(enabledQuestionsList.map((q: any) => q.domain || 'General'))).length;
 
   return (

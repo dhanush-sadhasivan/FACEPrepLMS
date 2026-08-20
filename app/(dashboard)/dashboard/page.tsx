@@ -10,10 +10,11 @@ import TopPerformersWidget from './TopPerformersWidget';
 import HelpdeskWidget from './HelpdeskWidget';
 import TrainerCompletionAnalytics, { ContestCompletionStat, RoadmapCompletionStat } from './TrainerCompletionAnalytics';
 import TrainerAnnouncementsBanner from './TrainerAnnouncementsBanner';
+import { getCachedGlobalLeaderboard, GlobalPerformer } from '@/lib/cdn-cache';
 import './page.css';
 
 export const dynamic = 'force-dynamic';
-export const revalidate = 0;
+export const revalidate = 60; // Next.js ISR cache
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -41,49 +42,56 @@ export default async function DashboardPage() {
   const isAdminOrManager = role === 'admin' || role === 'manager';
   const isTrainer = role === 'trainer';
 
-  // ── Global Live Top Performers (Computed for ALL Roles with Pagination) ───
+  // ── Global Live Top Performers (Cached via Supabase Storage CDN) ───
   const dbAdmin = getAdminClient();
-  const { data: allUserProfiles } = await dbAdmin.from('users').select('id, full_name, emp_id, team').neq('role', 'admin');
+  let globalPerformers: GlobalPerformer[] = [];
+  const cachedData = await getCachedGlobalLeaderboard();
 
-  const globalUserMap = new Map();
-  (allUserProfiles || []).forEach((u: any) => {
-    globalUserMap.set(u.id, {
-      id: u.id,
-      name: u.full_name,
-      emp_id: u.emp_id || '—',
-      team: u.team || 'N/A',
-      score: 0,
-      solved: 0,
+  if (cachedData && Array.isArray(cachedData.performers) && cachedData.performers.length > 0) {
+    globalPerformers = cachedData.performers;
+  } else {
+    // Graceful fallback to direct DB query if cache is cold
+    const { data: allUserProfiles } = await dbAdmin.from('users').select('id, full_name, emp_id, team').neq('role', 'admin');
+    const globalUserMap = new Map();
+    (allUserProfiles || []).forEach((u: any) => {
+      globalUserMap.set(u.id, {
+        id: u.id,
+        name: u.full_name,
+        emp_id: u.emp_id || '—',
+        team: u.team || 'N/A',
+        score: 0,
+        solved: 0,
+      });
     });
-  });
 
-  let allProgressRows: any[] = [];
-  let pFrom = 0;
-  const pStep = 1000;
-  while (true) {
-    const { data: pageRows, error: pErr } = await dbAdmin
-      .from('progress')
-      .select('user_id, question_id, score, status, contest_id')
-      .not('contest_id', 'is', null)
-      .or('score.gt.0,status.eq.solved')
-      .range(pFrom, pFrom + pStep - 1);
+    let allProgressRows: any[] = [];
+    let pFrom = 0;
+    const pStep = 1000;
+    while (true) {
+      const { data: pageRows, error: pErr } = await dbAdmin
+        .from('progress')
+        .select('user_id, question_id, score, status, contest_id')
+        .not('contest_id', 'is', null)
+        .or('score.gt.0,status.eq.solved')
+        .range(pFrom, pFrom + pStep - 1);
 
-    if (pErr || !pageRows || pageRows.length === 0) break;
-    allProgressRows = allProgressRows.concat(pageRows);
-    if (pageRows.length < pStep) break;
-    pFrom += pStep;
-  }
-
-  allProgressRows.forEach((p: any) => {
-    const entry = globalUserMap.get(p.user_id);
-    if (entry) {
-      entry.score += p.score || 0;
-      if (p.status === 'solved') entry.solved++;
+      if (pErr || !pageRows || pageRows.length === 0) break;
+      allProgressRows = allProgressRows.concat(pageRows);
+      if (pageRows.length < pStep) break;
+      pFrom += pStep;
     }
-  });
 
-  const globalPerformers = Array.from(globalUserMap.values())
-    .sort((a: any, b: any) => (b.score - a.score) || (b.solved - a.solved));
+    allProgressRows.forEach((p: any) => {
+      const entry = globalUserMap.get(p.user_id);
+      if (entry) {
+        entry.score += p.score || 0;
+        if (p.status === 'solved') entry.solved++;
+      }
+    });
+
+    globalPerformers = Array.from(globalUserMap.values())
+      .sort((a: any, b: any) => (b.score - a.score) || (b.solved - a.solved));
+  }
 
   // ── Admin / Manager Queries ─────────────────────────────────────────
   let usersCount = 0;
@@ -150,8 +158,8 @@ export default async function DashboardPage() {
     const allContestsData = contests;
     const allQsData = allQsRes.data || [];
     const allContestAssignData = allContestAssignRes.data || [];
-    const allGroupMembersData = (allRoadmapAssignRes as any)?.data || []; // Note index mapping below
-    const totalTrainersCount = globalUserMap.size || 1;
+    const allGroupMembersData = (allRoadmapAssignRes as any)?.data || [];
+    const totalTrainersCount = globalPerformers.length || 1;
 
     // Helper maps for contest assignment resolution
     const groupMembersMap = new Map<string, string[]>();
@@ -161,15 +169,28 @@ export default async function DashboardPage() {
     });
 
     const teamUsersMap = new Map<string, string[]>();
-    (allUserProfiles || []).forEach((u: any) => {
-      if (u.team) {
+    (globalPerformers || []).forEach((u: any) => {
+      if (u.team && u.team !== 'N/A') {
         if (!teamUsersMap.has(u.team)) teamUsersMap.set(u.team, []);
         teamUsersMap.get(u.team)!.push(u.id);
       }
     });
 
+    // Fetch progress ONLY for top 5 contests to save bandwidth
+    const top5Contests = allContestsData.slice(0, 5);
+    const top5ContestIds = top5Contests.map((c: any) => c.id);
+    let top5ProgressRows: any[] = [];
+    if (top5ContestIds.length > 0) {
+      const { data: pRows } = await dbAdmin
+        .from('progress')
+        .select('contest_id, user_id, question_id, score, status')
+        .in('contest_id', top5ContestIds)
+        .or('score.gt.0,status.eq.solved');
+      top5ProgressRows = pRows || [];
+    }
+
     // 1. Contest Completion Analytics
-    contestStats = allContestsData.slice(0, 5).map((c: any) => {
+    contestStats = top5Contests.map((c: any) => {
       const cQs = allQsData.filter((q: any) => q.contest_id === c.id);
       const qCount = cQs.length || (c.questions?.[0]?.count || 0);
 
@@ -192,7 +213,7 @@ export default async function DashboardPage() {
       if (assignedCount > 0 && cQs.length > 0) {
         assignedUserIds.forEach((userId) => {
           const userSolvedInContest = cQs.filter((q: any) =>
-            allProgressRows.some((p: any) => p.user_id === userId && p.question_id === q.id && (p.status === 'solved' || p.score > 0))
+            top5ProgressRows.some((p: any) => p.contest_id === c.id && p.user_id === userId && p.question_id === q.id && (p.status === 'solved' || p.score > 0))
           ).length;
           totalSolvedSum += userSolvedInContest;
           if (userSolvedInContest >= cQs.length) {
@@ -233,8 +254,8 @@ export default async function DashboardPage() {
       let completedTrainers = 0;
       let totalTopicsDoneSum = 0;
 
-      globalUserMap.forEach((userEntry, userId) => {
-        const rp = allRoadmapProgressData.find((p: any) => p.user_id === userId && p.roadmap_id === r.id);
+      globalPerformers.forEach((userPerf) => {
+        const rp = allRoadmapProgressData.find((p: any) => p.user_id === userPerf.id && p.roadmap_id === r.id);
         const doneCount = (rp?.completed_topic_ids || []).length;
         totalTopicsDoneSum += doneCount;
         if (rp?.status === 'completed' || doneCount >= topicCount) {
@@ -263,7 +284,7 @@ export default async function DashboardPage() {
         const cQs = allQsData.filter((q: any) => q.contest_id === c.contestId);
         if (cQs.length === 0) return false;
         const userSolved = cQs.filter((q: any) =>
-          allProgressRows.some((p: any) => p.user_id === userPerf.id && p.question_id === q.id && (p.status === 'solved' || p.score > 0))
+          top5ProgressRows.some((p: any) => p.contest_id === c.contestId && p.user_id === userPerf.id && p.question_id === q.id && (p.status === 'solved' || p.score > 0))
         ).length;
         return userSolved >= cQs.length;
       }).length;
@@ -612,7 +633,7 @@ export default async function DashboardPage() {
               contestStats={contestStats}
               roadmapStats={roadmapStats}
               topTrainers={topTrainersWithStats}
-              totalTrainersCount={globalUserMap.size}
+              totalTrainersCount={globalPerformers.length || 1}
             />
           </div>
 
