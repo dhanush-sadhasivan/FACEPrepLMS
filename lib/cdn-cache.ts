@@ -55,7 +55,8 @@ export async function getCachedGlobalLeaderboard(): Promise<CachedLeaderboardPay
     });
 
     if (!res.ok) {
-      // 404 or 400 means snapshot not yet generated
+      // 404 means snapshot not yet generated; trigger self-healing generation in background
+      generateAndUploadCdnSnapshots().catch(() => {});
       return null;
     }
 
@@ -89,6 +90,8 @@ export async function getCachedContestData(contestId: string): Promise<CachedCon
     });
 
     if (!res.ok) {
+      // 404 means contest snapshot not yet generated; trigger self-healing generation in background
+      generateAndUploadCdnSnapshots(contestId).catch(() => {});
       return null;
     }
 

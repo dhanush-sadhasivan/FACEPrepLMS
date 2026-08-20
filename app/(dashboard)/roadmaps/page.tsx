@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 import { Roadmap, UserRoadmapProgress, RoadmapTopic, RoadmapQuestion } from '@/lib/types';
+import { useRoadmaps, useCurrentUser } from '@/lib/swr-hooks';
 import './page.css';
 
 interface RoadmapWithProgress extends Roadmap {
@@ -50,20 +51,22 @@ function calculateDuration(startStr?: string | null, endStr?: string | null): st
 }
 
 export default function RoadmapsPage() {
-  const [roadmaps, setRoadmaps] = useState<RoadmapWithProgress[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data: roadmapsData, isLoading: loading, mutate: mutateRoadmaps } = useRoadmaps();
+  const { data: currentUser } = useCurrentUser();
+  const roadmaps = (roadmapsData || []) as RoadmapWithProgress[];
+
   const [domainTab, setDomainTab] = useState('All');
   const [selectedRoadmap, setSelectedRoadmap] = useState<RoadmapWithProgress | null>(null);
 
   // Active topic modal showing questions inside the clicked topic
   const [expandedTopicModal, setExpandedTopicModal] = useState<ParsedTopic | null>(null);
 
-  // User role state (only admin/manager can trigger scrapes)
-  const [userRole, setUserRole] = useState<string>('trainer');
-
   // Scraper trigger state
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
+
+  const userRole = currentUser?.role || 'trainer';
+  const canInitiateScrape = userRole === 'admin' || userRole === 'manager';
 
   const handleSyncScrape = async (contestId?: string | null) => {
     setIsSyncing(true);
@@ -82,39 +85,15 @@ export default function RoadmapsPage() {
         await new Promise(r => setTimeout(r, 1000));
         setSyncMessage(`✅ HackerRank submission scraper triggered! Syncing question completions across roadmaps.`);
       }
-      await fetchRoadmaps();
+      await mutateRoadmaps();
     } catch (err: any) {
       setSyncMessage(`⚡ Scrape sync initiated! Progress re-evaluated.`);
-      await fetchRoadmaps();
+      await mutateRoadmaps();
     } finally {
       setIsSyncing(false);
       setTimeout(() => setSyncMessage(null), 6000);
     }
   };
-
-  const fetchRoadmaps = useCallback(async () => {
-    setLoading(true);
-    const res = await fetch('/api/trainer/roadmaps');
-    if (res.ok) {
-      const data = await res.json();
-      setRoadmaps(data);
-    }
-    setLoading(false);
-  }, []);
-
-  useEffect(() => {
-    async function loadUserRole() {
-      const res = await fetch('/api/users/me');
-      if (res.ok) {
-        const u = await res.json();
-        if (u?.role) setUserRole(u.role);
-      }
-    }
-    loadUserRole();
-    fetchRoadmaps();
-  }, [fetchRoadmaps]);
-
-  const canInitiateScrape = userRole === 'admin' || userRole === 'manager';
 
   const filtered = domainTab === 'All'
     ? roadmaps
@@ -224,7 +203,7 @@ export default function RoadmapsPage() {
       },
     };
 
-    setRoadmaps(prev => prev.map(r => r.id === roadmap.id ? updatedRoadmap : r));
+    mutateRoadmaps(roadmaps.map(r => r.id === roadmap.id ? updatedRoadmap : r), false);
     if (selectedRoadmap?.id === roadmap.id) setSelectedRoadmap(updatedRoadmap);
 
     await fetch('/api/trainer/roadmaps', {

@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { CourseAssignment, Course } from '@/lib/types';
+import { useSkills, useCourses } from '@/lib/swr-hooks';
 import './page.css';
 
 type LevelFilter = 'all' | 'Beginner' | 'Intermediate' | 'Advanced';
@@ -43,14 +44,13 @@ export default function SkillsPage() {
   const [statusFilter, setStatusFilter] = useState<BadgeStatusFilter>('all');
   const [badgeSearch, setBadgeSearch] = useState('');
 
-  // Badges state
-  const [skillsData, setSkillsData] = useState<any>(null);
-  const [skillsLoading, setSkillsLoading] = useState(true);
+  // SWR Cached State for Badges & Courses
+  const { data: skillsData, isLoading: skillsLoading } = useSkills();
+  const { data: coursesData, isLoading: coursesLoading } = useCourses();
+  const assignments = coursesData || [];
   const [selectedBadge, setSelectedBadge] = useState<any | null>(null);
 
-  // Courses state
-  const [assignments, setAssignments] = useState<CourseAssignment[]>([]);
-  const [coursesLoading, setCoursesLoading] = useState(true);
+  // Filter state
   const [levelFilter, setLevelFilter] = useState<LevelFilter>('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [search, setSearch] = useState('');
@@ -67,37 +67,6 @@ export default function SkillsPage() {
       console.error('Failed to load completed subtopics from storage:', e);
     }
   }, []);
-
-  const fetchSkillsData = useCallback(async () => {
-    setSkillsLoading(true);
-    try {
-      const res = await fetch('/api/trainer/skills');
-      if (res.ok) {
-        setSkillsData(await res.json());
-      }
-    } catch (e) {
-      console.error('Failed to load skills badges:', e);
-    } finally {
-      setSkillsLoading(false);
-    }
-  }, []);
-
-  const fetchCourses = useCallback(async () => {
-    setCoursesLoading(true);
-    try {
-      const res = await fetch('/api/trainer/courses');
-      if (res.ok) setAssignments(await res.json());
-    } catch (e) {
-      console.error('Failed to load courses:', e);
-    } finally {
-      setCoursesLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchSkillsData();
-    fetchCourses();
-  }, [fetchSkillsData, fetchCourses]);
 
   const toggleSubtopicCompletion = (courseId: string, topicName: string) => {
     const key = `${courseId}___${topicName}`;

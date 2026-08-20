@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { TrainerTodo, TodoPriority } from '@/lib/types';
+import { useTodos } from '@/lib/swr-hooks';
 import './page.css';
 
 type FilterTab = 'all' | 'active' | 'completed';
@@ -16,8 +17,8 @@ const PRIORITY_CONFIG: Record<TodoPriority, { label: string; color: string; bg: 
 const CATEGORIES = ['General', 'Study', 'Contest Prep', 'Admin', 'Review', 'Practice'];
 
 export default function TodosPage() {
-  const [todos, setTodos] = useState<TrainerTodo[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data: todosData, isLoading: loading, mutate: mutateTodos } = useTodos();
+  const todos = (todosData || []) as TrainerTodo[];
   const [tab, setTab] = useState<FilterTab>('all');
   const [sortBy, setSortBy] = useState<SortKey>('created_at');
   const [search, setSearch] = useState('');
@@ -32,22 +33,6 @@ export default function TodosPage() {
   const [newDueDate, setNewDueDate] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
-
-  const fetchTodos = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await fetch('/api/trainer/todos');
-      if (res.ok) setTodos(await res.json());
-    } catch (e) {
-      console.error('Failed to load todos:', e);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchTodos();
-  }, [fetchTodos]);
 
   const activeTodos = useMemo(() => todos.filter((t) => !t.is_completed), [todos]);
   const completedTodos = useMemo(() => todos.filter((t) => t.is_completed), [todos]);
@@ -103,7 +88,7 @@ export default function TodosPage() {
       });
       if (res.ok) {
         const created = await res.json();
-        setTodos((prev) => [created, ...prev]);
+        mutateTodos([created, ...todos], false);
         setNewTitle('');
         setNewDesc('');
         setNewPriority('medium');
@@ -122,7 +107,10 @@ export default function TodosPage() {
 
   const handleToggle = async (id: string) => {
     const todo = todos.find((t) => t.id === id);
-    setTodos((prev) => prev.map((t) => (t.id === id ? { ...t, is_completed: !t.is_completed } : t)));
+    mutateTodos(
+      todos.map((t) => (t.id === id ? { ...t, is_completed: !t.is_completed } : t)),
+      false
+    );
     await fetch(`/api/trainer/todos/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -131,7 +119,10 @@ export default function TodosPage() {
   };
 
   const handleDelete = async (id: string) => {
-    setTodos((prev) => prev.filter((t) => t.id !== id));
+    mutateTodos(
+      todos.filter((t) => t.id !== id),
+      false
+    );
     await fetch(`/api/trainer/todos/${id}`, { method: 'DELETE' });
   };
 

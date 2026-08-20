@@ -25,14 +25,7 @@ export default function TopPerformersWidget({ performers, currentUserId }: TopPe
   const [filterTeam, setFilterTeam] = useState('All');
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // Auto refresh every 30 seconds to sync live scrape progress automatically
-  useEffect(() => {
-    const timer = setInterval(() => {
-      router.refresh();
-    }, 30000);
-    return () => clearInterval(timer);
-  }, [router]);
-
+  // Polling removed to avoid aggressive server queries; manual refresh available via button
   const handleManualRefresh = (e: React.MouseEvent) => {
     e.stopPropagation();
     setIsRefreshing(true);

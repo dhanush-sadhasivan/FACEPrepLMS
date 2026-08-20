@@ -1,28 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
+import { useSkills } from '@/lib/swr-hooks';
 
 export default function AssignedCoursesWidget() {
-  const [skillsData, setSkillsData] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const { data: skillsData, isLoading: loading } = useSkills();
   const [activeTab, setActiveTab] = useState<'all' | 'earned' | 'in_progress'>('all');
-
-  useEffect(() => {
-    async function loadSkills() {
-      try {
-        const res = await fetch('/api/trainer/skills');
-        if (res.ok) {
-          setSkillsData(await res.json());
-        }
-      } catch {
-        // ignore
-      } finally {
-        setLoading(false);
-      }
-    }
-    loadSkills();
-  }, []);
 
   const earnedTopicBadges = skillsData?.topicBadges || [];
   const earnedContestBadges = skillsData?.contestBadges || [];

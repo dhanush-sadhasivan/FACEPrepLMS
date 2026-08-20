@@ -1,32 +1,15 @@
 'use client';
 
-import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useSkills } from '@/lib/swr-hooks';
 
 export default function ProfileBadgesWidget() {
-  const [badges, setBadges] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data: skillsData, isLoading: loading } = useSkills();
 
-  useEffect(() => {
-    async function loadBadges() {
-      try {
-        const res = await fetch('/api/trainer/skills');
-        if (res.ok) {
-          const data = await res.json();
-          const all = [
-            ...(data.topicBadges || []),
-            ...(data.contestBadges || []),
-          ];
-          setBadges(all);
-        }
-      } catch {
-        // ignore
-      } finally {
-        setLoading(false);
-      }
-    }
-    loadBadges();
-  }, []);
+  const badges = [
+    ...(skillsData?.topicBadges || []),
+    ...(skillsData?.contestBadges || []),
+  ];
 
   const unlocked = badges.filter(b => b.isCompleted);
 
