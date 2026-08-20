@@ -111,10 +111,21 @@ export async function generateAndUploadCdnSnapshots(contestId?: string): Promise
 
   try {
     // 1. Generate & Upload Global Leaderboard
-    const { data: allUserProfiles } = await dbAdmin
-      .from('users')
-      .select('id, full_name, emp_id, team')
-      .neq('role', 'admin');
+    const uStep = 1000;
+    let uFrom = 0;
+    let allUserProfiles: any[] = [];
+    while (true) {
+      const { data: uPage } = await dbAdmin
+        .from('users')
+        .select('id, full_name, emp_id, team')
+        .neq('role', 'admin')
+        .order('id', { ascending: true })
+        .range(uFrom, uFrom + uStep - 1);
+      if (!uPage || uPage.length === 0) break;
+      allUserProfiles = allUserProfiles.concat(uPage);
+      if (uPage.length < uStep) break;
+      uFrom += uStep;
+    }
 
     const globalUserMap = new Map<string, GlobalPerformer>();
     (allUserProfiles || []).forEach((u: any) => {
@@ -137,6 +148,7 @@ export async function generateAndUploadCdnSnapshots(contestId?: string): Promise
         .from('progress')
         .select('user_id, score, status')
         .or('score.gt.0,status.eq.solved')
+        .order('id', { ascending: true })
         .range(pFrom, pFrom + pStep - 1);
 
       if (pErr || !pageRows || pageRows.length === 0) break;
@@ -231,6 +243,7 @@ export async function generateAndUploadCdnSnapshots(contestId?: string): Promise
             .from('progress')
             .select('user_id, question_id, status, score, max_score, last_submission_at, updated_at')
             .eq('contest_id', contestId)
+            .order('id', { ascending: true })
             .range(cpFrom, cpFrom + pStep - 1);
 
           if (cpErr || !pageRows || pageRows.length === 0) break;

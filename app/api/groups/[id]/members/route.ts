@@ -4,8 +4,14 @@ import { createClient } from '@/lib/supabase/server';
 type Params = Promise<{ id: string }>;
 
 export async function POST(req: Request, { params }: { params: Params }) {
-  const { id: groupId } = await params;
   const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const { data: caller } = await supabase.from('users').select('role').eq('id', user.id).single();
+  if (caller?.role !== 'admin' && caller?.role !== 'manager') {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+  const { id: groupId } = await params;
   const { userIds } = await req.json();
 
   if (!Array.isArray(userIds)) return NextResponse.json({ error: 'Invalid data' }, { status: 400 });
@@ -17,8 +23,14 @@ export async function POST(req: Request, { params }: { params: Params }) {
 }
 
 export async function DELETE(req: Request, { params }: { params: Params }) {
-  const { id: groupId } = await params;
   const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const { data: caller } = await supabase.from('users').select('role').eq('id', user.id).single();
+  if (caller?.role !== 'admin' && caller?.role !== 'manager') {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+  const { id: groupId } = await params;
   const { userId } = await req.json();
 
   if (!userId) return NextResponse.json({ error: 'Missing userId' }, { status: 400 });

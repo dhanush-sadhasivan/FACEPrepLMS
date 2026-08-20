@@ -1,7 +1,24 @@
 import { NextResponse } from 'next/server';
 import { revalidatePath, revalidateTag } from 'next/cache';
+import { createClient } from '@/lib/supabase/server';
 
 export async function POST(req: Request) {
+  const apiKey = req.headers.get('x-api-key');
+  const expectedKey = process.env.RAILWAY_API_KEY;
+  
+  if (apiKey && expectedKey && apiKey === expectedKey) {
+    // Service call - proceed
+  } else {
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    
+    const { data: caller } = await supabase.from('users').select('role').eq('id', user.id).single();
+    if (caller?.role !== 'admin' && caller?.role !== 'manager') {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+  }
+
   try {
     const { searchParams } = new URL(req.url);
     const contestId = searchParams.get('contestId');

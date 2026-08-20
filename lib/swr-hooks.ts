@@ -87,7 +87,7 @@ export function useTodos() {
  * Hook for Broadcast Announcements (Cached for 2 mins)
  */
 export function useAnnouncements() {
-  return useSWR<any[]>('/api/notifications/announcements', fetcher, {
+  return useSWR<{ teams: string[]; groups: any[]; users: any[] }>('/api/notifications/announcements', fetcher, {
     ...mediumDataOptions,
     dedupingInterval: 1000 * 60 * 2,
   });

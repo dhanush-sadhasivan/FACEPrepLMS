@@ -165,6 +165,7 @@ export default async function ContestDetailPage({ params }: { params: Promise<{ 
         .from('progress')
         .select('*')
         .eq('contest_id', contest.id)
+        .order('id', { ascending: true })
         .range(from, from + step - 1);
 
       if (progressError) {

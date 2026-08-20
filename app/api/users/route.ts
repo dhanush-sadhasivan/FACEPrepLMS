@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getAdminClient } from '@/lib/supabase/admin';
+import { createClient } from '@/lib/supabase/server';
 import { Resend } from 'resend';
 
 function sanitizeField(val?: string | null): string | null {
@@ -12,6 +13,13 @@ function sanitizeField(val?: string | null): string | null {
 }
 
 export async function POST(req: Request) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const { data: caller } = await supabase.from('users').select('role').eq('id', user.id).single();
+  if (caller?.role !== 'admin' && caller?.role !== 'manager') {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
   try {
     const body = await req.json();
     const { email, full_name, emp_id, role, team, manager, hackerrank_id, password } = body;

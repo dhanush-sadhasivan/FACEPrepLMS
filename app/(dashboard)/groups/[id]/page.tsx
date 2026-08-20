@@ -44,7 +44,7 @@ export default async function GroupDetailPage({ params }: { params: Promise<{ id
     .select('user_id, users(id, full_name, emp_id, team, role)')
     .eq('group_id', (await params).id);
 
-  const members = membersData?.map((m) => m.users) || [];
+  const members = membersData?.map((m) => m.users).filter(Boolean) || [];
 
   // Fetch all trainers/users to allow adding them
   const { data: allUsers } = await supabase.from('users').select('id, full_name, emp_id, role');

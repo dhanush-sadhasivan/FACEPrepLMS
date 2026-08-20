@@ -51,7 +51,20 @@ export default async function DashboardPage() {
     globalPerformers = cachedData.performers;
   } else {
     // Graceful fallback to direct DB query if cache is cold
-    const { data: allUserProfiles } = await dbAdmin.from('users').select('id, full_name, emp_id, team').neq('role', 'admin');
+    let allUserProfiles: any[] = [];
+    let uFrom = 0;
+    const uStep = 1000;
+    while (true) {
+      const { data: uPage } = await dbAdmin
+        .from('users').select('id, full_name, emp_id, team')
+        .neq('role', 'admin')
+        .order('id', { ascending: true })
+        .range(uFrom, uFrom + uStep - 1);
+      if (!uPage || uPage.length === 0) break;
+      allUserProfiles = allUserProfiles.concat(uPage);
+      if (uPage.length < uStep) break;
+      uFrom += uStep;
+    }
     const globalUserMap = new Map();
     (allUserProfiles || []).forEach((u: any) => {
       globalUserMap.set(u.id, {
@@ -72,6 +85,7 @@ export default async function DashboardPage() {
         .from('progress')
         .select('user_id, question_id, score, status, contest_id')
         .or('score.gt.0,status.eq.solved')
+        .order('id', { ascending: true })
         .range(pFrom, pFrom + pStep - 1);
 
       if (pErr || !pageRows || pageRows.length === 0) break;
@@ -117,6 +131,7 @@ export default async function DashboardPage() {
       allRoadmapsRes,
       allRoadmapProgressRes,
       allContestAssignRes,
+      allGroupMembersRes,
       allRoadmapAssignRes,
     ] = await Promise.all([
       supabase.from('users').select('*', { count: 'exact', head: true }),
@@ -157,7 +172,7 @@ export default async function DashboardPage() {
     const allContestsData = contests;
     const allQsData = allQsRes.data || [];
     const allContestAssignData = allContestAssignRes.data || [];
-    const allGroupMembersData = (allRoadmapAssignRes as any)?.data || [];
+    const allGroupMembersData = (allGroupMembersRes as any)?.data || [];
     const totalTrainersCount = globalPerformers.length || 1;
 
     // Helper maps for contest assignment resolution

@@ -20,6 +20,11 @@ export async function POST(request: Request) {
   const authHeader = request.headers.get('x-api-key');
   const expectedKey = process.env.SCRAPER_INGEST_API_KEY || process.env.RAILWAY_API_KEY;
 
+  if (!expectedKey) {
+    console.error('[ingest] SCRAPER_INGEST_API_KEY and RAILWAY_API_KEY are both unset. Rejecting request.');
+    return NextResponse.json({ error: 'Server misconfiguration: API key not set' }, { status: 500 });
+  }
+
   if (expectedKey && authHeader !== expectedKey) {
     console.error(`[scrape/ingest] Unauthorized: provided key "${authHeader}" does not match expected.`);
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
