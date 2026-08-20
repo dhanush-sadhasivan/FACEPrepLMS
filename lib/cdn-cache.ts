@@ -146,7 +146,7 @@ export async function generateAndUploadCdnSnapshots(contestId?: string): Promise
     while (true) {
       const { data: pageRows, error: pErr } = await dbAdmin
         .from('progress')
-        .select('user_id, score, status')
+        .select('user_id, question_id, score, status')
         .or('score.gt.0,status.eq.solved')
         .order('id', { ascending: true })
         .range(pFrom, pFrom + pStep - 1);
@@ -157,11 +157,29 @@ export async function generateAndUploadCdnSnapshots(contestId?: string): Promise
       pFrom += pStep;
     }
 
+    // Deduplicate by (user_id, question_id) and aggregate scores
+    const userQuestionMap = new Map<string, { user_id: string; score: number; isSolved: boolean }>();
     allProgressRows.forEach((p: any) => {
-      const entry = globalUserMap.get(p.user_id);
+      if (!p.user_id || !p.question_id) return;
+      const key = `${p.user_id}:${p.question_id}`;
+      const existing = userQuestionMap.get(key);
+      if (!existing) {
+        userQuestionMap.set(key, {
+          user_id: p.user_id,
+          score: p.score || 0,
+          isSolved: p.status === 'solved',
+        });
+      } else {
+        existing.score = Math.max(existing.score, p.score || 0);
+        if (p.status === 'solved') existing.isSolved = true;
+      }
+    });
+
+    userQuestionMap.forEach((item) => {
+      const entry = globalUserMap.get(item.user_id);
       if (entry) {
-        entry.score += p.score || 0;
-        if (p.status === 'solved') entry.solved++;
+        entry.score += item.score;
+        if (item.isSolved) entry.solved++;
       }
     });
 
