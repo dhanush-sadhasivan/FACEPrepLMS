@@ -90,26 +90,43 @@ export async function GET() {
   );
   const relevantDayQuestionIds = allQuestions.map((q: any) => q.id);
 
-  // Fetch completions and progress specifically scoped to roadmap questions (avoids PostgREST 1000 row truncation)
-  const [completionsRes, hrProgressRes] = await Promise.all([
-    relevantDayQuestionIds.length > 0
-      ? dbAdmin
-          .from('it_question_completions')
-          .select('user_id, day_question_id, is_completed')
-          .in('day_question_id', relevantDayQuestionIds)
-          .eq('is_completed', true)
-      : Promise.resolve({ data: [] }),
-    relevantQuestionIds.length > 0
-      ? dbAdmin
-          .from('progress')
-          .select('user_id, question_id, status')
-          .in('question_id', relevantQuestionIds)
-          .eq('status', 'solved')
-      : Promise.resolve({ data: [] }),
-  ]);
+  // Fetch completions and progress specifically scoped to roadmap questions with pagination
+  let completions: any[] = [];
+  if (relevantDayQuestionIds.length > 0) {
+    let cFrom = 0;
+    const cStep = 1000;
+    while (true) {
+      const { data: cPage } = await dbAdmin
+        .from('it_question_completions')
+        .select('user_id, day_question_id, clicked_at, is_completed')
+        .in('day_question_id', relevantDayQuestionIds)
+        .order('id', { ascending: true })
+        .range(cFrom, cFrom + cStep - 1);
+      if (!cPage || cPage.length === 0) break;
+      completions = completions.concat(cPage);
+      if (cPage.length < cStep) break;
+      cFrom += cStep;
+    }
+  }
 
-  const completions = completionsRes.data || [];
-  const hrProgress = hrProgressRes.data || [];
+  let hrProgress: any[] = [];
+  if (relevantQuestionIds.length > 0) {
+    let pFrom = 0;
+    const pStep = 1000;
+    while (true) {
+      const { data: pPage } = await dbAdmin
+        .from('progress')
+        .select('user_id, question_id, status')
+        .in('question_id', relevantQuestionIds)
+        .eq('status', 'solved')
+        .order('id', { ascending: true })
+        .range(pFrom, pFrom + pStep - 1);
+      if (!pPage || pPage.length === 0) break;
+      hrProgress = hrProgress.concat(pPage);
+      if (pPage.length < pStep) break;
+      pFrom += pStep;
+    }
+  }
 
   // Maps for fast lookups
   const configMap = new Map<string, any>();
@@ -159,9 +176,9 @@ export async function GET() {
   });
 
   // Map (user_id, day_question_id) -> completion
-  const completionLookup = new Set<string>();
+  const completionMap = new Map<string, any>();
   completions.forEach((c: any) => {
-    if (c.is_completed) completionLookup.add(`${c.user_id}_${c.day_question_id}`);
+    completionMap.set(`${c.user_id}_${c.day_question_id}`, c);
   });
 
   // Map (user_id, question_id) -> solved
@@ -203,15 +220,17 @@ export async function GET() {
       const isCountedToday = lastCheckIn === today;
 
       // Count completions for this trainer
-      // Portal-click gating: only count as completed if clicked_at exists AND HR solved
+      // Portal-click gating: question is complete only if clicked_at exists AND (HR solved OR manually completed)
       let completedCount = 0;
       let pendingCount = 0;
 
       rmQuestions.forEach((q) => {
-        const hasCompletion = completionLookup.has(`${uid}_${q.id}`);
-        const hasHrSolved = q.question_id && hrSolvedLookup.has(`${uid}_${q.question_id}`);
-        // Completed requires both portal click and HR solved (or manual completion)
-        const isComp = hasCompletion && hasHrSolved;
+        const comp = completionMap.get(`${uid}_${q.id}`);
+        const hasClicked = Boolean(comp?.clicked_at);
+        const isManuallyCompleted = Boolean(comp?.is_completed);
+        const isHrSolved = q.question_id ? hrSolvedLookup.has(`${uid}_${q.question_id}`) : false;
+
+        const isComp = hasClicked && (isHrSolved || isManuallyCompleted);
 
         if (isComp) {
           completedCount++;
