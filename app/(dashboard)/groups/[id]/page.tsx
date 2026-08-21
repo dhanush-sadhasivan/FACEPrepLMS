@@ -2,8 +2,8 @@ import { createClient } from '@/lib/supabase/server';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import AddMemberModal from './AddMemberModal';
-import RemoveMemberButton from './RemoveMemberButton';
 import EditGroupHeader from './EditGroupHeader';
+import GroupMembersTable from './GroupMembersTable';
 import '../page.css';
 
 export const dynamic = 'force-dynamic';
@@ -44,7 +44,7 @@ export default async function GroupDetailPage({ params }: { params: Promise<{ id
     .select('user_id, users(id, full_name, emp_id, team, role)')
     .eq('group_id', (await params).id);
 
-  const members = membersData?.map((m) => m.users).filter(Boolean) || [];
+  const members = (membersData?.map((m: any) => m.users).filter(Boolean) || []) as any[];
 
   // Fetch all trainers/users to allow adding them
   const { data: allUsers } = await supabase.from('users').select('id, full_name, emp_id, role');
@@ -94,79 +94,12 @@ export default async function GroupDetailPage({ params }: { params: Promise<{ id
       <div className="members-card">
         <div className="members-card-header">
           <h2 className="members-card-title">
-            <span>👥</span> Roster & Member List
+            <span>👥</span> Roster &amp; Member List
           </h2>
           <AddMemberModal groupId={group.id} availableUsers={availableUsers} />
         </div>
 
-        <div className="members-table-container">
-          <table className="members-table">
-            <thead>
-              <tr>
-                <th>Member Details</th>
-                <th>Emp ID</th>
-                <th>Team</th>
-                <th>Role</th>
-                <th style={{ textAlign: 'right' }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {members.map((member: any) => (
-                <tr key={member.id}>
-                  {/* User Cell */}
-                  <td>
-                    <div className="member-identity-cell">
-                      <div className="member-avatar">{getInitials(member.full_name)}</div>
-                      <span className="member-name">{member.full_name || 'Unnamed User'}</span>
-                    </div>
-                  </td>
-
-                  {/* Emp ID */}
-                  <td>
-                    {member.emp_id ? (
-                      <span className="emp-id-badge">{member.emp_id}</span>
-                    ) : (
-                      <span style={{ color: 'var(--text-muted)' }}>—</span>
-                    )}
-                  </td>
-
-                  {/* Team */}
-                  <td>
-                    {member.team ? (
-                      <span className="meta-chip">🏢 {member.team}</span>
-                    ) : (
-                      <span style={{ color: 'var(--text-muted)' }}>—</span>
-                    )}
-                  </td>
-
-                  {/* Role */}
-                  <td>{renderRoleBadge(member.role)}</td>
-
-                  {/* Actions */}
-                  <td style={{ textAlign: 'right' }}>
-                    <RemoveMemberButton groupId={group.id} userId={member.id} userName={member.full_name} />
-                  </td>
-                </tr>
-              ))}
-
-              {members.length === 0 && (
-                <tr>
-                  <td colSpan={5}>
-                    <div className="empty-users-state">
-                      <div className="empty-users-icon">👥</div>
-                      <h3 style={{ fontSize: '1.05rem', fontWeight: 700, margin: '0.25rem 0' }}>
-                        No members assigned to this group
-                      </h3>
-                      <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                        Click "+ Add Member" above to enroll trainers and managers into this cohort.
-                      </p>
-                    </div>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+        <GroupMembersTable groupId={group.id} members={members} />
       </div>
     </div>
   );

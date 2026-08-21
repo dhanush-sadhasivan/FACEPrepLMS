@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 
 export interface Performer {
@@ -17,6 +17,9 @@ interface TopPerformersWidgetProps {
   performers: Performer[];
   currentUserId?: string;
 }
+
+type PerformerSortField = 'rank' | 'name' | 'emp_id' | 'team' | 'solved' | 'score';
+type SortDirection = 'asc' | 'desc' | null;
 
 export default function TopPerformersWidget({ performers, currentUserId }: TopPerformersWidgetProps) {
   const router = useRouter();
@@ -42,7 +45,23 @@ export default function TopPerformersWidget({ performers, currentUserId }: TopPe
   const top5 = rankedPerformers.slice(0, 5);
 
   // Teams list for modal filter
-  const teams = ['All', ...Array.from(new Set(performers.map(p => p.team).filter(t => t && t !== 'N/A')))];
+  const teams = ['All', ...Array.from(new Set(performers.map((p) => p.team).filter((t) => t && t !== 'N/A')))];
+
+  // 3-state Sorting State for Modal Table
+  const [sortField, setSortField] = useState<PerformerSortField | null>(null);
+  const [sortDirection, setSortDirection] = useState<SortDirection>(null);
+
+  const handleSort = (field: PerformerSortField) => {
+    if (sortField !== field) {
+      setSortField(field);
+      setSortDirection('asc');
+    } else if (sortDirection === 'asc') {
+      setSortDirection('desc');
+    } else {
+      setSortField(null);
+      setSortDirection(null);
+    }
+  };
 
   // Filtered performers for modal
   const filteredPerformers = rankedPerformers.filter(p => {
@@ -53,6 +72,72 @@ export default function TopPerformersWidget({ performers, currentUserId }: TopPe
     const matchesTeam = filterTeam === 'All' || p.team === filterTeam;
     return matchesSearch && matchesTeam;
   });
+
+  const sortedPerformers = useMemo(() => {
+    if (!sortField || !sortDirection) return filteredPerformers;
+
+    return [...filteredPerformers].sort((a, b) => {
+      let valA: any = 0;
+      let valB: any = 0;
+
+      if (sortField === 'name') {
+        valA = (a.name || '').toLowerCase();
+        valB = (b.name || '').toLowerCase();
+        return sortDirection === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+      }
+      if (sortField === 'emp_id') {
+        valA = (a.emp_id || '').toLowerCase();
+        valB = (b.emp_id || '').toLowerCase();
+        return sortDirection === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+      }
+      if (sortField === 'team') {
+        valA = (a.team || '').toLowerCase();
+        valB = (b.team || '').toLowerCase();
+        return sortDirection === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+      }
+      if (sortField === 'rank') {
+        valA = a.rank || 0;
+        valB = b.rank || 0;
+      }
+      if (sortField === 'solved') {
+        valA = a.solved || 0;
+        valB = b.solved || 0;
+      }
+      if (sortField === 'score') {
+        valA = a.score || 0;
+        valB = b.score || 0;
+      }
+
+      if (sortDirection === 'asc') return valA > valB ? 1 : valA < valB ? -1 : 0;
+      return valA < valB ? 1 : valA > valB ? -1 : 0;
+    });
+  }, [filteredPerformers, sortField, sortDirection]);
+
+  const renderSortHeader = (label: string, field: PerformerSortField, align: 'left' | 'right' = 'left', style?: React.CSSProperties) => {
+    const isActive = sortField === field;
+    return (
+      <th
+        onClick={() => handleSort(field)}
+        style={{
+          padding: '0.65rem 0.5rem',
+          textAlign: align,
+          color: isActive ? 'var(--accent)' : 'var(--text-muted)',
+          cursor: 'pointer',
+          userSelect: 'none',
+          transition: 'color 0.15s ease',
+          ...style,
+        }}
+        title={`Sort by ${label} (${isActive ? (sortDirection === 'asc' ? 'Ascending / A-Z' : 'Descending / Z-A') : 'Click to sort'})`}
+      >
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', justifyContent: align === 'right' ? 'flex-end' : 'flex-start', width: '100%' }}>
+          <span>{label}</span>
+          <span style={{ fontSize: '0.75rem', opacity: isActive ? 1 : 0.4 }}>
+            {isActive ? (sortDirection === 'asc' ? '▲' : '▼') : '⇅'}
+          </span>
+        </div>
+      </th>
+    );
+  };
 
   const currentUserRank = rankedPerformers.find(p => p.user_id === currentUserId);
 
@@ -269,16 +354,16 @@ export default function TopPerformersWidget({ performers, currentUserId }: TopPe
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
                   <thead>
                     <tr style={{ borderBottom: '2px solid var(--border)', color: 'var(--text-muted)', textAlign: 'left' }}>
-                      <th style={{ padding: '0.65rem 0.5rem', width: 60 }}>Rank</th>
-                      <th style={{ padding: '0.65rem 0.5rem' }}>Participant</th>
-                      <th style={{ padding: '0.65rem 0.5rem' }}>Emp ID</th>
-                      <th style={{ padding: '0.65rem 0.5rem' }}>Team</th>
-                      <th style={{ padding: '0.65rem 0.5rem', textAlign: 'right' }}>Questions Solved</th>
-                      <th style={{ padding: '0.65rem 0.5rem', textAlign: 'right' }}>Total Points</th>
+                      {renderSortHeader('Rank', 'rank', 'left', { width: 70 })}
+                      {renderSortHeader('Participant', 'name', 'left')}
+                      {renderSortHeader('Emp ID', 'emp_id', 'left')}
+                      {renderSortHeader('Team', 'team', 'left')}
+                      {renderSortHeader('Questions Solved', 'solved', 'right')}
+                      {renderSortHeader('Total Points', 'score', 'right')}
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredPerformers.map((p, idx) => {
+                    {sortedPerformers.map((p, idx) => {
                       const isCurrentUser = p.user_id === currentUserId;
                       return (
                         <tr

@@ -35,6 +35,18 @@ function getAvatarGradient(name: string): string {
   return gradients[index];
 }
 
+type TrainerSortField =
+  | 'full_name'
+  | 'team'
+  | 'roadmap_title'
+  | 'current_day'
+  | 'solved_progress'
+  | 'pending_questions_count'
+  | 'it_days_count'
+  | 'extended_days';
+
+type SortDirection = 'asc' | 'desc' | null;
+
 export default function TrainerOverviewTable({ onlineUserIds: propOnlineUserIds }: TrainerOverviewTableProps) {
   const globalPresence = useGlobalPresence();
   const onlineUserIds = propOnlineUserIds || globalPresence.onlineUserIds;
@@ -44,6 +56,23 @@ export default function TrainerOverviewTable({ onlineUserIds: propOnlineUserIds 
   const [search, setSearch] = useState('');
   const [roadmapFilter, setRoadmapFilter] = useState('All');
   const [statusFilter, setStatusFilter] = useState<'all' | 'online' | 'pending' | 'ontrack'>('all');
+
+  // 3-state Sorting State (Normal -> Asc / A-Z -> Desc / Z-A -> Normal)
+  const [sortField, setSortField] = useState<TrainerSortField | null>(null);
+  const [sortDirection, setSortDirection] = useState<SortDirection>(null);
+
+  const handleSort = (field: TrainerSortField) => {
+    if (sortField !== field) {
+      setSortField(field);
+      setSortDirection('asc');
+    } else if (sortDirection === 'asc') {
+      setSortDirection('desc');
+    } else {
+      // 3rd click: Reset to normal default
+      setSortField(null);
+      setSortDirection(null);
+    }
+  };
 
   // Extension Modal State
   const [extendTarget, setExtendTarget] = useState<ITTrainerOverviewItem | null>(null);
@@ -205,6 +234,78 @@ export default function TrainerOverviewTable({ onlineUserIds: propOnlineUserIds 
       return matchesSearch && matchesRoadmap && matchesStatus;
     });
   }, [enrichedTrainers, search, roadmapFilter, statusFilter]);
+
+  const sortedTrainers = useMemo(() => {
+    if (!sortField || !sortDirection) return filteredTrainers;
+
+    return [...filteredTrainers].sort((a, b) => {
+      let valA: any = 0;
+      let valB: any = 0;
+
+      if (sortField === 'full_name') {
+        valA = (a.full_name || '').toLowerCase();
+        valB = (b.full_name || '').toLowerCase();
+        return sortDirection === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+      }
+      if (sortField === 'team') {
+        valA = (a.team || '').toLowerCase();
+        valB = (b.team || '').toLowerCase();
+        return sortDirection === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+      }
+      if (sortField === 'roadmap_title') {
+        valA = (a.roadmap_title || '').toLowerCase();
+        valB = (b.roadmap_title || '').toLowerCase();
+        return sortDirection === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+      }
+      if (sortField === 'current_day') {
+        valA = a.current_day || 0;
+        valB = b.current_day || 0;
+      }
+      if (sortField === 'solved_progress') {
+        valA = a.total_questions_count > 0 ? a.completed_questions_count / a.total_questions_count : 0;
+        valB = b.total_questions_count > 0 ? b.completed_questions_count / b.total_questions_count : 0;
+      }
+      if (sortField === 'pending_questions_count') {
+        valA = a.pending_questions_count || 0;
+        valB = b.pending_questions_count || 0;
+      }
+      if (sortField === 'it_days_count') {
+        valA = a.it_days_count || 0;
+        valB = b.it_days_count || 0;
+      }
+      if (sortField === 'extended_days') {
+        valA = a.extended_days || 0;
+        valB = b.extended_days || 0;
+      }
+
+      if (sortDirection === 'asc') return valA > valB ? 1 : valA < valB ? -1 : 0;
+      return valA < valB ? 1 : valA > valB ? -1 : 0;
+    });
+  }, [filteredTrainers, sortField, sortDirection]);
+
+  const renderSortHeader = (label: string, field: TrainerSortField, style?: React.CSSProperties) => {
+    const isActive = sortField === field;
+    return (
+      <th
+        onClick={() => handleSort(field)}
+        style={{
+          cursor: 'pointer',
+          userSelect: 'none',
+          transition: 'color 0.15s ease',
+          color: isActive ? 'var(--accent)' : undefined,
+          ...style,
+        }}
+        title={`Sort by ${label} (${isActive ? (sortDirection === 'asc' ? 'A-Z / Ascending' : 'Z-A / Descending') : 'Click to sort'})`}
+      >
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+          <span>{label}</span>
+          <span style={{ fontSize: '0.75rem', opacity: isActive ? 1 : 0.4 }}>
+            {isActive ? (sortDirection === 'asc' ? '▲' : '▼') : '⇅'}
+          </span>
+        </div>
+      </th>
+    );
+  };
 
   const handleOpenExtend = (t: ITTrainerOverviewItem) => {
     setExtendTarget(t);
@@ -470,19 +571,19 @@ export default function TrainerOverviewTable({ onlineUserIds: propOnlineUserIds 
             <table className="it-table">
               <thead>
                 <tr>
-                  <th>Trainer &amp; Presence</th>
-                  <th>Team / Emp ID</th>
-                  <th>Roadmap</th>
-                  <th>Current Day</th>
-                  <th>Solved Progress</th>
-                  <th>Backlog Status</th>
-                  <th>IT Attendance</th>
-                  <th>Extensions</th>
+                  {renderSortHeader('Trainer & Presence', 'full_name')}
+                  {renderSortHeader('Team / Emp ID', 'team')}
+                  {renderSortHeader('Roadmap', 'roadmap_title')}
+                  {renderSortHeader('Current Day', 'current_day')}
+                  {renderSortHeader('Solved Progress', 'solved_progress')}
+                  {renderSortHeader('Backlog Status', 'pending_questions_count')}
+                  {renderSortHeader('IT Attendance', 'it_days_count')}
+                  {renderSortHeader('Extensions', 'extended_days')}
                   <th style={{ textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredTrainers.map((t) => {
+                {sortedTrainers.map((t) => {
                   const compPct = t.total_questions_count > 0
                     ? Math.round((t.completed_questions_count / t.total_questions_count) * 100)
                     : 0;

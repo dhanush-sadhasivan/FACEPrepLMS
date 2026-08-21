@@ -39,13 +39,32 @@ function getInitials(name?: string | null): string {
   return parts[0].slice(0, 2).toUpperCase();
 }
 
-export default function UserTable({ initialUsers }: UserTableProps) {
+type UserSortField = 'full_name' | 'emp_id' | 'team' | 'manager' | 'hackerrank_id' | 'role';
+type SortDirection = 'asc' | 'desc' | null;
+
+export default function UserTable({ initialUsers = [] }: UserTableProps) {
   const { showToast } = useToast();
   const [users, setUsers] = useState<User[]>(initialUsers);
   const [search, setSearch] = useState('');
-  const [roleFilter, setRoleFilter] = useState<'All' | 'Admin' | 'Manager' | 'Trainer'>('All');
+  const [roleFilter, setRoleFilter] = useState<string>('All');
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 15;
+  const itemsPerPage = 10;
+
+  // 3-state Sorting State (Normal -> Asc / A-Z -> Desc / Z-A -> Normal)
+  const [sortField, setSortField] = useState<UserSortField | null>(null);
+  const [sortDirection, setSortDirection] = useState<SortDirection>(null);
+
+  const handleSort = (field: UserSortField) => {
+    if (sortField !== field) {
+      setSortField(field);
+      setSortDirection('asc');
+    } else if (sortDirection === 'asc') {
+      setSortDirection('desc');
+    } else {
+      setSortField(null);
+      setSortDirection(null);
+    }
+  };
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -86,11 +105,46 @@ export default function UserTable({ initialUsers }: UserTableProps) {
     });
   }, [users, search, roleFilter]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredUsers.length / itemsPerPage));
-  const currentUsers = filteredUsers.slice(
+  const sortedUsers = useMemo(() => {
+    if (!sortField || !sortDirection) return filteredUsers;
+
+    return [...filteredUsers].sort((a, b) => {
+      const valA = (a[sortField] || '').toString().toLowerCase();
+      const valB = (b[sortField] || '').toString().toLowerCase();
+
+      return sortDirection === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+    });
+  }, [filteredUsers, sortField, sortDirection]);
+
+  const totalPages = Math.max(1, Math.ceil(sortedUsers.length / itemsPerPage));
+  const currentUsers = sortedUsers.slice(
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
   );
+
+  const renderSortHeader = (label: string, field: UserSortField, style?: React.CSSProperties) => {
+    const isActive = sortField === field;
+    return (
+      <th
+        onClick={() => handleSort(field)}
+        style={{
+          cursor: 'pointer',
+          userSelect: 'none',
+          transition: 'color 0.15s ease',
+          color: isActive ? 'var(--accent)' : undefined,
+          ...style,
+        }}
+        title={`Sort by ${label} (${isActive ? (sortDirection === 'asc' ? 'A-Z / Ascending' : 'Z-A / Descending') : 'Click to sort'})`}
+      >
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+          <span>{label}</span>
+          <span style={{ fontSize: '0.75rem', opacity: isActive ? 1 : 0.4 }}>
+            {isActive ? (sortDirection === 'asc' ? '▲' : '▼') : '⇅'}
+          </span>
+        </div>
+      </th>
+    );
+  };
 
   const handleOpenEdit = (user: User) => {
     setSelectedUser(user);
@@ -314,12 +368,12 @@ export default function UserTable({ initialUsers }: UserTableProps) {
           <table className="users-table">
             <thead>
               <tr>
-                <th>User Details</th>
-                <th>Emp ID</th>
-                <th>Team</th>
-                <th>Manager</th>
-                <th>HackerRank ID</th>
-                <th>Role</th>
+                {renderSortHeader('User Details', 'full_name')}
+                {renderSortHeader('Emp ID', 'emp_id')}
+                {renderSortHeader('Team', 'team')}
+                {renderSortHeader('Manager', 'manager')}
+                {renderSortHeader('HackerRank ID', 'hackerrank_id')}
+                {renderSortHeader('Role', 'role')}
                 <th style={{ textAlign: 'right' }}>Actions</th>
               </tr>
             </thead>

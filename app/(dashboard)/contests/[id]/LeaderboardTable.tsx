@@ -26,6 +26,9 @@ const STEP_LABELS: Record<string, string> = {
   done: '✅ Complete!',
 };
 
+type LeaderboardSortField = 'rank' | 'name' | 'emp_id' | 'team' | 'solved' | 'score' | 'lastActive';
+type SortDirection = 'asc' | 'desc' | null;
+
 export default function LeaderboardTable({ contestId, data = [], lastScraped, questions = [], isAdminOrManager }: any) {
   const router = useRouter();
   const [scraping, setScraping] = useState(false);
@@ -38,8 +41,66 @@ export default function LeaderboardTable({ contestId, data = [], lastScraped, qu
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTeam, setSelectedTeam] = useState<string>('all');
 
+  // Sorting State
+  const [sortField, setSortField] = useState<LeaderboardSortField | null>(null);
+  const [sortDirection, setSortDirection] = useState<SortDirection>(null);
+
   const pollRef = useRef<NodeJS.Timeout | null>(null);
   const jobIdRef = useRef<string | null>(null);
+
+  const handleSort = (field: LeaderboardSortField) => {
+    if (sortField !== field) {
+      setSortField(field);
+      setSortDirection('asc');
+    } else if (sortDirection === 'asc') {
+      setSortDirection('desc');
+    } else {
+      setSortField(null);
+      setSortDirection(null);
+    }
+  };
+
+  const renderSortHeader = (
+    label: string,
+    field: LeaderboardSortField,
+    align: 'left' | 'center' | 'right' = 'left',
+    style?: React.CSSProperties
+  ) => {
+    const isActive = sortField === field;
+    return (
+      <th
+        onClick={() => handleSort(field)}
+        style={{
+          padding: '0.65rem 0.85rem',
+          textAlign: align,
+          fontSize: '0.72rem',
+          color: isActive ? 'var(--accent)' : 'var(--text-muted)',
+          textTransform: 'uppercase',
+          letterSpacing: '0.06em',
+          cursor: 'pointer',
+          userSelect: 'none',
+          transition: 'color 0.15s ease',
+          ...style,
+        }}
+        title={`Sort by ${label} (${isActive ? (sortDirection === 'asc' ? 'Ascending / A-Z' : 'Descending / Z-A') : 'Click to sort'})`}
+      >
+        <div
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '0.35rem',
+            justifyContent: align === 'right' ? 'flex-end' : align === 'center' ? 'center' : 'flex-start',
+            width: '100%',
+          }}
+        >
+          <span>{label}</span>
+          <span style={{ fontSize: '0.75rem', opacity: isActive ? 1 : 0.4 }}>
+            {isActive ? (sortDirection === 'asc' ? '▲' : '▼') : '⇅'}
+          </span>
+        </div>
+      </th>
+    );
+  };
 
   // Cleanup polling on unmount
   useEffect(() => {
@@ -187,6 +248,50 @@ export default function LeaderboardTable({ contestId, data = [], lastScraped, qu
       return matchesSearch && matchesTeam;
     });
   }, [data, searchTerm, selectedTeam]);
+
+  const sortedData = useMemo(() => {
+    if (!sortField || !sortDirection) return filteredData;
+
+    return [...filteredData].sort((a: any, b: any) => {
+      let valA: any = 0;
+      let valB: any = 0;
+
+      if (sortField === 'name') {
+        valA = (a.name || '').toLowerCase();
+        valB = (b.name || '').toLowerCase();
+        return sortDirection === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+      }
+      if (sortField === 'emp_id') {
+        valA = (a.emp_id || '').toLowerCase();
+        valB = (b.emp_id || '').toLowerCase();
+        return sortDirection === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+      }
+      if (sortField === 'team') {
+        valA = (a.team || '').toLowerCase();
+        valB = (b.team || '').toLowerCase();
+        return sortDirection === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+      }
+      if (sortField === 'rank') {
+        valA = data.findIndex((d: any) => d.user_id === a.user_id);
+        valB = data.findIndex((d: any) => d.user_id === b.user_id);
+      }
+      if (sortField === 'solved') {
+        valA = a.solved || 0;
+        valB = b.solved || 0;
+      }
+      if (sortField === 'score') {
+        valA = a.score || 0;
+        valB = b.score || 0;
+      }
+      if (sortField === 'lastActive') {
+        valA = a.lastActive ? new Date(a.lastActive).getTime() : 0;
+        valB = b.lastActive ? new Date(b.lastActive).getTime() : 0;
+      }
+
+      if (sortDirection === 'asc') return valA > valB ? 1 : valA < valB ? -1 : 0;
+      return valA < valB ? 1 : valA > valB ? -1 : 0;
+    });
+  }, [filteredData, sortField, sortDirection, data]);
 
   // Summary Metrics
   const totalCount = data.length;
@@ -364,17 +469,17 @@ export default function LeaderboardTable({ contestId, data = [], lastScraped, qu
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ borderBottom: '2px solid var(--border)', background: 'var(--surface-2)' }}>
-                <th style={{ padding: '0.65rem 0.85rem', textAlign: 'center', fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', width: 65 }}>Rank</th>
-                <th style={{ padding: '0.65rem 0.85rem', textAlign: 'left', fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Trainer Name</th>
-                <th style={{ padding: '0.65rem 0.85rem', textAlign: 'left', fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Emp ID</th>
-                <th style={{ padding: '0.65rem 0.85rem', textAlign: 'left', fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Team</th>
-                <th style={{ padding: '0.65rem 0.85rem', textAlign: 'left', fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', minWidth: 190 }}>Questions Progress</th>
-                <th style={{ padding: '0.65rem 0.85rem', textAlign: 'right', fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Total Score</th>
-                <th style={{ padding: '0.65rem 0.85rem', textAlign: 'right', fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Last Active</th>
+                {renderSortHeader('Rank', 'rank', 'center', { width: 75 })}
+                {renderSortHeader('Trainer Name', 'name', 'left')}
+                {renderSortHeader('Emp ID', 'emp_id', 'left')}
+                {renderSortHeader('Team', 'team', 'left')}
+                {renderSortHeader('Questions Progress', 'solved', 'left', { minWidth: 190 })}
+                {renderSortHeader('Total Score', 'score', 'right')}
+                {renderSortHeader('Last Active', 'lastActive', 'right')}
               </tr>
             </thead>
             <tbody>
-              {filteredData.map((row: any, i: number) => {
+              {sortedData.map((row: any, i: number) => {
                 const actualRank = data.findIndex((d: any) => d.user_id === row.user_id) + 1;
                 const displayRank = actualRank > 0 ? actualRank : i + 1;
                 const pct = row.total > 0 ? Math.round((row.solved / row.total) * 100) : 0;
