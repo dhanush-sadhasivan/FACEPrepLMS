@@ -25,9 +25,20 @@ export async function GET() {
   }
 
   const dbAdmin = getAdminClient();
+
+  // 1. Attempt Fast Database RPC (PostgreSQL Stored Procedure)
+  try {
+    const { data: rpcTrainers, error: rpcErr } = await dbAdmin.rpc('get_it_trainer_overview');
+    if (!rpcErr && Array.isArray(rpcTrainers) && rpcTrainers.length > 0) {
+      return NextResponse.json({ trainers: rpcTrainers });
+    }
+  } catch (err) {
+    console.warn('[trainer-overview] RPC fallback triggered:', err);
+  }
+
   const today = formatISODate(new Date());
 
-  // 1. Fetch IT Roadmaps
+  // 2. Fallback in-app calculation
   const { data: itRoadmaps } = await dbAdmin
     .from('roadmaps')
     .select('id, title')

@@ -3,11 +3,6 @@
 -- Database-level Analytics Functions for Topic Roadmaps and Contests
 -- ─────────────────────────────────────────────────────────────────────────────
 
--- 1. get_roadmap_analytics()
--- Computes real-time cohort analytics for all topic roadmaps directly inside PostgreSQL.
--- Accurately resolves group assignments, flattens nested topics/questions,
--- and aggregates solved status from the progress table.
-
 CREATE OR REPLACE FUNCTION public.get_roadmap_analytics()
 RETURNS TABLE (
   roadmap_id uuid,
@@ -70,8 +65,8 @@ BEGIN
     SELECT 
       ac.r_id,
       ac.user_id,
-      jsonb_array_length(rq.q_ids) AS total_q,
-      COUNT(DISTINCT p.question_id) AS solved_count
+      jsonb_array_length(rq.q_ids)::bigint AS total_q,
+      COUNT(DISTINCT p.question_id)::bigint AS solved_count
     FROM assigned_cohort ac
     JOIN roadmap_questions rq ON rq.r_id = ac.r_id
     LEFT JOIN public.progress p ON p.user_id = ac.user_id 
@@ -86,10 +81,10 @@ BEGIN
     rq.title,
     rq.domain,
     rq.level,
-    jsonb_array_length(rq.q_ids) AS total_questions,
-    COUNT(DISTINCT ac.user_id) AS assigned_trainers_count,
-    COUNT(DISTINCT CASE WHEN us.solved_count >= us.total_q AND us.total_q > 0 THEN us.user_id END) AS completed_trainers_count,
-    COALESCE(SUM(us.solved_count), 0) AS total_solved_sum,
+    jsonb_array_length(rq.q_ids)::bigint AS total_questions,
+    COUNT(DISTINCT ac.user_id)::bigint AS assigned_trainers_count,
+    COUNT(DISTINCT CASE WHEN us.solved_count >= us.total_q AND us.total_q > 0 THEN us.user_id END)::bigint AS completed_trainers_count,
+    COALESCE(SUM(us.solved_count), 0)::bigint AS total_solved_sum,
     CASE 
       WHEN COUNT(DISTINCT ac.user_id) > 0 AND jsonb_array_length(rq.q_ids) > 0 
       THEN ROUND((COALESCE(SUM(us.solved_count), 0)::numeric / (jsonb_array_length(rq.q_ids) * COUNT(DISTINCT ac.user_id))) * 100, 1)

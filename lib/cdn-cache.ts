@@ -104,6 +104,42 @@ export async function getCachedContestData(contestId: string): Promise<CachedCon
 }
 
 /**
+ * Fetch pre-computed roadmap analytics snapshot from Supabase Storage CDN.
+ */
+export async function getCachedRoadmapAnalytics(): Promise<any[] | null> {
+  const cdnUrl = getCdnStorageUrl('roadmap_analytics.json');
+  try {
+    const res = await fetch(cdnUrl, {
+      next: { revalidate: 60, tags: ['roadmaps', 'roadmap-analytics'] },
+      headers: { 'Accept': 'application/json' },
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data?.roadmaps || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fetch pre-computed internal training trainer overview snapshot from Supabase Storage CDN.
+ */
+export async function getCachedITOverview(): Promise<any[] | null> {
+  const cdnUrl = getCdnStorageUrl('it_trainer_overview.json');
+  try {
+    const res = await fetch(cdnUrl, {
+      next: { revalidate: 60, tags: ['internal-training', 'it-overview'] },
+      headers: { 'Accept': 'application/json' },
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data?.trainers || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Server-side helper to regenerate and upload snapshots directly from LMS using the Service Role client.
  */
 export async function generateAndUploadCdnSnapshots(contestId?: string): Promise<{ success: boolean; message: string }> {
