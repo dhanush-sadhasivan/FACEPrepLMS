@@ -247,8 +247,10 @@ export default function TodaysPlanCard({
                 className={`question-row-card ${q.is_completed ? 'completed' : ''}`}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem', flex: 1, minWidth: 0 }}>
-                  <span className={`q-status-badge ${q.is_completed ? 'solved' : 'pending'}`}>
-                    {q.is_completed ? '✅ Solved' : '⏳ Pending'}
+                  <span className={`q-status-badge ${q.is_completed ? 'solved' : q.needs_portal_click ? 'needs-confirm' : 'pending'}`}
+                    style={q.needs_portal_click ? { background: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b', border: '1px solid rgba(245, 158, 11, 0.3)' } : undefined}
+                  >
+                    {q.is_completed ? '✅ Solved' : q.needs_portal_click ? '🔶 Solved — Confirm' : '⏳ Pending'}
                   </span>
 
                   <div style={{ minWidth: 0, flex: 1 }}>
@@ -262,7 +264,12 @@ export default function TodaysPlanCard({
                         </span>
                       )}
                     </div>
-                    {q.description && (
+                    {q.needs_portal_click && (
+                      <div style={{ fontSize: '0.75rem', color: '#f59e0b', fontWeight: 700, marginTop: '0.2rem' }}>
+                        ⚠️ Solved on HackerRank — click &quot;Confirm &amp; Launch&quot; below to record your IT completion
+                      </div>
+                    )}
+                    {q.description && !q.needs_portal_click && (
                       <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
                         {q.description}
                       </div>
@@ -292,12 +299,16 @@ export default function TodaysPlanCard({
                     style={{
                       fontSize: '0.82rem',
                       fontWeight: 800,
-                      background: q.is_completed ? 'var(--surface-3)' : 'linear-gradient(135deg, var(--accent), #8b5cf6)',
+                      background: q.is_completed
+                        ? 'var(--surface-3)'
+                        : q.needs_portal_click
+                          ? 'linear-gradient(135deg, #f59e0b, #ea580c)'
+                          : 'linear-gradient(135deg, var(--accent), #8b5cf6)',
                       color: q.is_completed ? 'var(--text-primary)' : '#fff',
                       border: q.is_completed ? '1px solid var(--border)' : 'none',
                     }}
                   >
-                    {q.is_completed ? 'Review Problem ↗' : 'Launch Problem ↗'}
+                    {q.is_completed ? 'Review Problem ↗' : q.needs_portal_click ? 'Confirm & Launch ↗' : 'Launch Problem ↗'}
                   </button>
                 </div>
               </div>

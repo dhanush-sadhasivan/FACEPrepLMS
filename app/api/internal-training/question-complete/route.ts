@@ -1,6 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
 import { getAdminClient } from '@/lib/supabase/admin';
-import { recordITAttendance } from '@/lib/it-day-counter';
 import { NextResponse } from 'next/server';
 
 // POST /api/internal-training/question-complete
@@ -51,14 +50,8 @@ export async function POST(request: Request) {
       });
   }
 
-  // If completed, ensure IT attendance is counted
-  if (completed) {
-    try {
-      await recordITAttendance(user.id, true);
-    } catch (err) {
-      console.error('Error recording IT attendance on complete:', err);
-    }
-  }
+  // Note: IT attendance is no longer auto-recorded here.
+  // Trainers must explicitly check in per-roadmap via the Check-In button.
 
   return NextResponse.json({
     success: true,

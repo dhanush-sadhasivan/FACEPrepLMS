@@ -93,14 +93,22 @@ export default function PendingQuestionsPanel({
               {(dp.questions || []).map((q) => (
                 <div key={q.id} className="question-row-card">
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flex: 1, minWidth: 0 }}>
-                    <span className="q-status-badge pending">
-                      ⏳ Pending
+                    <span
+                      className={`q-status-badge ${q.needs_portal_click ? 'needs-confirm' : 'pending'}`}
+                      style={q.needs_portal_click ? { background: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b', border: '1px solid rgba(245, 158, 11, 0.3)' } : undefined}
+                    >
+                      {q.needs_portal_click ? '🔶 Solved — Confirm' : '⏳ Pending'}
                     </span>
                     <div style={{ minWidth: 0, flex: 1 }}>
                       <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-primary)' }}>
                         {q.title}
                       </div>
-                      {q.difficulty && (
+                      {q.needs_portal_click && (
+                        <div style={{ fontSize: '0.74rem', color: '#f59e0b', fontWeight: 700, marginTop: '0.15rem' }}>
+                          ⚠️ Solved on HackerRank — click &quot;Confirm &amp; Launch&quot; to register your completion
+                        </div>
+                      )}
+                      {q.difficulty && !q.needs_portal_click && (
                         <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
                           📊 {q.difficulty} &bull; {q.question_type === 'hackerrank' ? '🏆 HackerRank' : '✏️ Custom Task'}
                         </div>
@@ -126,9 +134,13 @@ export default function PendingQuestionsPanel({
                       type="button"
                       onClick={() => handleLaunch(q)}
                       className="btn btn-primary btn-sm"
-                      style={{ fontSize: '0.78rem', fontWeight: 800 }}
+                      style={{
+                        fontSize: '0.78rem',
+                        fontWeight: 800,
+                        background: q.needs_portal_click ? 'linear-gradient(135deg, #f59e0b, #ea580c)' : undefined,
+                      }}
                     >
-                      Solve Problem ↗
+                      {q.needs_portal_click ? 'Confirm & Launch ↗' : 'Solve Problem ↗'}
                     </button>
                   </div>
                 </div>

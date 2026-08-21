@@ -17,12 +17,14 @@ export async function GET() {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
-  // Fetch all roadmaps with contest titles and user progress count
+  const dbAdmin = (await import('@/lib/supabase/admin')).getAdminClient();
+
+  // Fetch all roadmaps with contest titles, user progress, and target assignments
   const [roadmapsRes, contestsRes, progressRes, assignmentsRes] = await Promise.all([
-    supabase.from('roadmaps').select('*').order('created_at', { ascending: false }),
-    supabase.from('contests').select('id, title'),
-    supabase.from('user_roadmap_progress').select('*'),
-    supabase.from('roadmap_assignments').select('*, group:groups(name), user:users(full_name)'),
+    dbAdmin.from('roadmaps').select('*').order('created_at', { ascending: false }),
+    dbAdmin.from('contests').select('id, title'),
+    dbAdmin.from('user_roadmap_progress').select('*'),
+    dbAdmin.from('roadmap_assignments').select('*, group:groups(name), user:users!roadmap_assignments_user_id_fkey(full_name)'),
   ]);
 
   const roadmaps = roadmapsRes.data || [];

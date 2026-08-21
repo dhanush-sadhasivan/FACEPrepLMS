@@ -97,7 +97,7 @@ export default function TrainerOverviewTable({ onlineUserIds: propOnlineUserIds 
       const res = await fetch('/api/internal-training/attendance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userId: t.user_id, action: 'increment' }),
+        body: JSON.stringify({ userId: t.user_id, roadmapId: t.roadmap_id, action: 'increment' }),
       });
       if (!res.ok) {
         await loadOverview();
@@ -136,6 +136,7 @@ export default function TrainerOverviewTable({ onlineUserIds: propOnlineUserIds 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           userId: editAttendanceTarget.user_id,
+          roadmapId: editAttendanceTarget.roadmap_id,
           newCount: targetVal,
         }),
       });

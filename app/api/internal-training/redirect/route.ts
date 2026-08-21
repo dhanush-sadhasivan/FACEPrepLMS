@@ -1,6 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
 import { getAdminClient } from '@/lib/supabase/admin';
-import { recordITAttendance } from '@/lib/it-day-counter';
 import { NextResponse } from 'next/server';
 
 // GET /api/internal-training/redirect?dqId=<uuid>&url=<encoded_url>
@@ -41,8 +40,8 @@ export async function GET(request: Request) {
           });
       }
 
-      // 2. Count IT day attendance
-      await recordITAttendance(user.id, true);
+      // Note: IT attendance is no longer auto-recorded on redirect.
+      // Trainers must explicitly check in per-roadmap.
     } catch (err) {
       console.error('Error recording click during redirect:', err);
     }

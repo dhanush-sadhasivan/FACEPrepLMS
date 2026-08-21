@@ -70,22 +70,20 @@ export default function InternalTrainingClient({
 
   const [isCheckingIn, setIsCheckingIn] = useState(false);
 
-  // Handle explicit daily IT check-in to unlock today's curriculum
+  // Handle explicit per-roadmap IT check-in to unlock today's curriculum
   const handleCheckInToday = async () => {
+    if (!selectedRoadmapId) return;
     setIsCheckingIn(true);
     try {
-      const res = await fetch('/api/trainer/it-check', {
+      const res = await fetch(`/api/internal-training/day-plan/${selectedRoadmapId}/trainer`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ didIT: true }),
       });
 
       if (res.ok) {
         const data = await res.json();
-        showToast(`🎉 Day ${data.newCount} Unlocked! Attendance recorded for today.`);
-        if (selectedRoadmapId) {
-          await loadTrainerPlan(selectedRoadmapId);
-        }
+        showToast(`🎉 Day ${data.roadmapDaysLogged} Unlocked! IT attendance recorded for this roadmap.`);
+        await loadTrainerPlan(selectedRoadmapId);
       } else {
         showToast('Failed to record check-in');
       }
@@ -97,32 +95,24 @@ export default function InternalTrainingClient({
     }
   };
 
-  // Handle Question Launch & Click Recording
+  // Handle Question Launch & Click Recording (portal-click confirmation only, no auto-attendance)
   const handleQuestionClickConfirmed = async (q: ITDayQuestion) => {
     try {
-      // 1. Record click & trigger IT auto-count on server
-      const res = await fetch('/api/internal-training/question-click', {
+      await fetch('/api/internal-training/question-click', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ dayQuestionId: q.id }),
       });
-
-      if (res.ok) {
-        const result = await res.json();
-        if (result.itAttendance?.alreadyCountedToday === false) {
-          showToast(`🎉 Internal Training (IT) Day recorded! Total IT Days: ${result.itAttendance.newCount}`);
-        }
-      }
     } catch (err) {
       console.error('Error registering question click:', err);
     }
 
-    // 2. Open problem link in new tab
+    // Open problem link in new tab
     if (q.url) {
       window.open(q.url, '_blank', 'noopener,noreferrer');
     }
 
-    // 3. Refresh day plan data
+    // Refresh day plan data
     if (selectedRoadmapId) {
       await loadTrainerPlan(selectedRoadmapId);
     }
@@ -210,11 +200,11 @@ export default function InternalTrainingClient({
         <>
           {/* IT Day Stats Widget */}
           <ITDayStatus
-            itDaysCount={trainerData?.itDaysCount ?? currentUser.it_days_count ?? 0}
-            isITCountedToday={trainerData?.isITCountedToday ?? false}
+            itDaysCount={trainerData?.itDaysLogged ?? 0}
+            isITCountedToday={trainerData?.isCheckedInToday ?? false}
             totalPlannedDays={trainerData?.progress?.total_days ?? 0}
-            currentDay={trainerData?.progress?.current_day ?? 1}
-            onITStatusChanged={(newCount) => {
+            currentDay={trainerData?.progress?.current_day ?? 0}
+            onITStatusChanged={() => {
               if (selectedRoadmapId) loadTrainerPlan(selectedRoadmapId);
             }}
           />

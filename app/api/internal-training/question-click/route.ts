@@ -1,10 +1,10 @@
 import { createClient } from '@/lib/supabase/server';
 import { getAdminClient } from '@/lib/supabase/admin';
-import { recordITAttendance } from '@/lib/it-day-counter';
 import { NextResponse } from 'next/server';
 
 // POST /api/internal-training/question-click
-// Records that the trainer clicked the question link from the webapp, and automatically registers IT attendance for today
+// Records that the trainer clicked the question link from the webapp (portal-click confirmation)
+// Does NOT auto-register IT attendance — trainer must use the explicit check-in button
 export async function POST(request: Request) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -21,7 +21,7 @@ export async function POST(request: Request) {
 
   const dbAdmin = getAdminClient();
 
-  // 1. Record clicked_at in it_question_completions
+  // Record clicked_at in it_question_completions
   const { data: existing } = await dbAdmin
     .from('it_question_completions')
     .select('*')
@@ -47,17 +47,8 @@ export async function POST(request: Request) {
       });
   }
 
-  // 2. Automatically register IT attendance for today
-  let itResult = null;
-  try {
-    itResult = await recordITAttendance(user.id, true);
-  } catch (itErr) {
-    console.error('Error auto-counting IT day on question click:', itErr);
-  }
-
   return NextResponse.json({
     success: true,
     dayQuestionId,
-    itAttendance: itResult,
   });
 }

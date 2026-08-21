@@ -219,6 +219,8 @@ export interface ITDayQuestion {
   is_completed?: boolean
   completed_at?: string | null
   score?: number
+  hr_solved?: boolean
+  needs_portal_click?: boolean
 }
 
 export interface ITDayPlan {

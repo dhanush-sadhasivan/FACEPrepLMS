@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { getAdminClient } from '@/lib/supabase/admin';
 import { NextResponse } from 'next/server';
-import { formatISODate, computeCurrentDayNumber } from '@/lib/it-calendar';
+import { formatISODate } from '@/lib/it-calendar';
 import { ITTrainerOverviewItem } from '@/lib/types';
 
 // GET /api/internal-training/trainer-overview
@@ -196,19 +196,22 @@ export async function GET() {
       if (!u) return;
 
       const p = progressMap.get(`${uid}_${rmId}`);
-      const startedAt = p?.started_at || null;
-      const currentDay = startedAt
-        ? computeCurrentDayNumber(startedAt, today, workingDays)
-        : 1;
+      // Per-roadmap attendance-driven day: use it_days_logged from progress row
+      const itDaysLogged = p?.it_days_logged || 0;
+      const currentDay = Math.min(itDaysLogged, totalDays || 1);
+      const lastCheckIn = p?.last_check_in_date || null;
+      const isCountedToday = lastCheckIn === today;
 
       // Count completions for this trainer
+      // Portal-click gating: only count as completed if clicked_at exists AND HR solved
       let completedCount = 0;
       let pendingCount = 0;
 
       rmQuestions.forEach((q) => {
-        const isComp =
-          completionLookup.has(`${uid}_${q.id}`) ||
-          (q.question_id && hrSolvedLookup.has(`${uid}_${q.question_id}`));
+        const hasCompletion = completionLookup.has(`${uid}_${q.id}`);
+        const hasHrSolved = q.question_id && hrSolvedLookup.has(`${uid}_${q.question_id}`);
+        // Completed requires both portal click and HR solved (or manual completion)
+        const isComp = hasCompletion && hasHrSolved;
 
         if (isComp) {
           completedCount++;
@@ -220,11 +223,6 @@ export async function GET() {
         }
       });
 
-      const authMeta = authMetaMap.get(u.id) || {};
-      const itDays = Math.max(u.it_days_count || 0, authMeta.it_days_count || 0);
-      const lastCheck = u.last_it_check_date || authMeta.last_it_check_date || null;
-      const isCountedToday = lastCheck === today;
-
       overviewList.push({
         user_id: u.id,
         full_name: u.full_name || 'Unnamed Trainer',
@@ -233,17 +231,17 @@ export async function GET() {
         email: u.email,
         roadmap_id: rmId,
         roadmap_title: rmTitle,
-        started_at: startedAt,
+        started_at: p?.started_at || null,
         current_day: currentDay,
         total_days: totalDays,
         completed_questions_count: completedCount,
         total_questions_count: totalQuestionsCount,
         pending_questions_count: pendingCount,
-        it_days_count: itDays,
+        it_days_count: itDaysLogged,
         extended_days: p?.extended_days || 0,
         extension_count: p?.extension_count || 0,
         is_online: false, // populated on client via Realtime Presence
-        last_it_check_date: lastCheck,
+        last_it_check_date: lastCheckIn,
         is_it_counted_today: isCountedToday,
       });
     });

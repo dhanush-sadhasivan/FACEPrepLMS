@@ -7,7 +7,7 @@ interface ITDayStatusProps {
   isITCountedToday: boolean;
   totalPlannedDays: number;
   currentDay: number;
-  onITStatusChanged?: (newCount: number) => void;
+  onITStatusChanged?: () => void;
 }
 
 export default function ITDayStatus({
@@ -17,7 +17,6 @@ export default function ITDayStatus({
   currentDay,
   onITStatusChanged,
 }: ITDayStatusProps) {
-  const [loading, setLoading] = useState(false);
   const [counted, setCounted] = useState(isITCountedToday);
   const [count, setCount] = useState(itDaysCount);
 
@@ -26,34 +25,9 @@ export default function ITDayStatus({
     setCount(itDaysCount);
   }, [isITCountedToday, itDaysCount]);
 
-  // Non-IT days = days elapsed so far minus IT days (cannot be negative)
-  const nonITDays = Math.max(0, currentDay - count);
-
-  const handleManualLog = async () => {
-    setLoading(true);
-    try {
-      const res = await fetch('/api/trainer/it-check', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ didIT: true }),
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        setCounted(true);
-        setCount(data.newCount);
-        if (onITStatusChanged) onITStatusChanged(data.newCount);
-      }
-    } catch (err) {
-      console.error('Error logging IT day:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   return (
     <div className="it-stats-grid">
-      {/* IT Days Card */}
+      {/* IT Days Card (Per-Roadmap) */}
       <div className="it-stat-card">
         <div className="it-stat-icon-wrap" style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#10b981' }}>
           🎓
@@ -62,20 +36,20 @@ export default function ITDayStatus({
           <div className="it-stat-value" style={{ color: '#10b981' }}>
             {count}
           </div>
-          <div className="it-stat-label">Internal Training (IT) Days</div>
+          <div className="it-stat-label">IT Days Logged (This Roadmap)</div>
         </div>
       </div>
 
-      {/* Non-IT Days Card */}
+      {/* Days Remaining Card */}
       <div className="it-stat-card">
-        <div className="it-stat-icon-wrap" style={{ background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444' }}>
+        <div className="it-stat-icon-wrap" style={{ background: 'rgba(99, 102, 241, 0.15)', color: '#6366f1' }}>
           📋
         </div>
         <div>
-          <div className="it-stat-value" style={{ color: '#ef4444' }}>
-            {nonITDays}
+          <div className="it-stat-value" style={{ color: '#6366f1' }}>
+            {Math.max(0, totalPlannedDays - count)}
           </div>
-          <div className="it-stat-label">Non-IT / Standby Days</div>
+          <div className="it-stat-label">Days Remaining</div>
         </div>
       </div>
 
@@ -85,29 +59,15 @@ export default function ITDayStatus({
           {counted ? '✅' : '⏳'}
         </div>
         <div style={{ flex: 1 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.4rem' }}>
-            <div>
-              <div style={{ fontSize: '0.95rem', fontWeight: 800, color: 'var(--text-primary)' }}>
-                {counted ? "Today's IT Attendance Counted" : "Today's IT Attendance Pending"}
-              </div>
-              <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
-                {counted
-                  ? 'Great job! You participated in today’s training session.'
-                  : 'Launch any problem from the list below to automatically record IT attendance.'}
-              </div>
+          <div>
+            <div style={{ fontSize: '0.95rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+              {counted ? "Checked In for IT Today" : "Not Checked In Yet"}
             </div>
-
-            {!counted && (
-              <button
-                type="button"
-                onClick={handleManualLog}
-                disabled={loading}
-                className="btn btn-secondary btn-sm"
-                style={{ fontSize: '0.78rem', fontWeight: 700, whiteSpace: 'nowrap' }}
-              >
-                {loading ? 'Logging…' : '✅ Mark IT Day Manually'}
-              </button>
-            )}
+            <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
+              {counted
+                ? `Great job! Day ${count} of ${totalPlannedDays} unlocked for this roadmap.`
+                : 'Use the "Check In for IT Today" button below to unlock the next day\'s problems.'}
+            </div>
           </div>
         </div>
       </div>

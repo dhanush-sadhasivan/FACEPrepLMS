@@ -4,7 +4,7 @@ import { NextResponse } from 'next/server';
 import { formatISODate } from '@/lib/it-calendar';
 
 // POST /api/internal-training/attendance
-// Admin/Manager manually adjusts or increments IT days attendance count for a trainer
+// Admin/Manager manually adjusts IT days for a trainer on a SPECIFIC roadmap
 export async function POST(request: Request) {
   const supabaseServer = await createClient();
   const { data: { user } } = await supabaseServer.auth.getUser();
@@ -23,26 +23,27 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Forbidden: Only managers and admins can adjust attendance.' }, { status: 403 });
   }
 
-  const { userId, newCount, action } = await request.json();
+  const { userId, roadmapId, newCount, action } = await request.json();
 
   if (!userId) {
     return NextResponse.json({ error: 'userId is required' }, { status: 400 });
+  }
+  if (!roadmapId) {
+    return NextResponse.json({ error: 'roadmapId is required' }, { status: 400 });
   }
 
   const dbAdmin = getAdminClient();
   const today = formatISODate(new Date());
 
-  // 1. Fetch current user data & auth metadata
-  const { data: authUserData } = await dbAdmin.auth.admin.getUserById(userId);
-  const metadata = authUserData?.user?.user_metadata || {};
-
-  const { data: profile } = await dbAdmin
-    .from('users')
+  // 1. Fetch per-roadmap progress
+  const { data: progress } = await dbAdmin
+    .from('it_trainer_progress')
     .select('*')
-    .eq('id', userId)
-    .single();
+    .eq('user_id', userId)
+    .eq('roadmap_id', roadmapId)
+    .maybeSingle();
 
-  const currentCount = Math.max(profile?.it_days_count || 0, metadata?.it_days_count || 0);
+  const currentCount = progress?.it_days_logged || 0;
 
   let targetCount = currentCount;
   if (action === 'increment') {
@@ -53,38 +54,61 @@ export async function POST(request: Request) {
     targetCount = Math.max(0, newCount);
   }
 
-  // 2. Update Supabase Auth user_metadata
-  try {
-    if (authUserData?.user) {
-      await dbAdmin.auth.admin.updateUserById(userId, {
-        user_metadata: {
-          ...metadata,
-          it_days_count: targetCount,
-          last_it_check_date: today,
-        },
-      });
-    }
-  } catch (authErr) {
-    console.error('Error updating auth metadata for attendance:', authErr);
+  // 2. Update per-roadmap it_trainer_progress
+  if (progress) {
+    await dbAdmin
+      .from('it_trainer_progress')
+      .update({
+        it_days_logged: targetCount,
+        current_day: targetCount,
+        last_check_in_date: today,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('user_id', userId)
+      .eq('roadmap_id', roadmapId);
   }
 
-  // 3. Update public.users table
+  // 3. Recalculate global IT days for this user
+  //    Global = unique calendar dates checked in across any roadmap
+  const { data: profile } = await dbAdmin
+    .from('users')
+    .select('it_days_count, last_it_check_date')
+    .eq('id', userId)
+    .single();
+
+  const globalLastDate = profile?.last_it_check_date || null;
+  const globalCount = profile?.it_days_count || 0;
+  const newGlobalCount = globalLastDate === today ? globalCount : globalCount + 1;
+
+  await dbAdmin
+    .from('users')
+    .update({
+      it_days_count: newGlobalCount,
+      last_it_check_date: today,
+    })
+    .eq('id', userId);
+
+  // Update auth metadata
   try {
-    await dbAdmin
-      .from('users')
-      .update({
-        it_days_count: targetCount,
+    const { data: authUserData } = await dbAdmin.auth.admin.getUserById(userId);
+    const metadata = authUserData?.user?.user_metadata || {};
+    await dbAdmin.auth.admin.updateUserById(userId, {
+      user_metadata: {
+        ...metadata,
+        it_days_count: newGlobalCount,
         last_it_check_date: today,
-      })
-      .eq('id', userId);
-  } catch (dbErr) {
-    // Column might be in schema or added via migration
+      },
+    });
+  } catch (authErr) {
+    console.error('Error updating auth metadata for attendance:', authErr);
   }
 
   return NextResponse.json({
     success: true,
     userId,
-    newCount: targetCount,
-    message: `Updated IT Days count to ${targetCount} days.`,
+    roadmapId,
+    roadmapDaysLogged: targetCount,
+    globalItDays: newGlobalCount,
+    message: `Updated roadmap IT Days to ${targetCount} days.`,
   });
 }

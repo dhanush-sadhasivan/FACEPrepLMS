@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { getAdminClient } from '@/lib/supabase/admin';
-import { recordITAttendance } from '@/lib/it-day-counter';
 import { formatISODate } from '@/lib/it-calendar';
 
+// GET /api/trainer/it-check
+// Returns global IT attendance status for the current trainer (used by dashboard header)
 export async function GET() {
   const supabaseServer = await createClient();
   const { data: { user } } = await supabaseServer.auth.getUser();
@@ -15,7 +16,6 @@ export async function GET() {
   const supabase = getAdminClient();
   const today = formatISODate(new Date());
 
-  // Try to fetch user record
   const { data: profile } = await supabase
     .from('users')
     .select('*')
@@ -26,18 +26,12 @@ export async function GET() {
     return NextResponse.json({ error: 'Profile not found' }, { status: 404 });
   }
 
-  // Only trainers are prompted for IT attendance check
   if (profile.role !== 'trainer') {
     return NextResponse.json({ needsCheck: false, itDaysCount: 0 });
   }
 
-  // Fetch fresh auth user data
-  const { data: authUserData } = await supabase.auth.admin.getUserById(user.id);
-  const metadata = authUserData?.user?.user_metadata || {};
-
-  const lastCheckedDate = profile.last_it_check_date || metadata.last_it_check_date || null;
-  const itDaysCount = Math.max(profile.it_days_count || 0, metadata.it_days_count || 0);
-
+  const lastCheckedDate = profile.last_it_check_date || null;
+  const itDaysCount = profile.it_days_count || 0;
   const needsCheck = lastCheckedDate !== today;
 
   return NextResponse.json({
@@ -48,6 +42,9 @@ export async function GET() {
   });
 }
 
+// POST /api/trainer/it-check
+// DEPRECATED: Per-roadmap check-in is now handled via POST /api/internal-training/day-plan/[roadmapId]/trainer
+// This endpoint now requires a roadmapId in the body and delegates to the per-roadmap function
 export async function POST(req: Request) {
   const supabaseServer = await createClient();
   const { data: { user } } = await supabaseServer.auth.getUser();
@@ -56,13 +53,21 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const { didIT } = await req.json();
+  const { roadmapId } = await req.json();
 
+  if (!roadmapId) {
+    return NextResponse.json(
+      { error: 'roadmapId is required. Use POST /api/internal-training/day-plan/[roadmapId]/trainer instead.' },
+      { status: 400 }
+    );
+  }
+
+  // Delegate to per-roadmap function
+  const { recordITAttendance } = await import('@/lib/it-day-counter');
   try {
-    const result = await recordITAttendance(user.id, Boolean(didIT));
+    const result = await recordITAttendance(user.id, roadmapId);
     return NextResponse.json(result);
   } catch (err: any) {
     return NextResponse.json({ error: err.message || 'Failed to update IT attendance' }, { status: 500 });
   }
 }
-
