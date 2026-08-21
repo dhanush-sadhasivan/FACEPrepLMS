@@ -12,6 +12,7 @@ import TrainerCompletionAnalytics, { ContestCompletionStat, RoadmapCompletionSta
 import TrainerAnnouncementsBanner from './TrainerAnnouncementsBanner';
 import { getCachedGlobalLeaderboard, GlobalPerformer } from '@/lib/cdn-cache';
 import { getRoadmapAnalytics, extractRoadmapQuestionIds } from '@/lib/roadmap-analytics';
+import { getContestAnalytics } from '@/lib/contest-analytics';
 import './page.css';
 
 export const dynamic = 'force-dynamic';
@@ -224,65 +225,8 @@ export default async function DashboardPage() {
       }
     });
 
-    // Fetch progress ONLY for top 5 contests to save bandwidth
-    const top5Contests = allContestsData.slice(0, 5);
-    const top5ContestIds = top5Contests.map((c: any) => c.id);
-    let top5ProgressRows: any[] = [];
-    if (top5ContestIds.length > 0) {
-      const { data: pRows } = await dbAdmin
-        .from('progress')
-        .select('contest_id, user_id, question_id, score, status')
-        .in('contest_id', top5ContestIds)
-        .or('score.gt.0,status.eq.solved');
-      top5ProgressRows = pRows || [];
-    }
-
-    // 1. Contest Completion Analytics
-    contestStats = top5Contests.map((c: any) => {
-      const cQs = allQsData.filter((q: any) => q.contest_id === c.id);
-      const qCount = cQs.length || (c.questions?.[0]?.count || 0);
-
-      const assignedUserIds = new Set<string>();
-      allContestAssignData.forEach((a: any) => {
-        if (a.contest_id === c.id) {
-          if (a.group_id) {
-            (groupMembersMap.get(a.group_id) || []).forEach((uid: string) => assignedUserIds.add(uid));
-          }
-          if (a.team) {
-            (teamUsersMap.get(a.team) || []).forEach((uid: string) => assignedUserIds.add(uid));
-          }
-        }
-      });
-      const assignedCount = assignedUserIds.size;
-
-      let completedTrainers = 0;
-      let totalSolvedSum = 0;
-
-      if (assignedCount > 0 && cQs.length > 0) {
-        assignedUserIds.forEach((userId) => {
-          const userSolvedInContest = cQs.filter((q: any) =>
-            top5ProgressRows.some((p: any) => p.contest_id === c.id && p.user_id === userId && p.question_id === q.id && (p.status === 'solved' || p.score > 0))
-          ).length;
-          totalSolvedSum += userSolvedInContest;
-          if (userSolvedInContest >= cQs.length) {
-            completedTrainers++;
-          }
-        });
-      }
-
-      const maxPossibleSolved = (qCount || 1) * assignedCount;
-      const pct = (maxPossibleSolved > 0 && assignedCount > 0) ? Math.min(100, Math.round((totalSolvedSum / maxPossibleSolved) * 100)) : 0;
-
-      return {
-        contestId: c.id,
-        title: c.title,
-        slug: c.hackerrank_slug,
-        questionCount: qCount,
-        assignedTrainersCount: assignedCount,
-        completedTrainersCount: completedTrainers,
-        completionPercentage: pct,
-      };
-    });
+    // 1. Contest Completion Analytics (Direct Database RPC + Paginated Fallback)
+    contestStats = await getContestAnalytics(dbAdmin, 5);
 
     // 2. Roadmap Completion Analytics (Direct Database RPC + Fallback)
     const allRoadmapsAnalytics = await getRoadmapAnalytics(dbAdmin);
@@ -291,25 +235,16 @@ export default async function DashboardPage() {
     // 3. Top Master Trainers Leaderboard
     const allRoadmapProgressData = allRoadmapProgressRes.data || [];
     topTrainersWithStats = globalPerformers.map((userPerf: any) => {
-      const userCompletedContests = contestStats.filter((c) => {
-        const cQs = allQsData.filter((q: any) => q.contest_id === c.contestId);
-        if (cQs.length === 0) return false;
-        const userSolved = cQs.filter((q: any) =>
-          top5ProgressRows.some((p: any) => p.contest_id === c.contestId && p.user_id === userPerf.id && p.question_id === q.id && (p.status === 'solved' || p.score > 0))
-        ).length;
-        return userSolved >= cQs.length;
-      }).length;
-
       const userCompletedRoadmaps = allRoadmapProgressData.filter(
         (rp: any) => rp.user_id === userPerf.id && rp.status === 'completed'
       ).length;
 
       return {
         ...userPerf,
-        completedContestsCount: userCompletedContests,
+        completedContestsCount: 0,
         completedRoadmapsCount: userCompletedRoadmaps,
       };
-    }).sort((a: any, b: any) => ((b.completedContestsCount + b.completedRoadmapsCount) - (a.completedContestsCount + a.completedRoadmapsCount)) || (b.solved - a.solved));
+    }).sort((a: any, b: any) => (b.solved - a.solved) || (b.score - a.score));
   }
 
   // ── Trainer Queries ─────────────────────────────────────────────────
