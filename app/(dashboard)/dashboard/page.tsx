@@ -11,6 +11,7 @@ import HelpdeskWidget from './HelpdeskWidget';
 import TrainerCompletionAnalytics, { ContestCompletionStat, RoadmapCompletionStat } from './TrainerCompletionAnalytics';
 import TrainerAnnouncementsBanner from './TrainerAnnouncementsBanner';
 import { getCachedGlobalLeaderboard, GlobalPerformer } from '@/lib/cdn-cache';
+import { getRoadmapAnalytics, extractRoadmapQuestionIds } from '@/lib/roadmap-analytics';
 import './page.css';
 
 export const dynamic = 'force-dynamic';
@@ -283,49 +284,12 @@ export default async function DashboardPage() {
       };
     });
 
-    // 2. Roadmap Completion Analytics
-    const allRoadmapsData = allRoadmapsRes.data || [];
-    const allRoadmapProgressData = allRoadmapProgressRes.data || [];
-    const allRoadmapAssignData = allRoadmapAssignRes.data || [];
-
-    roadmapStats = allRoadmapsData.slice(0, 5).map((r: any) => {
-      const topicsArr = r.topics || [];
-      const topicCount = topicsArr.length || 1;
-
-      const assignedUserIds = new Set<string>();
-      allRoadmapAssignData.forEach((a: any) => {
-        if (a.roadmap_id === r.id && a.user_id) assignedUserIds.add(a.user_id);
-      });
-      const assignedCount = assignedUserIds.size > 0 ? assignedUserIds.size : totalTrainersCount;
-
-      let completedTrainers = 0;
-      let totalTopicsDoneSum = 0;
-
-      globalPerformers.forEach((userPerf) => {
-        const rp = allRoadmapProgressData.find((p: any) => p.user_id === userPerf.id && p.roadmap_id === r.id);
-        const doneCount = (rp?.completed_topic_ids || []).length;
-        totalTopicsDoneSum += doneCount;
-        if (rp?.status === 'completed' || doneCount >= topicCount) {
-          completedTrainers++;
-        }
-      });
-
-      const maxPossible = topicCount * assignedCount;
-      const pct = maxPossible > 0 ? Math.min(100, Math.round((totalTopicsDoneSum / maxPossible) * 100)) : 0;
-
-      return {
-        roadmapId: r.id,
-        title: r.title,
-        domain: r.domain || 'DSA',
-        level: r.level || 'Intermediate',
-        totalTopics: topicCount,
-        assignedTrainersCount: assignedCount,
-        completedTrainersCount: completedTrainers,
-        completionPercentage: pct,
-      };
-    });
+    // 2. Roadmap Completion Analytics (Direct Database RPC + Fallback)
+    const allRoadmapsAnalytics = await getRoadmapAnalytics(dbAdmin);
+    roadmapStats = allRoadmapsAnalytics.slice(0, 5);
 
     // 3. Top Master Trainers Leaderboard
+    const allRoadmapProgressData = allRoadmapProgressRes.data || [];
     topTrainersWithStats = globalPerformers.map((userPerf: any) => {
       const userCompletedContests = contestStats.filter((c) => {
         const cQs = allQsData.filter((q: any) => q.contest_id === c.contestId);
@@ -407,20 +371,20 @@ export default async function DashboardPage() {
       const existing = progressData.find((p: any) => p.roadmap_id === rm.id);
       const completedTopicIds: string[] = [...(existing?.completed_topic_ids || [])];
       const topics = rm.topics || [];
-      const totalQs = topics.length;
+      const qIds = extractRoadmapQuestionIds(topics);
+      const totalQs = qIds.length || topics.length;
 
-      topics.forEach((t: any) => {
-        const qId = t.id || t.question_id;
-        if (qId) {
-          const isSolvedInDb = questionProgress.some((qp: any) => qp.question_id === qId && (qp.status === 'solved' || qp.score > 0));
-          if (isSolvedInDb) {
-            if (t.id && !completedTopicIds.includes(t.id)) completedTopicIds.push(t.id);
-            if (qId && !completedTopicIds.includes(qId)) completedTopicIds.push(qId);
-          }
+      // Check all question IDs against questionProgress
+      qIds.forEach((qId) => {
+        const isSolvedInDb = questionProgress.some(
+          (qp: any) => String(qp.question_id) === qId && (qp.status === 'solved' || qp.score > 0)
+        );
+        if (isSolvedInDb && !completedTopicIds.includes(qId)) {
+          completedTopicIds.push(qId);
         }
       });
 
-      const uniqueSolvedCount = completedTopicIds.length;
+      const uniqueSolvedCount = completedTopicIds.filter((id) => qIds.length === 0 || qIds.includes(id)).length;
       let currentStatus = 'not_started';
       if (totalQs > 0 && uniqueSolvedCount >= totalQs) {
         currentStatus = 'completed';

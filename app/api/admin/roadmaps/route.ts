@@ -18,34 +18,70 @@ export async function GET() {
   }
 
   const dbAdmin = (await import('@/lib/supabase/admin')).getAdminClient();
+  const { extractRoadmapQuestionIds } = await import('@/lib/roadmap-analytics');
 
   // Fetch all roadmaps with contest titles, user progress, and target assignments
-  const [roadmapsRes, contestsRes, progressRes, assignmentsRes] = await Promise.all([
+  const [roadmapsRes, contestsRes, progressRes, assignmentsRes, groupMembersRes, qProgressRes] = await Promise.all([
     dbAdmin.from('roadmaps').select('*').order('created_at', { ascending: false }),
     dbAdmin.from('contests').select('id, title'),
     dbAdmin.from('user_roadmap_progress').select('*'),
     dbAdmin.from('roadmap_assignments').select('*, group:groups(name), user:users!roadmap_assignments_user_id_fkey(full_name)'),
+    dbAdmin.from('group_members').select('group_id, user_id'),
+    dbAdmin.from('progress').select('user_id, question_id, status, score').or('status.eq.solved,score.gt.0'),
   ]);
 
   const roadmaps = roadmapsRes.data || [];
   const contests = contestsRes.data || [];
   const progressList = progressRes.data || [];
   const assignments = assignmentsRes.data || [];
+  const groupMembers = groupMembersRes.data || [];
+  const qProgress = qProgressRes.data || [];
 
-  const result = roadmaps.map(rm => {
-    const contest = contests.find(c => c.id === rm.contest_id);
-    const rmProgress = progressList.filter(p => p.roadmap_id === rm.id);
-    const rmAssignments = assignments.filter(a => a.roadmap_id === rm.id);
+  const groupMembersMap = new Map<string, string[]>();
+  groupMembers.forEach((gm: any) => {
+    if (!groupMembersMap.has(gm.group_id)) groupMembersMap.set(gm.group_id, []);
+    groupMembersMap.get(gm.group_id)!.push(gm.user_id);
+  });
 
-    const completedCount = rmProgress.filter(p => p.status === 'completed').length;
-    const inProgressCount = rmProgress.filter(p => p.status === 'in_progress').length;
+  const result = roadmaps.map((rm: any) => {
+    const contest = contests.find((c: any) => c.id === rm.contest_id);
+    const rmAssignments = assignments.filter((a: any) => a.roadmap_id === rm.id);
+    const qIds = extractRoadmapQuestionIds(rm.topics || []);
+    const totalQuestions = qIds.length;
+
+    // Resolve assigned users
+    const assignedUserIds = new Set<string>();
+    rmAssignments.forEach((a: any) => {
+      if (a.user_id) assignedUserIds.add(a.user_id);
+      if (a.group_id) {
+        (groupMembersMap.get(a.group_id) || []).forEach((uid) => assignedUserIds.add(uid));
+      }
+    });
+
+    let completedCount = 0;
+    let inProgressCount = 0;
+
+    assignedUserIds.forEach((uid) => {
+      const userSolvedCount = qIds.filter((qid) =>
+        qProgress.some((p: any) => p.user_id === uid && String(p.question_id) === qid)
+      ).length;
+
+      const userProgRow = progressList.find((p: any) => p.roadmap_id === rm.id && p.user_id === uid);
+      const isDone = (totalQuestions > 0 && userSolvedCount >= totalQuestions) || userProgRow?.status === 'completed';
+
+      if (isDone) {
+        completedCount++;
+      } else if (userSolvedCount > 0 || userProgRow?.status === 'in_progress') {
+        inProgressCount++;
+      }
+    });
 
     return {
       ...rm,
       contest_title: contest?.title || null,
       assignments: rmAssignments,
       stats: {
-        total_assigned: rmProgress.length,
+        total_assigned: assignedUserIds.size,
         completed: completedCount,
         in_progress: inProgressCount,
       },

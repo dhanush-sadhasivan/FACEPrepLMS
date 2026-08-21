@@ -263,8 +263,8 @@ export default function TrainerCompletionAnalytics({
                 </div>
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                  <span>📖 {r.totalTopics} Topics in Roadmap</span>
-                  <span>{r.completedTrainersCount} of {r.assignedTrainersCount || totalTrainersCount} trainers completed</span>
+                  <span>💡 {r.totalTopics} Questions in Roadmap</span>
+                  <span>{r.completedTrainersCount} of {r.assignedTrainersCount} trainers completed</span>
                 </div>
               </div>
             ))
