@@ -283,11 +283,27 @@ export default function TrainerOverviewTable({ onlineUserIds: propOnlineUserIds 
     });
   }, [filteredTrainers, sortField, sortDirection]);
 
-  const renderSortHeader = (label: string, field: TrainerSortField, style?: React.CSSProperties) => {
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState<number>(10);
+
+  // Reset to page 1 whenever filters or itemsPerPage change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, roadmapFilter, statusFilter, sortField, sortDirection, itemsPerPage]);
+
+  const totalPages = Math.max(1, Math.ceil(sortedTrainers.length / (itemsPerPage === -1 ? sortedTrainers.length || 1 : itemsPerPage)));
+  const paginatedTrainers = useMemo(() => {
+    if (itemsPerPage === -1) return sortedTrainers;
+    const start = (currentPage - 1) * itemsPerPage;
+    return sortedTrainers.slice(start, start + itemsPerPage);
+  }, [sortedTrainers, currentPage, itemsPerPage]);
+
+  const renderSortHeader = (label: string, field: TrainerSortField, isSticky: boolean = false, style?: React.CSSProperties) => {
     const isActive = sortField === field;
     return (
       <th
         onClick={() => handleSort(field)}
+        className={isSticky ? 'it-sticky-col' : undefined}
         style={{
           cursor: 'pointer',
           userSelect: 'none',
@@ -430,6 +446,32 @@ export default function TrainerOverviewTable({ onlineUserIds: propOnlineUserIds 
         </div>
       </div>
 
+      {/* ── Roadmap Segmented Tabs Bar ────────────────────────── */}
+      <div className="it-roadmap-tabs-container">
+        <button
+          type="button"
+          className={`it-roadmap-pill-btn ${roadmapFilter === 'All' ? 'active' : ''}`}
+          onClick={() => setRoadmapFilter('All')}
+        >
+          <span>🗺️ All Roadmaps</span>
+          <span className="it-roadmap-pill-count">{enrichedTrainers.length}</span>
+        </button>
+        {uniqueRoadmaps.map((rmTitle) => {
+          const rmCount = enrichedTrainers.filter((t) => t.roadmap_title === rmTitle).length;
+          return (
+            <button
+              key={rmTitle}
+              type="button"
+              className={`it-roadmap-pill-btn ${roadmapFilter === rmTitle ? 'active' : ''}`}
+              onClick={() => setRoadmapFilter(rmTitle)}
+            >
+              <span>{rmTitle}</span>
+              <span className="it-roadmap-pill-count">{rmCount}</span>
+            </button>
+          );
+        })}
+      </div>
+
       {/* Filter Controls Bar */}
       <div className="it-controls-bar">
         {/* Search Input */}
@@ -567,31 +609,32 @@ export default function TrainerOverviewTable({ onlineUserIds: propOnlineUserIds 
             )}
           </div>
         ) : (
-          <div className="it-table-responsive">
-            <table className="it-table">
-              <thead>
-                <tr>
-                  {renderSortHeader('Trainer & Presence', 'full_name')}
-                  {renderSortHeader('Team / Emp ID', 'team')}
-                  {renderSortHeader('Roadmap', 'roadmap_title')}
-                  {renderSortHeader('Current Day', 'current_day')}
-                  {renderSortHeader('Solved Progress', 'solved_progress')}
-                  {renderSortHeader('Backlog Status', 'pending_questions_count')}
-                  {renderSortHeader('IT Attendance', 'it_days_count')}
-                  {renderSortHeader('Extensions', 'extended_days')}
-                  <th style={{ textAlign: 'right' }}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sortedTrainers.map((t) => {
-                  const compPct = t.total_questions_count > 0
-                    ? Math.round((t.completed_questions_count / t.total_questions_count) * 100)
-                    : 0;
+          <>
+            <div className="it-table-scroll-container">
+              <table className="it-table">
+                <thead>
+                  <tr>
+                    {renderSortHeader('Trainer & Presence', 'full_name', true)}
+                    {renderSortHeader('Team / Emp ID', 'team')}
+                    {renderSortHeader('Roadmap', 'roadmap_title')}
+                    {renderSortHeader('Current Day', 'current_day')}
+                    {renderSortHeader('Solved Progress', 'solved_progress')}
+                    {renderSortHeader('Backlog Status', 'pending_questions_count')}
+                    {renderSortHeader('IT Attendance', 'it_days_count')}
+                    {renderSortHeader('Extensions', 'extended_days')}
+                    <th style={{ textAlign: 'right' }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paginatedTrainers.map((t) => {
+                    const compPct = t.total_questions_count > 0
+                      ? Math.round((t.completed_questions_count / t.total_questions_count) * 100)
+                      : 0;
 
-                  return (
-                    <tr key={`${t.user_id}_${t.roadmap_id}`}>
-                      {/* Trainer Avatar & Info */}
-                      <td>
+                    return (
+                      <tr key={`${t.user_id}_${t.roadmap_id}`}>
+                        {/* Trainer Avatar & Info */}
+                        <td className="it-sticky-col">
                         <div className="it-trainer-cell">
                           <div className="it-avatar-wrap">
                             <div
@@ -785,8 +828,66 @@ export default function TrainerOverviewTable({ onlineUserIds: propOnlineUserIds 
               </tbody>
             </table>
           </div>
-        )}
-      </div>
+
+          {/* Pagination Bar */}
+          {sortedTrainers.length > 0 && (
+            <div className="it-pagination-bar">
+              <div className="it-pagination-info">
+                Showing{' '}
+                <strong>
+                  {itemsPerPage === -1
+                    ? `1–${sortedTrainers.length}`
+                    : `${Math.min((currentPage - 1) * itemsPerPage + 1, sortedTrainers.length)}–${Math.min(currentPage * itemsPerPage, sortedTrainers.length)}`}
+                </strong>{' '}
+                of <strong>{sortedTrainers.length}</strong> trainers
+              </div>
+
+              <div className="it-pagination-actions">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginRight: '0.75rem' }}>
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Per page:</span>
+                  <select
+                    className="it-page-select"
+                    value={itemsPerPage}
+                    onChange={(e) => setItemsPerPage(Number(e.target.value))}
+                  >
+                    <option value={10}>10</option>
+                    <option value={25}>25</option>
+                    <option value={50}>50</option>
+                    <option value={-1}>All ({sortedTrainers.length})</option>
+                  </select>
+                </div>
+
+                {itemsPerPage !== -1 && (
+                  <>
+                    <button
+                      type="button"
+                      className="it-page-btn"
+                      onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                      disabled={currentPage <= 1}
+                    >
+                      ← Prev
+                    </button>
+
+                    <span style={{ fontWeight: 700, fontSize: '0.82rem', padding: '0 0.35rem' }}>
+                      Page {currentPage} of {totalPages}
+                    </span>
+
+                    <button
+                      type="button"
+                      className="it-page-btn"
+                      onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                      disabled={currentPage >= totalPages}
+                    >
+                      Next →
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
 
       {/* Extension Modal */}
       {extendTarget && (
