@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server';
 import { getAdminClient } from '@/lib/supabase/admin';
+import { extractRoadmapQuestionIds } from '@/lib/roadmap-analytics';
 import { NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
@@ -137,7 +138,7 @@ async function handleContestsReport(
   userMap: Map<string, any>,
   filters: { startDate?: string | null; endDate?: string | null; teamFilter?: string | null; contestFilter?: string | null; searchFilter: string }
 ) {
-  // Fetch contests, assignments, group members, questions, progress
+  // Fetch contests, assignments, group members, questions
   const [
     contestsRes,
     assignmentsRes,
@@ -171,33 +172,49 @@ async function handleContestsReport(
     }
   });
 
-  // Fetch progress
-  let allProgress: any[] = [];
-  let pFrom = 0;
-  const pStep = 1000;
-  while (true) {
-    const { data: pageRows } = await dbAdmin
-      .from('progress')
-      .select('contest_id, user_id, question_id, status, score, max_score, last_submission_at')
-      .order('id', { ascending: true })
-      .range(pFrom, pFrom + pStep - 1);
-    if (!pageRows || pageRows.length === 0) break;
-    allProgress = allProgress.concat(pageRows);
-    if (pageRows.length < pStep) break;
-    pFrom += pStep;
-  }
-
   // Filter contests by ID if requested
   const targetContests = filters.contestFilter && filters.contestFilter !== 'all'
     ? contests.filter((c: any) => c.id === filters.contestFilter)
     : contests;
 
+  const targetContestIds = targetContests.map((c: any) => c.id);
+
+  // Fetch progress ONLY for target contests
+  let allProgress: any[] = [];
+  if (targetContestIds.length > 0) {
+    let pFrom = 0;
+    const pStep = 1000;
+    while (true) {
+      const { data: pageRows } = await dbAdmin
+        .from('progress')
+        .select('contest_id, user_id, question_id, status, score, max_score, last_submission_at')
+        .in('contest_id', targetContestIds)
+        .order('id', { ascending: true })
+        .range(pFrom, pFrom + pStep - 1);
+      if (!pageRows || pageRows.length === 0) break;
+      allProgress = allProgress.concat(pageRows);
+      if (pageRows.length < pStep) break;
+      pFrom += pStep;
+    }
+  }
+
   const rows: any[] = [];
+  let allScores: number[] = [];
+  let easyCount = 0;
+  let mediumCount = 0;
+  let hardCount = 0;
 
   targetContests.forEach((contest: any) => {
     const contestQs = questions.filter((q: any) => q.contest_id === contest.id);
     const totalQs = contestQs.length;
     const maxContestScore = contestQs.reduce((acc: number, q: any) => acc + (q.max_score || 10), 0);
+
+    contestQs.forEach((q: any) => {
+      const diff = (q.difficulty || '').toLowerCase();
+      if (diff === 'easy') easyCount++;
+      else if (diff === 'medium') mediumCount++;
+      else if (diff === 'hard') hardCount++;
+    });
 
     // Identify assigned users for this contest
     const assignedUserIds = new Set<string>();
@@ -231,6 +248,7 @@ async function handleContestsReport(
       const solvedCount = solvedQs.length;
       const totalUserScore = userProgress.reduce((acc, p) => acc + (p.score || 0), 0);
       const completionPct = totalQs > 0 ? Math.round((solvedCount / totalQs) * 100) : 0;
+      const accuracyPct = maxContestScore > 0 ? Math.round((totalUserScore / maxContestScore) * 100) : 0;
 
       // Find latest submission timestamp
       let latestSubDate: string | null = null;
@@ -262,17 +280,22 @@ async function handleContestsReport(
         solvedCount,
         totalQuestions: totalQs,
         completionPct,
+        accuracyPct,
         score: totalUserScore,
         maxPossibleScore: maxContestScore,
         status,
         lastSubmissionAt: latestSubDate,
       });
+      
+      allScores.push(totalUserScore);
     });
 
     // Sort to assign ranks
     contestUserRows.sort((a, b) => b.score - a.score || b.solvedCount - a.solvedCount || a.trainerName.localeCompare(b.trainerName));
+    const totalContestRows = contestUserRows.length;
     contestUserRows.forEach((r, idx) => {
       r.rank = idx + 1;
+      r.percentile = totalContestRows > 0 ? Math.round(((totalContestRows - r.rank) / totalContestRows) * 100) : 0;
       rows.push(r);
     });
   });
@@ -309,6 +332,22 @@ async function handleContestsReport(
   const avgScore = totalEnrolled > 0 ? Math.round(filteredRows.reduce((a, b) => a + b.score, 0) / totalEnrolled) : 0;
   const avgCompletionPct = totalEnrolled > 0 ? Math.round(filteredRows.reduce((a, b) => a + b.completionPct, 0) / totalEnrolled) : 0;
 
+  // New KPIs
+  allScores.sort((a, b) => a - b);
+  let min = 0, median = 0, max = 0;
+  if (allScores.length > 0) {
+    min = allScores[0];
+    max = allScores[allScores.length - 1];
+    const mid = Math.floor(allScores.length / 2);
+    median = allScores.length % 2 !== 0 ? allScores[mid] : (allScores[mid - 1] + allScores[mid]) / 2;
+  }
+  
+  let topScorerName = '—';
+  if (filteredRows.length > 0) {
+    const sortedFiltered = [...filteredRows].sort((a, b) => b.score - a.score || a.trainerName.localeCompare(b.trainerName));
+    if (sortedFiltered.length > 0) topScorerName = sortedFiltered[0].trainerName;
+  }
+
   return NextResponse.json({
     reportType: 'contests',
     rows: filteredRows,
@@ -318,6 +357,9 @@ async function handleContestsReport(
       masteredCount,
       avgScore,
       avgCompletionPct,
+      scoreDistribution: { min, median, max },
+      difficultyBreakdown: { easy: easyCount, medium: mediumCount, hard: hardCount },
+      topScorerName,
     },
     meta: {
       availableContests: contests.map((c: any) => ({ id: c.id, title: c.title })),
@@ -345,184 +387,137 @@ async function handleITAttendanceReport(
   }
 
   const roadmapIds = itRoadmaps.map((r: any) => r.id);
-  const targetRoadmaps = filters.roadmapFilter && filters.roadmapFilter !== 'all'
-    ? itRoadmaps.filter((r: any) => r.id === filters.roadmapFilter)
-    : itRoadmaps;
 
-  const [
-    dayPlansRes,
-    assignmentsRes,
-    groupMembersRes,
-    progressRes,
-    questionsRes,
-  ] = await Promise.all([
-    dbAdmin.from('it_day_plans').select('id, roadmap_id, day_number, topic_title').in('roadmap_id', roadmapIds),
-    dbAdmin.from('roadmap_assignments').select('roadmap_id, user_id, group_id').in('roadmap_id', roadmapIds),
-    dbAdmin.from('group_members').select('group_id, user_id'),
-    dbAdmin.from('it_trainer_progress').select('*').in('roadmap_id', roadmapIds),
-    dbAdmin.from('it_day_questions').select('id, day_plan_id, question_id'),
-  ]);
+  // Fetch day plan counts per roadmap to get accurate totalDays
+  const { data: dayPlanRows } = await dbAdmin
+    .from('it_day_plans')
+    .select('roadmap_id')
+    .in('roadmap_id', roadmapIds);
 
-  const dayPlans = dayPlansRes.data || [];
-  const assignments = assignmentsRes.data || [];
-  const groupMembers = groupMembersRes.data || [];
-  const progressList = progressRes.data || [];
-  const questions = questionsRes.data || [];
-
-  const groupMembersMap = new Map<string, string[]>();
-  groupMembers.forEach((gm: any) => {
-    if (!groupMembersMap.has(gm.group_id)) groupMembersMap.set(gm.group_id, []);
-    groupMembersMap.get(gm.group_id)!.push(gm.user_id);
+  const roadmapDaysMap = new Map<string, number>();
+  (dayPlanRows || []).forEach((dp: any) => {
+    roadmapDaysMap.set(dp.roadmap_id, (roadmapDaysMap.get(dp.roadmap_id) || 0) + 1);
   });
 
-  // Fetch completions
-  let completions: any[] = [];
-  let cFrom = 0;
-  const cStep = 1000;
+  // 1. Fetch overview from RPC
+  const { data: itOverviewData } = await dbAdmin.rpc('get_it_trainer_overview');
+  const overviewList = itOverviewData || [];
+
+  // 2. Fetch IT trainer progress to get started_at / updated_at dates
+  let itProgressData: any[] = [];
+  let pFrom = 0;
+  const pStep = 1000;
   while (true) {
-    const { data: cPage } = await dbAdmin
-      .from('it_question_completions')
-      .select('user_id, day_question_id, clicked_at, is_completed, completed_at')
+    const { data: pPage } = await dbAdmin
+      .from('it_trainer_progress')
+      .select('user_id, roadmap_id, started_at, updated_at')
       .order('id', { ascending: true })
-      .range(cFrom, cFrom + cStep - 1);
-    if (!cPage || cPage.length === 0) break;
-    completions = completions.concat(cPage);
-    if (cPage.length < cStep) break;
-    cFrom += cStep;
+      .range(pFrom, pFrom + pStep - 1);
+    if (!pPage || pPage.length === 0) break;
+    itProgressData = itProgressData.concat(pPage);
+    if (pPage.length < pStep) break;
+    pFrom += pStep;
   }
 
-  // Build completions map: user_id:day_question_id
-  const completionMap = new Map<string, any>();
-  completions.forEach((c: any) => {
-    completionMap.set(`${c.user_id}:${c.day_question_id}`, c);
-  });
-
-  // Map progress: user_id:roadmap_id
   const progressMap = new Map<string, any>();
-  progressList.forEach((p: any) => {
+  itProgressData.forEach((p: any) => {
     progressMap.set(`${p.user_id}:${p.roadmap_id}`, p);
   });
 
+  const now = new Date().getTime();
+  const dayMs = 24 * 60 * 60 * 1000;
   const rows: any[] = [];
 
-  targetRoadmaps.forEach((rm: any) => {
-    const rmDayPlans = dayPlans.filter((dp: any) => dp.roadmap_id === rm.id);
-    const totalDays = rmDayPlans.length;
+  overviewList.forEach((row: any) => {
+    // Apply filters
+    if (filters.roadmapFilter && filters.roadmapFilter !== 'all' && row.roadmap_id !== filters.roadmapFilter) return;
+    if (filters.teamFilter && filters.teamFilter !== 'all' && row.team !== filters.teamFilter) return;
 
-    // Roadmap questions
-    const rmPlanIds = rmDayPlans.map((dp: any) => dp.id);
-    const rmQuestions = questions.filter((q: any) => rmPlanIds.includes(q.day_plan_id));
-    const totalQuestions = rmQuestions.length;
+    const u = userMap.get(row.user_id);
+    if (!u || u.role === 'admin') return;
 
-    // Assigned users
-    const assignedUserIds = new Set<string>();
-    assignments.forEach((a: any) => {
-      if (a.roadmap_id === rm.id) {
-        if (a.user_id) assignedUserIds.add(a.user_id);
-        if (a.group_id) {
-          (groupMembersMap.get(a.group_id) || []).forEach((uid) => assignedUserIds.add(uid));
-        }
+    // Search filter
+    if (filters.searchFilter) {
+      const sf = filters.searchFilter;
+      if (!u.full_name?.toLowerCase().includes(sf) &&
+          !u.emp_id?.toLowerCase().includes(sf) &&
+          !u.team?.toLowerCase().includes(sf) &&
+          !row.roadmap_title?.toLowerCase().includes(sf)) {
+        return;
       }
-    });
-
-    if (assignedUserIds.size === 0) {
-      progressList.forEach((p: any) => {
-        if (p.roadmap_id === rm.id && p.user_id) assignedUserIds.add(p.user_id);
-      });
     }
 
-    assignedUserIds.forEach((uid) => {
-      const u = userMap.get(uid);
-      if (!u || u.role === 'admin') return;
+    const p = progressMap.get(`${row.user_id}:${row.roadmap_id}`);
+    const startedAt = p?.started_at || null;
+    const lastCheckInDate = p?.updated_at || u.last_it_check_date || null;
 
-      const p = progressMap.get(`${uid}:${rm.id}`);
-      const itDaysCount = p?.it_days_logged || u.it_days_count || 0;
-      const currentDay = Math.min(itDaysCount, totalDays || 1);
-      const extendedDays = p?.extended_days || 0;
-      const extensionCount = p?.extension_count || 0;
-      const startedAt = p?.started_at || null;
-      const lastCheckInDate = p?.last_check_in_date || u.last_it_check_date || null;
+    if (filters.startDate && (!lastCheckInDate || new Date(lastCheckInDate).getTime() < new Date(filters.startDate).getTime())) return;
+    if (filters.endDate && (!lastCheckInDate || new Date(lastCheckInDate).getTime() > new Date(filters.endDate).getTime())) return;
 
-      let completedQsCount = 0;
-      let clickedQsCount = 0;
-      rmQuestions.forEach((q: any) => {
-        const comp = completionMap.get(`${uid}:${q.id}`);
-        if (comp?.clicked_at) clickedQsCount++;
-        if (comp?.is_completed || comp?.completed_at) completedQsCount++;
-      });
+    const completedQsCount = row.completed_questions_count || 0;
+    const currentDay = row.current_day || 1;
+    const totalQuestions = row.total_questions_count || 0;
+    const completionPct = totalQuestions > 0 ? Math.round((completedQsCount / totalQuestions) * 100) : 0;
+    
+    const completionVelocity = Math.round((completedQsCount / Math.max(1, currentDay)) * 10) / 10;
+    const daysSinceLastActivity = lastCheckInDate ? Math.floor((now - new Date(lastCheckInDate).getTime()) / dayMs) : null;
+    
+    const extensionCount = row.extension_count || 0;
+    const itDaysCount = row.it_days_count || 0;
+    
+    let attendanceStatus = 'On Track';
+    if (completionPct >= 100) attendanceStatus = 'Completed';
+    else if (completionPct > 0 && daysSinceLastActivity !== null && daysSinceLastActivity <= 3) attendanceStatus = 'On Track';
+    else if (completionPct > 0 && daysSinceLastActivity !== null && daysSinceLastActivity > 3) attendanceStatus = 'Behind';
+    else if (extensionCount > 0) attendanceStatus = 'Extended';
+    else if (completionPct === 0 && itDaysCount === 0) attendanceStatus = 'Not Started';
 
-      const pendingQsCount = Math.max(0, totalQuestions - completedQsCount);
-      const completionPct = totalQuestions > 0 ? Math.round((completedQsCount / totalQuestions) * 100) : 0;
+    const rm = itRoadmaps.find((r:any) => r.id === row.roadmap_id);
 
-      let attendanceStatus = 'On Track';
-      if (extendedDays > 0 || extensionCount > 0) attendanceStatus = 'Extended';
-      else if (itDaysCount === 0) attendanceStatus = 'Not Started';
-      else if (pendingQsCount > 5) attendanceStatus = 'Lagging';
-
-      rows.push({
-        roadmapId: rm.id,
-        roadmapTitle: rm.title,
-        domain: rm.domain || 'Internal Training',
-        userId: u.id,
-        trainerName: u.full_name,
-        empId: u.emp_id || '—',
-        email: u.email,
-        team: u.team || 'N/A',
-        manager: u.manager || '—',
-        itDaysCount,
-        totalDays,
-        currentDay,
-        startedAt,
-        lastCheckInDate,
-        questionsClicked: clickedQsCount,
-        questionsCompleted: completedQsCount,
-        totalQuestions,
-        pendingQuestions: pendingQsCount,
-        completionPct,
-        extendedDays,
-        extensionCount,
-        attendanceStatus,
-      });
+    rows.push({
+      roadmapId: row.roadmap_id,
+      roadmapTitle: row.roadmap_title,
+      domain: rm?.domain || 'Internal Training',
+      userId: row.user_id,
+      trainerName: u.full_name,
+      empId: u.emp_id || '—',
+      email: u.email,
+      team: u.team || 'N/A',
+      manager: u.manager || '—',
+      itDaysCount: row.it_days_count,
+      totalDays: roadmapDaysMap.get(row.roadmap_id) ?? 0,
+      currentDay: row.current_day,
+      startedAt,
+      lastCheckInDate,
+      questionsCompleted: completedQsCount,
+      totalQuestions,
+      pendingQuestions: row.pending_questions_count,
+      completionPct,
+      extendedDays: row.extended_days,
+      extensionCount: row.extension_count,
+      attendanceStatus,
+      completionVelocity,
+      daysSinceLastActivity
     });
   });
 
-  // Apply filters
-  let filteredRows = rows;
-  if (filters.teamFilter && filters.teamFilter !== 'all') {
-    filteredRows = filteredRows.filter((r) => r.team === filters.teamFilter);
-  }
-  if (filters.startDate) {
-    const start = new Date(filters.startDate).getTime();
-    filteredRows = filteredRows.filter((r) => !r.lastCheckInDate || new Date(r.lastCheckInDate).getTime() >= start);
-  }
-  if (filters.endDate) {
-    const end = new Date(filters.endDate).getTime();
-    filteredRows = filteredRows.filter((r) => !r.lastCheckInDate || new Date(r.lastCheckInDate).getTime() <= end);
-  }
-  if (filters.searchFilter) {
-    filteredRows = filteredRows.filter((r) =>
-      r.trainerName.toLowerCase().includes(filters.searchFilter) ||
-      r.empId.toLowerCase().includes(filters.searchFilter) ||
-      r.team.toLowerCase().includes(filters.searchFilter) ||
-      r.roadmapTitle.toLowerCase().includes(filters.searchFilter)
-    );
-  }
-
   // Summary KPIs
-  const totalTrainers = filteredRows.length;
-  const onTrackCount = filteredRows.filter((r) => r.attendanceStatus === 'On Track').length;
-  const laggingCount = filteredRows.filter((r) => r.attendanceStatus === 'Lagging').length;
-  const extendedCount = filteredRows.filter((r) => r.attendanceStatus === 'Extended').length;
-  const avgItDays = totalTrainers > 0 ? Math.round(filteredRows.reduce((a, b) => a + b.itDaysCount, 0) / totalTrainers) : 0;
-  const avgItCompletion = totalTrainers > 0 ? Math.round(filteredRows.reduce((a, b) => a + b.completionPct, 0) / totalTrainers) : 0;
+  const totalTrainers = rows.length;
+  const completedCount = rows.filter((r) => r.attendanceStatus === 'Completed').length;
+  const onTrackCount = rows.filter((r) => r.attendanceStatus === 'On Track').length;
+  const behindCount = rows.filter((r) => r.attendanceStatus === 'Behind').length;
+  const extendedCount = rows.filter((r) => r.attendanceStatus === 'Extended').length;
+  const avgItDays = totalTrainers > 0 ? Math.round(rows.reduce((a, b) => a + (b.itDaysCount||0), 0) / totalTrainers) : 0;
+  const avgItCompletion = totalTrainers > 0 ? Math.round(rows.reduce((a, b) => a + (b.completionPct||0), 0) / totalTrainers) : 0;
 
   return NextResponse.json({
     reportType: 'it-attendance',
-    rows: filteredRows,
+    rows,
     kpis: {
       totalTrainers,
+      completedCount,
       onTrackCount,
-      laggingCount,
+      behindCount,
       extendedCount,
       avgItDays,
       avgItCompletion,
@@ -570,6 +565,11 @@ async function handleTeamsReport(
     let totalSolved = 0;
     let masterTrainersCount = 0;
     let topTrainer = { name: '—', score: 0 };
+    
+    let membersWithRoadmapCompleted = 0;
+    let membersWithItDays = 0;
+    
+    const memberScores: number[] = [];
 
     members.forEach((m) => {
       const userProgress = progressList.filter((p: any) => p.user_id === m.id);
@@ -588,6 +588,11 @@ async function handleTeamsReport(
 
       totalScore += userScore;
       totalSolved += userSolved;
+      
+      memberScores.push(userScore);
+      
+      if (userRoadmapsCompleted > 0) membersWithRoadmapCompleted++;
+      if ((m.it_days_count || 0) > 0) membersWithItDays++;
 
       if (userScore > topTrainer.score) {
         topTrainer = { name: m.full_name, score: userScore };
@@ -597,6 +602,18 @@ async function handleTeamsReport(
     const participationRate = totalMembers > 0 ? Math.round((activeCount / totalMembers) * 100) : 0;
     const avgScore = totalMembers > 0 ? Math.round(totalScore / totalMembers) : 0;
     const avgSolved = totalMembers > 0 ? Math.round(totalSolved / totalMembers) : 0;
+    
+    const completionRate = totalMembers > 0 ? Math.round((membersWithRoadmapCompleted / totalMembers) * 100) : 0;
+    const itEngagementPct = totalMembers > 0 ? Math.round((membersWithItDays / totalMembers) * 100) : 0;
+
+    memberScores.sort((a, b) => a - b);
+    let min = 0, median = 0, max = 0;
+    if (memberScores.length > 0) {
+      min = memberScores[0];
+      max = memberScores[memberScores.length - 1];
+      const mid = Math.floor(memberScores.length / 2);
+      median = memberScores.length % 2 !== 0 ? memberScores[mid] : (memberScores[mid - 1] + memberScores[mid]) / 2;
+    }
 
     teamRows.push({
       teamName,
@@ -610,6 +627,9 @@ async function handleTeamsReport(
       masterTrainersCount,
       topTrainerName: topTrainer.name,
       topTrainerScore: topTrainer.score,
+      completionRate,
+      itEngagementPct,
+      scoreDistribution: { min, median, max }
     });
   });
 
@@ -661,17 +681,19 @@ async function handleRoadmapsReport(
   userMap: Map<string, any>,
   filters: { startDate?: string | null; endDate?: string | null; teamFilter?: string | null; roadmapFilter?: string | null; searchFilter: string }
 ) {
-  const [roadmapsRes, userProgressRes, assignmentsRes, groupMembersRes] = await Promise.all([
+  const [roadmapsRes, userProgressRes, assignmentsRes, groupMembersRes, progressRes] = await Promise.all([
     dbAdmin.from('roadmaps').select('*').order('created_at', { ascending: false }),
     dbAdmin.from('user_roadmap_progress').select('*'),
     dbAdmin.from('roadmap_assignments').select('roadmap_id, user_id, group_id'),
     dbAdmin.from('group_members').select('group_id, user_id'),
+    dbAdmin.from('progress').select('user_id, question_id, status, score').or('status.eq.solved,score.gt.0'),
   ]);
 
   const roadmaps = roadmapsRes.data || [];
   const userProgressList = userProgressRes.data || [];
   const assignments = assignmentsRes.data || [];
   const groupMembers = groupMembersRes.data || [];
+  const progressList = progressRes.data || [];
 
   const groupMembersMap = new Map<string, string[]>();
   groupMembers.forEach((gm: any) => {
@@ -684,11 +706,13 @@ async function handleRoadmapsReport(
     : roadmaps;
 
   const rows: any[] = [];
+  const now = new Date().getTime();
+  const dayMs = 24 * 60 * 60 * 1000;
 
   targetRoadmaps.forEach((rm: any) => {
     const topics = rm.topics || [];
-    const totalTopics = topics.length;
-
+    const rmQIds = extractRoadmapQuestionIds(topics);
+    
     // Assigned users
     const assignedUserIds = new Set<string>();
     assignments.forEach((a: any) => {
@@ -699,23 +723,35 @@ async function handleRoadmapsReport(
         }
       }
     });
-
-    if (assignedUserIds.size === 0) {
-      allUsers.forEach((u) => {
-        if (u.role !== 'admin') assignedUserIds.add(u.id);
-      });
-    }
+    
+    userProgressList.forEach((p: any) => {
+      if (p.roadmap_id === rm.id) assignedUserIds.add(p.user_id);
+    });
 
     assignedUserIds.forEach((uid) => {
       const u = userMap.get(uid);
       if (!u || u.role === 'admin') return;
 
       const p = userProgressList.find((up: any) => up.user_id === uid && up.roadmap_id === rm.id);
-      const completedTopicIds: string[] = p?.completed_topic_ids || [];
-      const completedCount = completedTopicIds.length;
-      const completionPct = totalTopics > 0 ? Math.round((completedCount / totalTopics) * 100) : 0;
+      if (!p) return; // Only process actual progress
 
-      let status = p?.status || 'not_started';
+      const baseCompletedTopicIds: string[] = p.completed_topic_ids || [];
+      
+      const userQs = progressList.filter((pr: any) => pr.user_id === uid && rmQIds.includes(pr.question_id));
+      const questionsSolved = userQs.length;
+      const solvedQIds = userQs.map((pr: any) => pr.question_id);
+      
+      const completedTopicIds = Array.from(new Set([...baseCompletedTopicIds, ...solvedQIds]));
+      
+      const completedCount = completedTopicIds.length;
+      const totalTopics = topics.length; // Approximate from topics
+      const completionPct = totalTopics > 0 ? Math.min(100, Math.round((completedCount / totalTopics) * 100)) : 0;
+      
+      const startedAtMs = p.started_at ? new Date(p.started_at).getTime() : null;
+      const daysSinceStarted = startedAtMs ? Math.floor((now - startedAtMs) / dayMs) : null;
+      const estimatedCompletionDays = (completionPct > 0 && daysSinceStarted !== null && daysSinceStarted > 0) ? Math.round(daysSinceStarted / (completionPct / 100)) : null;
+
+      let status = p.status || 'not_started';
       if (completionPct >= 100) status = 'completed';
       else if (completedCount > 0) status = 'in_progress';
 
@@ -734,10 +770,13 @@ async function handleRoadmapsReport(
         completedTopicsCount: completedCount,
         totalTopics,
         completionPct,
+        questionsSolved,
+        daysSinceStarted,
+        estimatedCompletionDays,
         status,
-        startedAt: p?.started_at || null,
-        completedAt: p?.completed_at || null,
-        updatedAt: p?.updated_at || null,
+        startedAt: p.started_at || null,
+        completedAt: p.completed_at || null,
+        updatedAt: p.updated_at || null,
       });
     });
   });
@@ -796,7 +835,7 @@ async function handleInactivityAuditReport(
 ) {
   const [progressRes, itProgressRes, todosRes] = await Promise.all([
     dbAdmin.from('progress').select('user_id, score, status, last_submission_at'),
-    dbAdmin.from('it_trainer_progress').select('user_id, last_check_in_date, it_days_logged, extended_days'),
+    dbAdmin.from('it_trainer_progress').select('user_id, updated_at, current_day, extended_days'),
     dbAdmin.from('trainer_todos').select('user_id, is_completed'),
   ]);
 
@@ -816,24 +855,34 @@ async function handleInactivityAuditReport(
 
     // Latest activity timestamp from all sources
     const timestamps: number[] = [];
+    let pMax = 0, itMax = 0, uMax = 0;
 
     userProgress.forEach((p: any) => {
       if (p.last_submission_at) {
         const t = new Date(p.last_submission_at).getTime();
-        if (!isNaN(t)) timestamps.push(t);
+        if (!isNaN(t)) {
+          timestamps.push(t);
+          pMax = Math.max(pMax, t);
+        }
       }
     });
 
     userItProgress.forEach((ip: any) => {
-      if (ip.last_check_in_date) {
-        const t = new Date(ip.last_check_in_date).getTime();
-        if (!isNaN(t)) timestamps.push(t);
+      if (ip.updated_at) {
+        const t = new Date(ip.updated_at).getTime();
+        if (!isNaN(t)) {
+          timestamps.push(t);
+          itMax = Math.max(itMax, t);
+        }
       }
     });
 
     if (u.last_it_check_date) {
       const t = new Date(u.last_it_check_date).getTime();
-      if (!isNaN(t)) timestamps.push(t);
+      if (!isNaN(t)) {
+        timestamps.push(t);
+        uMax = t;
+      }
     }
 
     const maxTimestamp = timestamps.length > 0 ? Math.max(...timestamps) : null;
@@ -842,11 +891,26 @@ async function handleInactivityAuditReport(
     const daysInactive = latestActivityDate
       ? Math.floor((now.getTime() - latestActivityDate.getTime()) / (1000 * 60 * 60 * 24))
       : 999;
+      
+    let lastActivityType = 'Unknown';
+    if (maxTimestamp) {
+      if (maxTimestamp === pMax) lastActivityType = 'Contest';
+      else if (maxTimestamp === itMax || maxTimestamp === uMax) lastActivityType = 'IT Training';
+    }
 
     const totalSolved = userProgress.filter((p: any) => p.status === 'solved' || p.score > 0).length;
     const totalScore = userProgress.reduce((acc: number, p: any) => acc + (p.score || 0), 0);
     const itDaysCount = u.it_days_count || 0;
     const pendingTodos = userTodos.filter((t: any) => !t.is_completed).length;
+
+    const contestScorePart = Math.min(40, totalSolved * 2);
+    const itScorePart = Math.min(30, itDaysCount * 3);
+    const recencyScorePart = daysInactive <= 3 ? 30 : daysInactive <= 7 ? 20 : daysInactive <= 14 ? 10 : 0;
+    const engagementScore = contestScorePart + itScorePart + recencyScorePart;
+    
+    let trend = 'Declining';
+    if (daysInactive <= 3) trend = 'Improving';
+    else if (daysInactive <= 7) trend = 'Stable';
 
     let riskLevel = '🟢 Active';
     let riskTier = 'active';
@@ -876,6 +940,9 @@ async function handleInactivityAuditReport(
       totalScore,
       itDaysCount,
       pendingTodos,
+      engagementScore,
+      lastActivityType,
+      trend,
       riskLevel,
       riskTier,
       actionRecommendation,
@@ -902,6 +969,7 @@ async function handleInactivityAuditReport(
   const mediumRiskCount = filteredRows.filter((r) => r.riskTier === 'medium').length;
   const activeCount = filteredRows.filter((r) => r.riskTier === 'active').length;
   const totalAudited = filteredRows.length;
+  const avgEngagementScore = totalAudited > 0 ? Math.round(filteredRows.reduce((a, b) => a + b.engagementScore, 0) / totalAudited) : 0;
 
   return NextResponse.json({
     reportType: 'inactivity-audit',
@@ -911,6 +979,7 @@ async function handleInactivityAuditReport(
       highRiskCount,
       mediumRiskCount,
       activeCount,
+      avgEngagementScore,
       atRiskPercentage: totalAudited > 0 ? Math.round(((highRiskCount + mediumRiskCount) / totalAudited) * 100) : 0,
     },
     meta: {

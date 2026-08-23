@@ -168,6 +168,8 @@ export default function ReportsHubClient({ initialReportType = 'contests', userR
         'Questions Solved': r.solvedCount,
         'Total Questions': r.totalQuestions,
         'Completion Rate (%)': `${r.completionPct}%`,
+        'Accuracy (%)': `${r.accuracyPct ?? 0}%`,
+        'Percentile': `${r.percentile ?? 0}th`,
         'Total Score': r.score,
         'Max Possible Score': r.maxPossibleScore,
         Status: r.status,
@@ -190,6 +192,8 @@ export default function ReportsHubClient({ initialReportType = 'contests', userR
         'Total Questions': r.totalQuestions,
         'Pending Questions': r.pendingQuestions,
         'Completion (%)': `${r.completionPct}%`,
+        'Velocity (q/day)': r.completionVelocity ?? 0,
+        'Days Since Last Activity': r.daysSinceLastActivity ?? '—',
         'Extended Days': r.extendedDays,
         'Attendance Status': r.attendanceStatus,
         'Last Check-In': r.lastCheckInDate ? new Date(r.lastCheckInDate).toLocaleDateString() : 'Never',
@@ -207,6 +211,9 @@ export default function ReportsHubClient({ initialReportType = 'contests', userR
         'Total Team Score': r.totalScore,
         'Average Solved': r.avgSolved,
         'Total Solved': r.totalSolved,
+        'Roadmap Completion Rate (%)': `${r.completionRate ?? 0}%`,
+        'IT Engagement (%)': `${r.itEngagementPct ?? 0}%`,
+        'Score Min / Median / Max': r.scoreDistribution ? `${r.scoreDistribution.min} / ${r.scoreDistribution.median} / ${r.scoreDistribution.max}` : '—',
         'Master Trainers': r.masterTrainersCount,
         'Top Performer': r.topTrainerName,
         'Top Performer Score': r.topTrainerScore,
@@ -225,6 +232,9 @@ export default function ReportsHubClient({ initialReportType = 'contests', userR
         'Topics Completed': r.completedTopicsCount,
         'Total Topics': r.totalTopics,
         'Completion (%)': `${r.completionPct}%`,
+        'Questions Solved': r.questionsSolved ?? 0,
+        'Days Since Started': r.daysSinceStarted ?? '—',
+        'Est. Completion Days': r.estimatedCompletionDays ?? '—',
         Status: r.status,
         'Started At': r.startedAt ? new Date(r.startedAt).toLocaleDateString() : '—',
         'Completed At': r.completedAt ? new Date(r.completedAt).toLocaleDateString() : '—',
@@ -240,6 +250,9 @@ export default function ReportsHubClient({ initialReportType = 'contests', userR
         'Reporting Manager': r.manager,
         'Days Inactive': r.daysInactive,
         'Risk Level': r.riskLevel,
+        'Engagement Score': r.engagementScore ?? 0,
+        Trend: r.trend ?? '—',
+        'Last Activity Type': r.lastActivityType ?? '—',
         'Total Solved': r.totalSolved,
         'Total Contest Score': r.totalScore,
         'IT Days Logged': r.itDaysCount,
@@ -378,7 +391,7 @@ export default function ReportsHubClient({ initialReportType = 'contests', userR
               <div className="kpi-icon" style={{ background: 'rgba(245, 158, 11, 0.12)', color: '#f59e0b' }}>📊</div>
               <div className="kpi-details">
                 <span className="kpi-val">{kpis.avgScore ?? 0} pts</span>
-                <span className="kpi-label">Average Score</span>
+                <span className="kpi-label">Avg Score</span>
               </div>
             </div>
             <div className="kpi-card">
@@ -388,8 +401,40 @@ export default function ReportsHubClient({ initialReportType = 'contests', userR
                 <span className="kpi-label">Avg Completion</span>
               </div>
             </div>
+            {kpis.scoreDistribution && (
+              <div className="kpi-card">
+                <div className="kpi-icon" style={{ background: 'rgba(139, 92, 246, 0.12)', color: '#8b5cf6' }}>📉</div>
+                <div className="kpi-details">
+                  <span className="kpi-val" style={{ fontSize: '0.82rem' }}>
+                    {kpis.scoreDistribution.min} / {kpis.scoreDistribution.median} / {kpis.scoreDistribution.max}
+                  </span>
+                  <span className="kpi-label">Min / Median / Max</span>
+                </div>
+              </div>
+            )}
+            {kpis.topScorerName && kpis.topScorerName !== '—' && (
+              <div className="kpi-card">
+                <div className="kpi-icon" style={{ background: 'rgba(245, 158, 11, 0.12)', color: '#f59e0b' }}>🌟</div>
+                <div className="kpi-details">
+                  <span className="kpi-val" style={{ fontSize: '0.85rem' }}>{kpis.topScorerName}</span>
+                  <span className="kpi-label">Top Scorer</span>
+                </div>
+              </div>
+            )}
+            {kpis.difficultyBreakdown && (
+              <div className="kpi-card">
+                <div className="kpi-icon" style={{ background: 'rgba(16, 185, 129, 0.12)', color: '#10b981' }}>🎯</div>
+                <div className="kpi-details">
+                  <span className="kpi-val" style={{ fontSize: '0.78rem' }}>
+                    {kpis.difficultyBreakdown.easy}E · {kpis.difficultyBreakdown.medium}M · {kpis.difficultyBreakdown.hard}H
+                  </span>
+                  <span className="kpi-label">Easy · Med · Hard Qs</span>
+                </div>
+              </div>
+            )}
           </>
         )}
+
 
         {activeTab === 'it-attendance' && (
           <>
@@ -401,17 +446,24 @@ export default function ReportsHubClient({ initialReportType = 'contests', userR
               </div>
             </div>
             <div className="kpi-card">
-              <div className="kpi-icon" style={{ background: 'rgba(16, 185, 129, 0.12)', color: '#10b981' }}>🟢</div>
+              <div className="kpi-icon" style={{ background: 'rgba(16, 185, 129, 0.12)', color: '#10b981' }}>✅</div>
               <div className="kpi-details">
-                <span className="kpi-val">{kpis.onTrackCount ?? 0}</span>
-                <span className="kpi-label">On Track Trainers</span>
+                <span className="kpi-val">{kpis.completedCount ?? 0}</span>
+                <span className="kpi-label">Completed</span>
               </div>
             </div>
             <div className="kpi-card">
-              <div className="kpi-icon" style={{ background: 'rgba(239, 68, 68, 0.12)', color: 'var(--error)' }}>🔴</div>
+              <div className="kpi-icon" style={{ background: 'rgba(59, 130, 246, 0.12)', color: '#3b82f6' }}>🟢</div>
               <div className="kpi-details">
-                <span className="kpi-val">{kpis.laggingCount ?? 0}</span>
-                <span className="kpi-label">Lagging / Overdue</span>
+                <span className="kpi-val">{kpis.onTrackCount ?? 0}</span>
+                <span className="kpi-label">On Track</span>
+              </div>
+            </div>
+            <div className="kpi-card">
+              <div className="kpi-icon" style={{ background: 'rgba(239, 68, 68, 0.12)', color: 'var(--error)' }}>⏰</div>
+              <div className="kpi-details">
+                <span className="kpi-val">{kpis.behindCount ?? 0}</span>
+                <span className="kpi-label">Behind Schedule</span>
               </div>
             </div>
             <div className="kpi-card">
@@ -422,10 +474,10 @@ export default function ReportsHubClient({ initialReportType = 'contests', userR
               </div>
             </div>
             <div className="kpi-card">
-              <div className="kpi-icon" style={{ background: 'rgba(59, 130, 246, 0.12)', color: '#3b82f6' }}>📅</div>
+              <div className="kpi-icon" style={{ background: 'rgba(139, 92, 246, 0.12)', color: '#8b5cf6' }}>📈</div>
               <div className="kpi-details">
-                <span className="kpi-val">{kpis.avgItDays ?? 0} days</span>
-                <span className="kpi-label">Avg IT Days Logged</span>
+                <span className="kpi-val">{kpis.avgItCompletion ?? 0}%</span>
+                <span className="kpi-label">Avg Completion</span>
               </div>
             </div>
           </>
@@ -532,6 +584,13 @@ export default function ReportsHubClient({ initialReportType = 'contests', userR
               <div className="kpi-details">
                 <span className="kpi-val">{kpis.atRiskPercentage ?? 0}%</span>
                 <span className="kpi-label">Overall At-Risk Rate</span>
+              </div>
+            </div>
+            <div className="kpi-card">
+              <div className="kpi-icon" style={{ background: 'rgba(139, 92, 246, 0.12)', color: '#8b5cf6' }}>💡</div>
+              <div className="kpi-details">
+                <span className="kpi-val">{kpis.avgEngagementScore ?? 0}<span style={{ fontSize: '0.7rem', fontWeight: 400 }}>/100</span></span>
+                <span className="kpi-label">Avg Engagement Score</span>
               </div>
             </div>
           </>
@@ -667,8 +726,10 @@ export default function ReportsHubClient({ initialReportType = 'contests', userR
                   {renderSortHeader('Emp ID', 'empId', 'left', 110)}
                   {renderSortHeader('Team', 'team', 'left', 120)}
                   {renderSortHeader('Contest', 'contestTitle', 'left', 180)}
-                  {renderSortHeader('Solved', 'solvedCount', 'left', 160)}
+                  {renderSortHeader('Solved', 'solvedCount', 'left', 140)}
                   {renderSortHeader('Score', 'score', 'right', 110)}
+                  {renderSortHeader('Accuracy', 'accuracyPct', 'center', 100)}
+                  {renderSortHeader('Percentile', 'percentile', 'center', 100)}
                   {renderSortHeader('Status', 'status', 'center', 120)}
                   {renderSortHeader('Last Submission', 'lastSubmissionAt', 'right', 150)}
                 </tr>
@@ -680,10 +741,10 @@ export default function ReportsHubClient({ initialReportType = 'contests', userR
                   {renderSortHeader('Emp ID', 'empId', 'left', 110)}
                   {renderSortHeader('Team', 'team', 'left', 120)}
                   {renderSortHeader('Roadmap', 'roadmapTitle', 'left', 180)}
-                  {renderSortHeader('IT Days', 'itDaysCount', 'center', 100)}
+                  {renderSortHeader('IT Days', 'itDaysCount', 'center', 90)}
                   {renderSortHeader('Day Plan', 'currentDay', 'center', 100)}
-                  {renderSortHeader('Questions Completed', 'questionsCompleted', 'left', 160)}
-                  {renderSortHeader('Extensions', 'extendedDays', 'center', 110)}
+                  {renderSortHeader('Qs Completed', 'questionsCompleted', 'left', 140)}
+                  {renderSortHeader('Velocity', 'completionVelocity', 'center', 100)}
                   {renderSortHeader('Status', 'attendanceStatus', 'center', 120)}
                   {renderSortHeader('Last Check-In', 'lastCheckInDate', 'right', 130)}
                 </tr>
@@ -693,13 +754,14 @@ export default function ReportsHubClient({ initialReportType = 'contests', userR
                 <tr>
                   {renderSortHeader('Rank', 'rank', 'center', 70)}
                   {renderSortHeader('Team Name', 'teamName', 'left', 180)}
-                  {renderSortHeader('Total Members', 'totalMembers', 'center', 130)}
-                  {renderSortHeader('Active Members', 'activeMembers', 'center', 130)}
-                  {renderSortHeader('Participation', 'participationRate', 'left', 160)}
-                  {renderSortHeader('Avg Score', 'avgScore', 'right', 120)}
-                  {renderSortHeader('Total Solved', 'totalSolved', 'right', 120)}
-                  {renderSortHeader('Master Trainers', 'masterTrainersCount', 'center', 130)}
-                  {renderSortHeader('Top Performer', 'topTrainerName', 'left', 180)}
+                  {renderSortHeader('Total Members', 'totalMembers', 'center', 120)}
+                  {renderSortHeader('Active Members', 'activeMembers', 'center', 120)}
+                  {renderSortHeader('Participation', 'participationRate', 'left', 140)}
+                  {renderSortHeader('Avg Score', 'avgScore', 'right', 110)}
+                  {renderSortHeader('Roadmap Done %', 'completionRate', 'center', 130)}
+                  {renderSortHeader('IT Engagement %', 'itEngagementPct', 'center', 130)}
+                  {renderSortHeader('Master Trainers', 'masterTrainersCount', 'center', 120)}
+                  {renderSortHeader('Top Performer', 'topTrainerName', 'left', 160)}
                 </tr>
               )}
 
@@ -709,10 +771,12 @@ export default function ReportsHubClient({ initialReportType = 'contests', userR
                   {renderSortHeader('Emp ID', 'empId', 'left', 110)}
                   {renderSortHeader('Team', 'team', 'left', 120)}
                   {renderSortHeader('Roadmap Title', 'roadmapTitle', 'left', 180)}
-                  {renderSortHeader('Domain', 'domain', 'left', 130)}
-                  {renderSortHeader('Topics Progress', 'completedTopicsCount', 'left', 160)}
+                  {renderSortHeader('Domain', 'domain', 'left', 120)}
+                  {renderSortHeader('Topics Progress', 'completedTopicsCount', 'left', 150)}
+                  {renderSortHeader('Qs Solved', 'questionsSolved', 'center', 100)}
+                  {renderSortHeader('Est. Days', 'estimatedCompletionDays', 'center', 100)}
                   {renderSortHeader('Status', 'status', 'center', 120)}
-                  {renderSortHeader('Started At', 'startedAt', 'right', 130)}
+                  {renderSortHeader('Started At', 'startedAt', 'right', 120)}
                 </tr>
               )}
 
@@ -721,12 +785,13 @@ export default function ReportsHubClient({ initialReportType = 'contests', userR
                   {renderSortHeader('Trainer', 'trainerName', 'left', 180)}
                   {renderSortHeader('Emp ID', 'empId', 'left', 110)}
                   {renderSortHeader('Team', 'team', 'left', 120)}
-                  {renderSortHeader('Manager', 'manager', 'left', 130)}
                   {renderSortHeader('Days Inactive', 'daysInactiveNumber', 'center', 120)}
                   {renderSortHeader('Risk Level', 'riskTier', 'center', 130)}
-                  {renderSortHeader('Total Solved', 'totalSolved', 'center', 110)}
-                  {renderSortHeader('IT Days', 'itDaysCount', 'center', 100)}
-                  {renderSortHeader('Action Recommendation', 'actionRecommendation', 'left', 260)}
+                  {renderSortHeader('Engagement', 'engagementScore', 'center', 110)}
+                  {renderSortHeader('Trend', 'trend', 'center', 100)}
+                  {renderSortHeader('Last Activity', 'lastActivityType', 'center', 120)}
+                  {renderSortHeader('IT Days', 'itDaysCount', 'center', 90)}
+                  {renderSortHeader('Action', 'actionRecommendation', 'left', 240)}
                 </tr>
               )}
             </thead>
@@ -760,9 +825,7 @@ export default function ReportsHubClient({ initialReportType = 'contests', userR
                           </td>
                           <td style={{ fontWeight: 700 }}>{r.trainerName}</td>
                           <td style={{ fontFamily: 'monospace', fontSize: '0.8rem', color: 'var(--text-muted)' }}>{r.empId}</td>
-                          <td>
-                            <span className="scorecard-chip">{r.team}</span>
-                          </td>
+                          <td><span className="scorecard-chip">{r.team}</span></td>
                           <td style={{ fontSize: '0.84rem' }}>{r.contestTitle}</td>
                           <td>
                             <div className="tbl-progress-wrap">
@@ -774,6 +837,12 @@ export default function ReportsHubClient({ initialReportType = 'contests', userR
                           </td>
                           <td style={{ textAlign: 'right', fontWeight: 900, color: r.score > 0 ? 'var(--accent)' : 'var(--text-muted)' }}>
                             {r.score} pts
+                          </td>
+                          <td style={{ textAlign: 'center', fontSize: '0.82rem', color: r.accuracyPct >= 70 ? '#10b981' : r.accuracyPct >= 40 ? '#f59e0b' : 'var(--text-muted)', fontWeight: 700 }}>
+                            {r.accuracyPct ?? 0}%
+                          </td>
+                          <td style={{ textAlign: 'center', fontSize: '0.82rem', color: 'var(--indigo)', fontWeight: 700 }}>
+                            {r.percentile ?? 0}th
                           </td>
                           <td style={{ textAlign: 'center' }}>
                             <span className={`status-pill ${r.status === 'Mastered' ? 'mastered' : r.status === 'In Progress' ? 'inprogress' : 'unattempted'}`}>
@@ -790,16 +859,10 @@ export default function ReportsHubClient({ initialReportType = 'contests', userR
                         <>
                           <td style={{ fontWeight: 700 }}>{r.trainerName}</td>
                           <td style={{ fontFamily: 'monospace', fontSize: '0.8rem', color: 'var(--text-muted)' }}>{r.empId}</td>
-                          <td>
-                            <span className="scorecard-chip">{r.team}</span>
-                          </td>
+                          <td><span className="scorecard-chip">{r.team}</span></td>
                           <td style={{ fontSize: '0.84rem' }}>{r.roadmapTitle}</td>
-                          <td style={{ textAlign: 'center', fontWeight: 800, color: '#10b981' }}>
-                            🎓 {r.itDaysCount}
-                          </td>
-                          <td style={{ textAlign: 'center', fontSize: '0.82rem' }}>
-                            Day {r.currentDay} / {r.totalDays}
-                          </td>
+                          <td style={{ textAlign: 'center', fontWeight: 800, color: '#10b981' }}>🎓 {r.itDaysCount}</td>
+                          <td style={{ textAlign: 'center', fontSize: '0.82rem' }}>Day {r.currentDay} / {r.totalDays}</td>
                           <td>
                             <div className="tbl-progress-wrap">
                               <span style={{ fontSize: '0.78rem', fontWeight: 800, minWidth: '35px' }}>{r.questionsCompleted}/{r.totalQuestions}</span>
@@ -808,11 +871,16 @@ export default function ReportsHubClient({ initialReportType = 'contests', userR
                               </div>
                             </div>
                           </td>
-                          <td style={{ textAlign: 'center', color: r.extendedDays > 0 ? 'var(--indigo)' : 'var(--text-muted)', fontWeight: r.extendedDays > 0 ? 800 : 400 }}>
-                            {r.extendedDays > 0 ? `+${r.extendedDays} days` : 'None'}
+                          <td style={{ textAlign: 'center', fontWeight: 700, color: 'var(--indigo)', fontSize: '0.82rem' }}>
+                            {r.completionVelocity ?? 0} q/day
                           </td>
                           <td style={{ textAlign: 'center' }}>
-                            <span className={`status-pill ${r.attendanceStatus === 'On Track' ? 'ontrack' : r.attendanceStatus === 'Lagging' ? 'lagging' : r.attendanceStatus === 'Extended' ? 'extended' : 'notstarted'}`}>
+                            <span className={`status-pill ${
+                              r.attendanceStatus === 'Completed' ? 'mastered' :
+                              r.attendanceStatus === 'On Track' ? 'ontrack' :
+                              r.attendanceStatus === 'Behind' ? 'highrisk' :
+                              r.attendanceStatus === 'Extended' ? 'extended' : 'notstarted'
+                            }`}>
                               {r.attendanceStatus}
                             </span>
                           </td>
@@ -839,7 +907,12 @@ export default function ReportsHubClient({ initialReportType = 'contests', userR
                             </div>
                           </td>
                           <td style={{ textAlign: 'right', fontWeight: 900, color: 'var(--accent)' }}>{r.avgScore} pts</td>
-                          <td style={{ textAlign: 'right', fontWeight: 700 }}>{r.totalSolved}</td>
+                          <td style={{ textAlign: 'center', fontWeight: 700, color: r.completionRate >= 50 ? '#10b981' : '#f59e0b', fontSize: '0.85rem' }}>
+                            {r.completionRate ?? 0}%
+                          </td>
+                          <td style={{ textAlign: 'center', fontWeight: 700, color: r.itEngagementPct >= 50 ? '#10b981' : '#f59e0b', fontSize: '0.85rem' }}>
+                            {r.itEngagementPct ?? 0}%
+                          </td>
                           <td style={{ textAlign: 'center', fontWeight: 800, color: '#f59e0b' }}>👑 {r.masterTrainersCount}</td>
                           <td style={{ fontSize: '0.84rem' }}>
                             <strong>{r.topTrainerName}</strong> <span style={{ color: 'var(--text-muted)' }}>({r.topTrainerScore} pts)</span>
@@ -851,13 +924,9 @@ export default function ReportsHubClient({ initialReportType = 'contests', userR
                         <>
                           <td style={{ fontWeight: 700 }}>{r.trainerName}</td>
                           <td style={{ fontFamily: 'monospace', fontSize: '0.8rem', color: 'var(--text-muted)' }}>{r.empId}</td>
-                          <td>
-                            <span className="scorecard-chip">{r.team}</span>
-                          </td>
+                          <td><span className="scorecard-chip">{r.team}</span></td>
                           <td style={{ fontSize: '0.84rem' }}>{r.roadmapTitle}</td>
-                          <td>
-                            <span className="scorecard-chip">{r.domain}</span>
-                          </td>
+                          <td><span className="scorecard-chip">{r.domain}</span></td>
                           <td>
                             <div className="tbl-progress-wrap">
                               <span style={{ fontSize: '0.78rem', fontWeight: 800, minWidth: '35px' }}>{r.completedTopicsCount}/{r.totalTopics}</span>
@@ -866,8 +935,14 @@ export default function ReportsHubClient({ initialReportType = 'contests', userR
                               </div>
                             </div>
                           </td>
+                          <td style={{ textAlign: 'center', fontWeight: 700, color: 'var(--accent)', fontSize: '0.84rem' }}>
+                            {r.questionsSolved ?? 0}
+                          </td>
+                          <td style={{ textAlign: 'center', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                            {r.estimatedCompletionDays != null ? `~${r.estimatedCompletionDays}d` : '—'}
+                          </td>
                           <td style={{ textAlign: 'center' }}>
-                            <span className={`status-pill ${r.status === 'completed' ? 'completed' : r.status === 'in_progress' ? 'inprogress' : 'notstarted'}`}>
+                            <span className={`status-pill ${r.status === 'completed' ? 'mastered' : r.status === 'in_progress' ? 'inprogress' : 'notstarted'}`}>
                               {r.status === 'completed' ? 'Completed' : r.status === 'in_progress' ? 'In Progress' : 'Not Started'}
                             </span>
                           </td>
@@ -881,10 +956,7 @@ export default function ReportsHubClient({ initialReportType = 'contests', userR
                         <>
                           <td style={{ fontWeight: 700 }}>{r.trainerName}</td>
                           <td style={{ fontFamily: 'monospace', fontSize: '0.8rem', color: 'var(--text-muted)' }}>{r.empId}</td>
-                          <td>
-                            <span className="scorecard-chip">{r.team}</span>
-                          </td>
-                          <td style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>{r.manager}</td>
+                          <td><span className="scorecard-chip">{r.team}</span></td>
                           <td style={{ textAlign: 'center', fontWeight: 800, color: r.riskTier === 'high' ? 'var(--error)' : r.riskTier === 'medium' ? '#f59e0b' : 'var(--text-secondary)' }}>
                             {r.daysInactive}
                           </td>
@@ -893,7 +965,15 @@ export default function ReportsHubClient({ initialReportType = 'contests', userR
                               {r.riskLevel}
                             </span>
                           </td>
-                          <td style={{ textAlign: 'center', fontWeight: 700 }}>{r.totalSolved}</td>
+                          <td style={{ textAlign: 'center', fontWeight: 800, fontSize: '0.85rem', color: r.engagementScore >= 60 ? '#10b981' : r.engagementScore >= 30 ? '#f59e0b' : 'var(--error)' }}>
+                            {r.engagementScore ?? 0}<span style={{ fontSize: '0.65rem', fontWeight: 400 }}>/100</span>
+                          </td>
+                          <td style={{ textAlign: 'center', fontSize: '0.82rem', fontWeight: 700, color: r.trend === 'Improving' ? '#10b981' : r.trend === 'Stable' ? '#f59e0b' : 'var(--error)' }}>
+                            {r.trend === 'Improving' ? '↑ Improving' : r.trend === 'Stable' ? '→ Stable' : '↓ Declining'}
+                          </td>
+                          <td style={{ textAlign: 'center', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                            {r.lastActivityType ?? '—'}
+                          </td>
                           <td style={{ textAlign: 'center', fontWeight: 800, color: '#10b981' }}>🎓 {r.itDaysCount}</td>
                           <td style={{ fontSize: '0.8rem', color: r.riskTier === 'high' ? 'var(--error)' : 'var(--text-muted)' }}>
                             {r.actionRecommendation}
