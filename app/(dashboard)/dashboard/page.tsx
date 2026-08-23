@@ -3,7 +3,6 @@ import { getAdminClient } from '@/lib/supabase/admin';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import PendingRequestsWidget from './PendingRequestsWidget';
-import TrainerTodoWidget from './TrainerTodoWidget';
 import TopicRoadmapsWidget from './TopicRoadmapsWidget';
 import AssignedCoursesWidget from './AssignedCoursesWidget';
 import TopPerformersWidget from './TopPerformersWidget';
@@ -248,7 +247,6 @@ export default async function DashboardPage() {
   }
 
   // ── Trainer Queries ─────────────────────────────────────────────────
-  let trainerTodos: any[] = [];
   let trainerRoadmaps: any[] = [];
   let trainerCourseAssignments: any[] = [];
   let trainerProgress: { score: number; solved: number } = { score: 0, solved: 0 };
@@ -256,14 +254,7 @@ export default async function DashboardPage() {
   let completedContestsCount = 0;
 
   if (isTrainer) {
-    const [todosRes, groupMemRes, userRoadmapRes, directCourseRes, myProgressRes] = await Promise.all([
-      supabase
-        .from('trainer_todos')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('is_completed', { ascending: true })
-        .order('created_at', { ascending: false })
-        .limit(10),
+    const [groupMemRes, userRoadmapRes, directCourseRes, myProgressRes] = await Promise.all([
       supabase.from('group_members').select('group_id').eq('user_id', user.id),
       supabase.from('roadmap_assignments').select('roadmap_id').eq('user_id', user.id),
       supabase
@@ -274,7 +265,6 @@ export default async function DashboardPage() {
       supabase.from('progress').select('score, status').eq('user_id', user.id),
     ]);
 
-    trainerTodos = todosRes.data || [];
     const groupIds = (groupMemRes.data || []).map((g: any) => g.group_id);
     let allRoadmapIds: string[] = (userRoadmapRes.data || []).map((a: any) => a.roadmap_id);
 
@@ -418,6 +408,9 @@ export default async function DashboardPage() {
             <>
               <Link href="/contests/new" className="btn btn-primary btn-sm">
                 ➕ New Contest
+              </Link>
+              <Link href="/reports" className="btn btn-secondary btn-sm">
+                📊 Reports Hub
               </Link>
               <Link href="/notifications" className="btn btn-secondary btn-sm" style={{ position: 'relative' }}>
                 🔔 Notifications
