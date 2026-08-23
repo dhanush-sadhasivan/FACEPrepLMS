@@ -9,10 +9,17 @@ export default function TrainerDetailModal({ trainer, questions, onClose }: any)
       domainMap.set(domainName, []);
     }
     const p = (trainer.progress || []).find((p: any) => p.question_id === q.id);
+    const score = p?.score || 0;
+    const maxScore = q.max_score || p?.max_score || 10;
+    const isSolved = (p?.status === 'solved' || score >= maxScore) && score >= maxScore && maxScore > 0;
+    const isAttempted = !isSolved && (p?.status === 'attempted' || score > 0);
+    const status = isSolved ? 'solved' : isAttempted ? 'attempted' : 'unattempted';
+
     domainMap.get(domainName).push({
       ...q,
-      status: p?.status || 'unattempted',
-      score: p?.score || 0,
+      status,
+      score,
+      max_score: maxScore,
       lastActive: p?.last_submission_at
     });
   });

@@ -71,7 +71,7 @@ export async function getRoadmapAnalytics(supabase: SupabaseClient): Promise<Roa
     supabase.from('roadmaps').select('id, title, domain, level, topics').order('created_at', { ascending: false }),
     supabase.from('roadmap_assignments').select('roadmap_id, user_id, group_id'),
     supabase.from('group_members').select('group_id, user_id'),
-    supabase.from('progress').select('user_id, question_id, status, score').or('status.eq.solved,score.gt.0'),
+    supabase.from('progress').select('user_id, question_id, status, score, max_score'),
   ]);
 
   const roadmaps = roadmapsRes.data || [];
@@ -107,7 +107,11 @@ export async function getRoadmapAnalytics(supabase: SupabaseClient): Promise<Roa
 
     assignedUserIds.forEach((uid) => {
       const userSolvedCount = qIds.filter((qid) =>
-        progressRows.some((p: any) => p.user_id === uid && String(p.question_id) === qid)
+        progressRows.some((p: any) =>
+          p.user_id === uid &&
+          String(p.question_id) === qid &&
+          (p.status === 'solved' || (p.score != null && p.max_score != null && p.max_score > 0 && p.score >= p.max_score))
+        )
       ).length;
 
       totalSolvedSum += userSolvedCount;

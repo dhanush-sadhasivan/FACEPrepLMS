@@ -71,9 +71,8 @@ export async function getContestAnalytics(supabase: SupabaseClient, limit = 5): 
     while (true) {
       const { data: page } = await supabase
         .from('progress')
-        .select('contest_id, user_id, question_id, score, status')
+        .select('contest_id, user_id, question_id, score, max_score, status')
         .in('contest_id', contestIds)
-        .or('score.gt.0,status.eq.solved')
         .order('id', { ascending: true })
         .range(from, from + step - 1);
       if (!page || page.length === 0) break;
@@ -105,7 +104,12 @@ export async function getContestAnalytics(supabase: SupabaseClient, limit = 5): 
 
     assignedUserIds.forEach((uid) => {
       const userSolvedCount = cQs.filter((q: any) =>
-        allProgress.some((p: any) => p.contest_id === c.id && p.user_id === uid && p.question_id === q.id)
+        allProgress.some((p: any) =>
+          p.contest_id === c.id &&
+          p.user_id === uid &&
+          p.question_id === q.id &&
+          (p.status === 'solved' || (p.score != null && p.max_score != null && p.max_score > 0 && p.score >= p.max_score))
+        )
       ).length;
 
       totalSolvedSum += userSolvedCount;

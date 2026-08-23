@@ -182,14 +182,20 @@ export default async function ContestDetailPage({ params }: { params: Promise<{ 
       if (!enabledQuestionIdsSet.has(p.question_id)) return;
       const u = userMap.get(p.user_id);
       if (u) {
-        if (p.status === 'solved') u.solved++;
-        u.score += p.score || 0;
-        const isActiveSubmission = p.status === 'solved' || p.status === 'attempted' || (p.score || 0) > 0;
+        const score = p.score || 0;
+        const maxScore = p.max_score || 10;
+        const isSolved = (p.status === 'solved' || score >= maxScore) && score >= maxScore && maxScore > 0;
+        if (isSolved) u.solved++;
+        u.score += score;
+        const isActiveSubmission = isSolved || p.status === 'attempted' || score > 0;
         const subTime = p.last_submission_at || (isActiveSubmission ? p.updated_at : null);
         if (subTime && (!u.lastActive || new Date(subTime) > new Date(u.lastActive))) {
           u.lastActive = subTime;
         }
-        u.progress.push(p);
+        u.progress.push({
+          ...p,
+          status: isSolved ? 'solved' : (score > 0 ? 'attempted' : (p.status || 'unattempted')),
+        });
       }
     });
 

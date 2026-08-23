@@ -142,8 +142,17 @@ export async function POST(request: Request) {
       userQuestions.forEach((qResult: any, qIdx: number) => {
         const questionId = resolveQuestionId(qResult.slug, qIdx);
         if (questionId) {
-          const status = normalizeStatus(qResult.status);
+          const rawStatus = normalizeStatus(qResult.status);
           const score = Math.max(0, Math.round(parseFloat(qResult.score) || 0));
+          const maxScore = Math.max(0, Math.round(parseFloat(qResult.maxScore || qResult.max_score) || 10));
+
+          // A question is solved ONLY if full score (e.g. 10/10) is achieved
+          const isSolved = (rawStatus === 'solved' || score >= maxScore) && score >= maxScore && maxScore > 0;
+          const status: 'solved' | 'attempted' | 'unattempted' = isSolved
+            ? 'solved'
+            : (score > 0 || rawStatus === 'attempted')
+            ? 'attempted'
+            : 'unattempted';
 
           // Sparse Storage Optimization: Only insert rows for questions that are solved or attempted
           if (status !== 'unattempted' || score > 0) {
@@ -153,7 +162,7 @@ export async function POST(request: Request) {
               question_id: questionId,
               status,
               score,
-              max_score: Math.max(0, Math.round(parseFloat(qResult.maxScore || qResult.max_score) || 10)),
+              max_score: maxScore,
               last_submission_at: qResult.lastSubmissionAt || qResult.last_submission_at || null,
               updated_at: new Date().toISOString(),
             });

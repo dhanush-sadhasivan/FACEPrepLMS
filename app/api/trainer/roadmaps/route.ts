@@ -1,6 +1,14 @@
 import { createClient } from '@/lib/supabase/server';
 import { NextResponse } from 'next/server';
 
+function isQuestionSolved(p: any): boolean {
+  if (!p) return false;
+  if (p.status === 'solved') return true;
+  const score = typeof p.score === 'number' ? p.score : parseFloat(p.score) || 0;
+  const maxScore = typeof p.max_score === 'number' ? p.max_score : parseFloat(p.max_score) || 10;
+  return maxScore > 0 && score >= maxScore;
+}
+
 // GET /api/trainer/roadmaps — Fetch roadmaps assigned to the logged-in user with auto-synced progress & date analytics
 export async function GET() {
   const supabase = await createClient();
@@ -73,7 +81,7 @@ export async function GET() {
         topic.questions.forEach((q: any) => {
           const qId = q.question_id || q.id;
           const qp = questionProgress.find((p: any) => p.question_id === qId);
-          const qSolved = (qp && (qp.status === 'solved' || qp.score > 0)) || existing?.completed_topic_ids?.includes(q.id) || existing?.completed_topic_ids?.includes(qId);
+          const qSolved = isQuestionSolved(qp) || existing?.completed_topic_ids?.includes(q.id) || existing?.completed_topic_ids?.includes(qId);
           
           if (qSolved) {
             completedTopicIds.push(q.id);
@@ -94,7 +102,7 @@ export async function GET() {
         // Handle single question topic
         const qId = topic.question_id || topic.id;
         const qp = questionProgress.find((p: any) => p.question_id === qId);
-        if (qp && (qp.status === 'solved' || qp.score > 0)) {
+        if (isQuestionSolved(qp)) {
           isTopicSolved = true;
           solvedTimestamp = qp.updated_at || qp.last_submission_at || new Date().toISOString();
           if (solvedTimestamp && (!earliestAttemptedDate || new Date(solvedTimestamp) < new Date(earliestAttemptedDate))) {

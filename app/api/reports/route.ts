@@ -5,6 +5,18 @@ import { NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
 
+/**
+ * Returns true only when a challenge/question has a full score (e.g. 10/10) or status is 'solved'.
+ * Partial scores (e.g. 6/10) return false.
+ */
+function isQuestionSolved(p: any): boolean {
+  if (!p) return false;
+  if (p.status === 'solved') return true;
+  const score = typeof p.score === 'number' ? p.score : parseFloat(p.score) || 0;
+  const maxScore = typeof p.max_score === 'number' ? p.max_score : parseFloat(p.max_score) || 10;
+  return maxScore > 0 && score >= maxScore;
+}
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const reportType = searchParams.get('reportType') || 'contests';
@@ -244,7 +256,7 @@ async function handleContestsReport(
       if (!u || u.role === 'admin') return;
 
       const userProgress = allProgress.filter((p) => p.contest_id === contest.id && p.user_id === userId);
-      const solvedQs = userProgress.filter((p) => p.status === 'solved' || p.score > 0);
+      const solvedQs = userProgress.filter(isQuestionSolved);
       const solvedCount = solvedQs.length;
       const totalUserScore = userProgress.reduce((acc, p) => acc + (p.score || 0), 0);
       const completionPct = totalQs > 0 ? Math.round((solvedCount / totalQs) * 100) : 0;
@@ -539,7 +551,7 @@ async function handleTeamsReport(
 ) {
   // Fetch contests, progress, user roadmap progress
   const [progressRes, roadmapProgressRes] = await Promise.all([
-    dbAdmin.from('progress').select('user_id, question_id, score, status'),
+    dbAdmin.from('progress').select('user_id, question_id, score, max_score, status'),
     dbAdmin.from('user_roadmap_progress').select('user_id, status'),
   ]);
 
@@ -574,7 +586,7 @@ async function handleTeamsReport(
     members.forEach((m) => {
       const userProgress = progressList.filter((p: any) => p.user_id === m.id);
       const userScore = userProgress.reduce((acc: number, p: any) => acc + (p.score || 0), 0);
-      const userSolved = userProgress.filter((p: any) => p.status === 'solved' || p.score > 0).length;
+      const userSolved = userProgress.filter(isQuestionSolved).length;
 
       const userRoadmapsCompleted = roadmapProgressList.filter((rp: any) => rp.user_id === m.id && rp.status === 'completed').length;
 
@@ -686,7 +698,7 @@ async function handleRoadmapsReport(
     dbAdmin.from('user_roadmap_progress').select('*'),
     dbAdmin.from('roadmap_assignments').select('roadmap_id, user_id, group_id'),
     dbAdmin.from('group_members').select('group_id, user_id'),
-    dbAdmin.from('progress').select('user_id, question_id, status, score').or('status.eq.solved,score.gt.0'),
+    dbAdmin.from('progress').select('user_id, question_id, status, score, max_score'),
   ]);
 
   const roadmaps = roadmapsRes.data || [];
@@ -735,25 +747,61 @@ async function handleRoadmapsReport(
       const p = userProgressList.find((up: any) => up.user_id === uid && up.roadmap_id === rm.id);
       if (!p) return; // Only process actual progress
 
-      const baseCompletedTopicIds: string[] = p.completed_topic_ids || [];
-      
-      const userQs = progressList.filter((pr: any) => pr.user_id === uid && rmQIds.includes(pr.question_id));
-      const questionsSolved = userQs.length;
-      const solvedQIds = userQs.map((pr: any) => pr.question_id);
-      
-      const completedTopicIds = Array.from(new Set([...baseCompletedTopicIds, ...solvedQIds]));
-      
-      const completedCount = completedTopicIds.length;
-      const totalTopics = topics.length; // Approximate from topics
-      const completionPct = totalTopics > 0 ? Math.min(100, Math.round((completedCount / totalTopics) * 100)) : 0;
-      
-      const startedAtMs = p.started_at ? new Date(p.started_at).getTime() : null;
-      const daysSinceStarted = startedAtMs ? Math.floor((now - startedAtMs) / dayMs) : null;
-      const estimatedCompletionDays = (completionPct > 0 && daysSinceStarted !== null && daysSinceStarted > 0) ? Math.round(daysSinceStarted / (completionPct / 100)) : null;
+      const baseCompletedIds = new Set(p.completed_topic_ids || []);
+      const userSolvedQIds = new Set(
+        progressList
+          .filter((pr: any) => pr.user_id === uid && rmQIds.includes(pr.question_id) && isQuestionSolved(pr))
+          .map((pr: any) => pr.question_id)
+      );
+      const questionsSolved = userSolvedQIds.size;
 
-      let status = p.status || 'not_started';
-      if (completionPct >= 100) status = 'completed';
-      else if (completedCount > 0) status = 'in_progress';
+      // Evaluate topic completion
+      let completedCount = 0;
+      topics.forEach((t: any) => {
+        let isTopicSolved = false;
+
+        if (t.questions && Array.isArray(t.questions) && t.questions.length > 0) {
+          const allQsSolved = t.questions.every((q: any) => {
+            const qId = q.question_id || q.id;
+            return userSolvedQIds.has(qId) || userSolvedQIds.has(q.id) || baseCompletedIds.has(q.id) || baseCompletedIds.has(qId);
+          });
+          if (allQsSolved) isTopicSolved = true;
+        } else {
+          const qId = t.question_id || t.id;
+          if (userSolvedQIds.has(qId) || userSolvedQIds.has(t.id)) {
+            isTopicSolved = true;
+          }
+        }
+
+        if (!isTopicSolved && (baseCompletedIds.has(t.id) || (t.question_id && baseCompletedIds.has(t.question_id)))) {
+          isTopicSolved = true;
+        }
+
+        if (isTopicSolved) completedCount++;
+      });
+
+      const totalTopics = topics.length;
+      const completionPct = totalTopics > 0
+        ? Math.min(100, Math.round((completedCount / totalTopics) * 100))
+        : (rmQIds.length > 0 ? Math.min(100, Math.round((questionsSolved / rmQIds.length) * 100)) : 0);
+
+      let status = 'not_started';
+      if (completionPct >= 100) {
+        status = 'completed';
+      } else if (completionPct > 0 || completedCount > 0 || questionsSolved > 0) {
+        status = 'in_progress';
+      } else {
+        status = 'not_started';
+      }
+
+      const startedAtMs = p.started_at ? new Date(p.started_at).getTime() : null;
+      const daysSinceStarted = (startedAtMs && now >= startedAtMs) ? Math.floor((now - startedAtMs) / dayMs) : null;
+      const estimatedCompletionDays = (status === 'in_progress' && completionPct > 0 && completionPct < 100 && daysSinceStarted !== null && daysSinceStarted > 0)
+        ? Math.max(1, Math.round(daysSinceStarted / (completionPct / 100)))
+        : null;
+
+      const startedAt = (status !== 'not_started' && p.started_at) ? p.started_at : null;
+      const completedAt = (status === 'completed' && p.completed_at) ? p.completed_at : null;
 
       rows.push({
         roadmapId: rm.id,
@@ -774,8 +822,8 @@ async function handleRoadmapsReport(
         daysSinceStarted,
         estimatedCompletionDays,
         status,
-        startedAt: p.started_at || null,
-        completedAt: p.completed_at || null,
+        startedAt,
+        completedAt,
         updatedAt: p.updated_at || null,
       });
     });
@@ -834,7 +882,7 @@ async function handleInactivityAuditReport(
   filters: { teamFilter?: string | null; searchFilter: string }
 ) {
   const [progressRes, itProgressRes, todosRes] = await Promise.all([
-    dbAdmin.from('progress').select('user_id, score, status, last_submission_at'),
+    dbAdmin.from('progress').select('user_id, score, max_score, status, last_submission_at'),
     dbAdmin.from('it_trainer_progress').select('user_id, updated_at, current_day, extended_days'),
     dbAdmin.from('trainer_todos').select('user_id, is_completed'),
   ]);
@@ -898,7 +946,7 @@ async function handleInactivityAuditReport(
       else if (maxTimestamp === itMax || maxTimestamp === uMax) lastActivityType = 'IT Training';
     }
 
-    const totalSolved = userProgress.filter((p: any) => p.status === 'solved' || p.score > 0).length;
+    const totalSolved = userProgress.filter(isQuestionSolved).length;
     const totalScore = userProgress.reduce((acc: number, p: any) => acc + (p.score || 0), 0);
     const itDaysCount = u.it_days_count || 0;
     const pendingTodos = userTodos.filter((t: any) => !t.is_completed).length;
@@ -1025,7 +1073,7 @@ async function handlePersonalTranscript(userId: string, profile: any, dbAdmin: a
   const contestBreakdown = contests.map((c: any) => {
     const cQs = questions.filter((q: any) => q.contest_id === c.id);
     const userQs = progress.filter((p: any) => p.contest_id === c.id);
-    const solved = userQs.filter((p: any) => p.status === 'solved' || p.score > 0).length;
+    const solved = userQs.filter(isQuestionSolved).length;
     const score = userQs.reduce((acc: number, p: any) => acc + (p.score || 0), 0);
     const maxScore = cQs.reduce((acc: number, q: any) => acc + (q.max_score || 10), 0);
 
