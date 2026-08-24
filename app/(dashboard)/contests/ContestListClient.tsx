@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/components/Toast';
 import ManageTopicsModal from './ManageTopicsModal';
+import AutoScrapeScheduler from './AutoScrapeScheduler';
 
 interface ContestCardData {
   id: string;
@@ -179,7 +180,21 @@ export default function ContestListClient({
         </div>
       </div>
 
+      {/* ── Auto-Scrape Scheduler Panel (admin/manager only) ─────────────── */}
+      {isAdminOrManager && (
+        <AutoScrapeScheduler
+          allContests={contests.map((c) => ({
+            id: c.id,
+            title: c.title,
+            hackerrank_slug: c.hackerrank_slug,
+            start_date: c.start_date,
+            end_date: c.end_date,
+          }))}
+        />
+      )}
+
       {/* Duplicate Alert Banner for Admins */}
+
       {isAdminOrManager && duplicateSlugs.size > 0 && (
         <div style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid var(--warning)', borderRadius: 10, padding: '0.65rem 0.95rem', margin: '0.85rem 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>

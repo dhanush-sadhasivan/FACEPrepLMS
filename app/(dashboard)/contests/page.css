@@ -294,3 +294,55 @@
   max-width: 480px;
   margin: 3rem auto;
 }
+
+/* ─── Auto-Scrape Scheduler Panel ──────────────────── */
+.auto-scrape-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 16px);
+  margin-bottom: 1rem;
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow 0.2s ease;
+}
+
+.auto-scrape-panel:hover {
+  box-shadow: 0 4px 20px rgba(0,0,0,0.12);
+}
+
+.auto-scrape-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1.1rem;
+  border-bottom: 1px solid var(--border);
+  user-select: none;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.auto-scrape-body {
+  padding: 0.9rem 1.1rem;
+}
+
+.auto-scrape-contest-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.55rem 0.8rem;
+  transition: border-color 0.15s ease;
+}
+
+.auto-scrape-contest-row:hover {
+  border-color: var(--accent);
+}
+
+/* Pulse animation for live scrape indicator */
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.5; transform: scale(1.3); }
+}
