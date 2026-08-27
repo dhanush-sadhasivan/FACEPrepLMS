@@ -4,11 +4,13 @@ import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import PendingRequestsWidget from './PendingRequestsWidget';
 import TopicRoadmapsWidget from './TopicRoadmapsWidget';
+import AssignedContestsWidget from './AssignedContestsWidget';
 import AssignedCoursesWidget from './AssignedCoursesWidget';
 import TopPerformersWidget from './TopPerformersWidget';
 import HelpdeskWidget from './HelpdeskWidget';
 import TrainerCompletionAnalytics, { ContestCompletionStat, RoadmapCompletionStat } from './TrainerCompletionAnalytics';
 import TrainerAnnouncementsBanner from './TrainerAnnouncementsBanner';
+import LeetCodeProgressWidget, { LeetCodePerformer } from './LeetCodeProgressWidget';
 import { getCachedGlobalLeaderboard, GlobalPerformer } from '@/lib/cdn-cache';
 import { getRoadmapAnalytics, extractRoadmapQuestionIds } from '@/lib/roadmap-analytics';
 import { getContestAnalytics } from '@/lib/contest-analytics';
@@ -99,7 +101,7 @@ export default async function DashboardPage() {
     while (true) {
       const { data: pageRows, error: pErr } = await dbAdmin
         .from('progress')
-        .select('user_id, question_id, score, status, contest_id')
+        .select('user_id, question_id, score, status, max_score, contest_id')
         .or('score.gt.0,status.eq.solved')
         .order('id', { ascending: true })
         .range(pFrom, pFrom + pStep - 1);
@@ -116,15 +118,16 @@ export default async function DashboardPage() {
       if (!p.user_id || !p.question_id) return;
       const key = `${p.user_id}:${p.question_id}`;
       const existing = userQuestionMap.get(key);
+      const isSolved = p.status === 'solved' && (p.max_score > 0 ? (p.score || 0) >= p.max_score : (p.score || 0) > 0);
       if (!existing) {
         userQuestionMap.set(key, {
           user_id: p.user_id,
           score: p.score || 0,
-          isSolved: p.status === 'solved',
+          isSolved,
         });
       } else {
         existing.score = Math.max(existing.score, p.score || 0);
-        if (p.status === 'solved') existing.isSolved = true;
+        if (isSolved) existing.isSolved = true;
       }
     });
 
@@ -154,6 +157,10 @@ export default async function DashboardPage() {
   let roadmapStats: RoadmapCompletionStat[] = [];
   let topTrainersWithStats: any[] = [];
 
+  let leetcodePerformers: LeetCodePerformer[] = [];
+  let lcAssignedQuestionsCount = 0;
+  let lcTracksCount = 0;
+
   if (isAdminOrManager) {
     const [
       uq,
@@ -180,12 +187,12 @@ export default async function DashboardPage() {
         .from('contests')
         .select('*, questions(count), assignments:contest_assignments(count)')
         .order('created_at', { ascending: false }),
-      dbAdmin.from('questions').select('id, contest_id, topic, domain'),
-      dbAdmin.from('roadmaps').select('id, title, domain, level, topics'),
-      dbAdmin.from('user_roadmap_progress').select('user_id, roadmap_id, completed_topic_ids, status'),
+      dbAdmin.from('questions').select('id, contest_id, max_score'),
+      dbAdmin.from('roadmaps').select('id, title, topics, is_it_roadmap'),
+      dbAdmin.from('user_roadmap_progress').select('user_id, roadmap_id, status, completed_topic_ids'),
       dbAdmin.from('contest_assignments').select('contest_id, group_id, team'),
       dbAdmin.from('group_members').select('group_id, user_id'),
-      dbAdmin.from('roadmap_assignments').select('roadmap_id, user_id, group_id'),
+      dbAdmin.from('roadmap_assignments').select('roadmap_id, group_id, user_id'),
     ]);
 
     usersCount = uq.count || 0;
@@ -203,29 +210,10 @@ export default async function DashboardPage() {
       else if (now < start) upcomingContestsCount++;
     });
 
-    const allContestsData = contests;
-    const allQsData = allQsRes.data || [];
-    const allContestAssignData = allContestAssignRes.data || [];
-    const allGroupMembersData = (allGroupMembersRes as any)?.data || [];
     const totalTrainersCount = globalPerformers.length || 1;
 
-    // Helper maps for contest assignment resolution
-    const groupMembersMap = new Map<string, string[]>();
-    (allContestAssignRes && (await dbAdmin.from('group_members').select('group_id, user_id'))?.data || []).forEach((gm: any) => {
-      if (!groupMembersMap.has(gm.group_id)) groupMembersMap.set(gm.group_id, []);
-      groupMembersMap.get(gm.group_id)!.push(gm.user_id);
-    });
-
-    const teamUsersMap = new Map<string, string[]>();
-    (globalPerformers || []).forEach((u: any) => {
-      if (u.team && u.team !== 'N/A') {
-        if (!teamUsersMap.has(u.team)) teamUsersMap.set(u.team, []);
-        teamUsersMap.get(u.team)!.push(u.id);
-      }
-    });
-
     // 1. Contest Completion Analytics (Direct Database RPC + Paginated Fallback)
-    contestStats = await getContestAnalytics(dbAdmin, 5);
+    contestStats = await getContestAnalytics(dbAdmin, 50);
 
     // 2. Roadmap Completion Analytics (Direct Database RPC + Fallback)
     const allRoadmapsAnalytics = await getRoadmapAnalytics(dbAdmin);
@@ -244,6 +232,60 @@ export default async function DashboardPage() {
         completedRoadmapsCount: userCompletedRoadmaps,
       };
     }).sort((a: any, b: any) => (b.solved - a.solved) || (b.score - a.score));
+
+    // 4. LeetCode Progress & Cohort Queries
+    const { data: lcUsers } = await dbAdmin
+      .from('users')
+      .select('id, full_name, emp_id, team, leetcode_id')
+      .not('leetcode_id', 'is', null);
+
+    const { data: lcContests } = await dbAdmin
+      .from('contests')
+      .select('id, questions(count)')
+      .eq('platform', 'leetcode');
+
+    lcTracksCount = (lcContests || []).length;
+    (lcContests || []).forEach((c: any) => {
+      lcAssignedQuestionsCount += c.questions?.[0]?.count || 0;
+    });
+
+    const lcContestIds = (lcContests || []).map((c: any) => c.id);
+    const assignedSolvedMap = new Map<string, number>();
+
+    if (lcContestIds.length > 0) {
+      const { data: lcSolves } = await dbAdmin
+        .from('progress')
+        .select('user_id')
+        .in('contest_id', lcContestIds)
+        .eq('status', 'solved');
+
+      (lcSolves || []).forEach((s: any) => {
+        assignedSolvedMap.set(s.user_id, (assignedSolvedMap.get(s.user_id) || 0) + 1);
+      });
+    }
+
+    const { data: lcStatsRows } = await dbAdmin
+      .from('leetcode_user_stats')
+      .select('*');
+    const lcStatsMap = new Map((lcStatsRows || []).map((s: any) => [s.user_id, s]));
+
+    leetcodePerformers = (lcUsers || []).map((u: any) => {
+      const stats = lcStatsMap.get(u.id);
+      return {
+        user_id: u.id,
+        name: u.full_name,
+        emp_id: u.emp_id,
+        team: u.team || 'N/A',
+        leetcode_id: u.leetcode_id,
+        solved_easy: stats?.easy_solved ?? 0,
+        solved_medium: stats?.medium_solved ?? 0,
+        solved_hard: stats?.hard_solved ?? 0,
+        solved_total: stats?.total_solved ?? 0,
+        ranking: stats?.ranking ?? null,
+        assigned_solved: assignedSolvedMap.get(u.id) || 0,
+        last_synced_at: stats?.last_synced_at ?? null,
+      };
+    }).sort((a: any, b: any) => (b.assigned_solved - a.assigned_solved) || (b.solved_total - a.solved_total));
   }
 
   // ── Trainer Queries ─────────────────────────────────────────────────
@@ -252,6 +294,7 @@ export default async function DashboardPage() {
   let trainerProgress: { score: number; solved: number } = { score: 0, solved: 0 };
   let assignedContestsCount = 0;
   let completedContestsCount = 0;
+  let myContests: any[] = [];
 
   if (isTrainer) {
     const [groupMemRes, userRoadmapRes, directCourseRes, myProgressRes] = await Promise.all([
@@ -285,7 +328,7 @@ export default async function DashboardPage() {
     const [roadmapsResult, progressResult, questionProgressResult] = await Promise.all([
       roadmapQuery,
       supabase.from('user_roadmap_progress').select('*').eq('user_id', user.id),
-      supabase.from('progress').select('question_id, status, score').eq('user_id', user.id),
+      supabase.from('progress').select('question_id, status, score, max_score').eq('user_id', user.id),
     ]);
 
     const roadmaps = roadmapsResult.data || [];
@@ -302,7 +345,7 @@ export default async function DashboardPage() {
       // Check all question IDs against questionProgress
       qIds.forEach((qId) => {
         const isSolvedInDb = questionProgress.some(
-          (qp: any) => String(qp.question_id) === qId && (qp.status === 'solved' || qp.score > 0)
+          (qp: any) => String(qp.question_id) === qId && qp.status === 'solved' && (qp.max_score > 0 ? (qp.score || 0) >= qp.max_score : (qp.score || 0) > 0)
         );
         if (isSolvedInDb && !completedTopicIds.includes(qId)) {
           completedTopicIds.push(qId);
@@ -342,7 +385,7 @@ export default async function DashboardPage() {
     let solvedCount = 0;
     (myProgressRes.data || []).forEach((p: any) => {
       totalScore += p.score || 0;
-      if (p.status === 'solved') solvedCount++;
+      if (p.status === 'solved' && (p.max_score > 0 ? (p.score || 0) >= p.max_score : (p.score || 0) > 0)) solvedCount++;
     });
     trainerProgress = { score: totalScore, solved: solvedCount };
 
@@ -360,15 +403,16 @@ export default async function DashboardPage() {
     }
 
     const [allContestsRes, allQsRes] = await Promise.all([
-      supabase.from('contests').select('id, title, start_date, end_date'),
+      supabase.from('contests').select('id, title, hackerrank_slug, platform, start_date, end_date, questions(count)').order('start_date', { ascending: false }),
       supabase.from('questions').select('id, contest_id'),
     ]);
 
-    const roadmapContestIds = trainerRoadmaps.map((rm: any) => rm.contest_id).filter(Boolean);
+    const assignedRoadmaps = trainerRoadmaps.filter((rm: any) => allRoadmapIds.includes(rm.id));
+    const roadmapContestIds = assignedRoadmaps.map((rm: any) => rm.contest_id).filter(Boolean);
     const myContestIds = Array.from(new Set([...assignedContestIds, ...roadmapContestIds]));
     const availableContests = allContestsRes.data || [];
 
-    const myContests = availableContests.filter((c: any) => myContestIds.includes(c.id));
+    myContests = availableContests.filter((c: any) => myContestIds.includes(c.id));
     assignedContestsCount = myContests.length;
 
     const allQs = allQsRes.data || [];
@@ -378,7 +422,7 @@ export default async function DashboardPage() {
       const cQs = allQs.filter((q: any) => q.contest_id === c.id);
       if (cQs.length > 0) {
         const solvedInContest = cQs.filter((q: any) =>
-          questionProgress.some((qp: any) => qp.question_id === q.id && (qp.status === 'solved' || qp.score > 0))
+          questionProgress.some((qp: any) => qp.question_id === q.id && qp.status === 'solved' && (qp.max_score > 0 ? (qp.score || 0) >= qp.max_score : (qp.score || 0) > 0))
         ).length;
         if (solvedInContest >= cQs.length) {
           completedContestsCount++;
@@ -479,6 +523,13 @@ export default async function DashboardPage() {
                 <span className="stat-label">Bank Total</span>
               </div>
             </div>
+            <div className="stat-card">
+              <div className="stat-icon" style={{ background: 'rgba(255,161,22,0.12)', color: '#ffa116' }}>🟠</div>
+              <div className="stat-info">
+                <span className="stat-value">{leetcodePerformers.length} LeetCode</span>
+                <span className="stat-label">{lcTracksCount} Active Tracks</span>
+              </div>
+            </div>
           </>
         ) : (
           <>
@@ -531,13 +582,13 @@ export default async function DashboardPage() {
                 </Link>
               </div>
 
-              <div className="d-contests-list">
+              <div className="d-contests-list" style={{ maxHeight: '380px', overflowY: 'auto', paddingRight: '0.35rem' }}>
                 {(!contests || contests.length === 0) ? (
                   <div className="empty-state" style={{ padding: '0.85rem' }}>
                     <h3>No active contests</h3>
                   </div>
                 ) : (
-                  contests.slice(0, 3).map((contest: any) => {
+                  contests.map((contest: any) => {
                     const now = new Date();
                     const start = new Date(contest.start_date);
                     const end = new Date(contest.end_date);
@@ -546,9 +597,25 @@ export default async function DashboardPage() {
 
                     return (
                       <Link key={contest.id} href={`/contests/${contest.id}`} className="d-contest-row" style={{ padding: '0.45rem 0.4rem' }}>
-                        <div className="d-contest-icon" style={{ width: 32, height: 32, fontSize: '0.95rem' }}>🏆</div>
+                        <div className="d-contest-icon" style={{ width: 32, height: 32, fontSize: '0.95rem' }}>
+                          {contest.platform === 'leetcode' ? '🟠' : '🏆'}
+                        </div>
                         <div className="d-contest-body">
-                          <span className="d-contest-title" style={{ fontSize: '0.86rem' }}>{contest.title}</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                            <span className="d-contest-title" style={{ fontSize: '0.86rem' }}>{contest.title}</span>
+                            <span
+                              style={{
+                                fontSize: '0.62rem',
+                                fontWeight: 700,
+                                padding: '0.08rem 0.35rem',
+                                borderRadius: 3,
+                                background: contest.platform === 'leetcode' ? 'rgba(255,161,22,0.15)' : 'rgba(59,130,246,0.15)',
+                                color: contest.platform === 'leetcode' ? '#ffa116' : '#3b82f6',
+                              }}
+                            >
+                              {contest.platform === 'leetcode' ? 'LeetCode' : 'HackerRank'}
+                            </span>
+                          </div>
                           <div className="d-contest-sub" style={{ fontSize: '0.74rem' }}>
                             <span>💡 {qCount} Qs</span>
                           </div>
@@ -579,23 +646,35 @@ export default async function DashboardPage() {
           {/* Right Column: Admin Widgets */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
             <PendingRequestsWidget initialRequests={pendingRequests || []} />
+            <LeetCodeProgressWidget
+              performers={leetcodePerformers}
+              totalAssignedProblems={lcAssignedQuestionsCount}
+              activeTracksCount={lcTracksCount}
+            />
             <TopPerformersWidget performers={globalPerformers} currentUserId={user.id} />
           </div>
         </div>
       ) : (
         /* ── Trainer Dashboard Layout ── */
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.85rem', marginBottom: '1rem' }}>
-          {/* Top-left: Topic Roadmaps */}
-          <TopicRoadmapsWidget roadmaps={trainerRoadmaps} />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', marginBottom: '1rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.85rem' }}>
+            {/* Top-left: Assigned Contests */}
+            <AssignedContestsWidget contests={myContests} />
 
-          {/* Top-right: Skills & Badges Obtained Widget */}
-          <AssignedCoursesWidget />
+            {/* Top-right: Topic Roadmaps */}
+            <TopicRoadmapsWidget roadmaps={trainerRoadmaps} />
+          </div>
 
-          {/* Bottom-left: Helpdesk / Support Desk Widget */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.85rem' }}>
+            {/* Skills & Badges Obtained Widget */}
+            <AssignedCoursesWidget />
+
+            {/* Live Top Performers Leaderboard Widget */}
+            <TopPerformersWidget performers={globalPerformers} currentUserId={user.id} />
+          </div>
+
+          {/* Helpdesk / Support Desk Widget */}
           <HelpdeskWidget />
-
-          {/* Bottom-right: Live Top Performers Leaderboard Widget */}
-          <TopPerformersWidget performers={globalPerformers} currentUserId={user.id} />
         </div>
       )}
     </div>

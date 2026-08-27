@@ -11,10 +11,9 @@ export const dynamic = 'force-dynamic';
  */
 function isQuestionSolved(p: any): boolean {
   if (!p) return false;
-  if (p.status === 'solved') return true;
   const score = typeof p.score === 'number' ? p.score : parseFloat(p.score) || 0;
   const maxScore = typeof p.max_score === 'number' ? p.max_score : parseFloat(p.max_score) || 10;
-  return maxScore > 0 && score >= maxScore;
+  return p.status === 'solved' && maxScore > 0 && score >= maxScore;
 }
 
 export async function GET(request: Request) {
@@ -241,14 +240,7 @@ async function handleContestsReport(
       }
     });
 
-    // If no direct assignments exist, check all users who have progress in this contest
-    if (assignedUserIds.size === 0) {
-      allProgress.forEach((p) => {
-        if (p.contest_id === contest.id && p.user_id) assignedUserIds.add(p.user_id);
-      });
-    }
-
-    // Build user stats
+    // Build user stats (strictly assigned participants only)
     const contestUserRows: any[] = [];
 
     assignedUserIds.forEach((userId) => {
@@ -1108,7 +1100,7 @@ async function handlePersonalTranscript(userId: string, profile: any, dbAdmin: a
   });
 
   const totalScore = progress.reduce((acc: number, p: any) => acc + (p.score || 0), 0);
-  const totalSolved = progress.filter((p: any) => p.status === 'solved' || p.score > 0).length;
+  const totalSolved = progress.filter(isQuestionSolved).length;
   const itDays = profile.it_days_count || 0;
   const completedRoadmaps = roadmapBreakdown.filter((r: any) => r.status === 'completed').length;
   const completedTodos = todos.filter((t: any) => t.is_completed).length;

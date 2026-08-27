@@ -9,6 +9,7 @@ interface Contest {
   id: string;
   title: string;
   hackerrank_slug: string;
+  platform?: string;
   start_date: string;
   end_date: string;
 }
@@ -200,12 +201,25 @@ export default function AutoScrapeScheduler({ allContests }: AutoScrapeScheduler
                                 animation: s.is_running ? 'pulse 1.5s infinite' : 'none',
                               }} />
                               <div style={{ minWidth: 0 }}>
-                                <div style={{ fontWeight: 700, fontSize: '0.83rem', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                  {s.contests?.title || s.contest_id}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap' }}>
+                                  <span style={{
+                                    fontSize: '0.65rem',
+                                    fontWeight: 700,
+                                    padding: '0.08rem 0.35rem',
+                                    borderRadius: 4,
+                                    background: s.contests?.platform === 'leetcode' ? 'rgba(255, 161, 22, 0.15)' : 'rgba(59, 130, 246, 0.15)',
+                                    color: s.contests?.platform === 'leetcode' ? '#ffa116' : '#3b82f6',
+                                    border: `1px solid ${s.contests?.platform === 'leetcode' ? 'rgba(255, 161, 22, 0.3)' : 'rgba(59, 130, 246, 0.3)'}`,
+                                  }}>
+                                    {s.contests?.platform === 'leetcode' ? 'LeetCode' : 'HackerRank'}
+                                  </span>
+                                  <span style={{ fontWeight: 700, fontSize: '0.83rem', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {s.contests?.title || s.contest_id}
+                                  </span>
                                 </div>
-                                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
                                   {s.is_running
-                                    ? '🔴 Scraping in progress...'
+                                    ? (s.contests?.platform === 'leetcode' ? '🟠 Syncing LeetCode in progress...' : '🔴 Scraping in progress...')
                                     : s.last_triggered_at
                                     ? `Last run: ${new Date(s.last_triggered_at).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' })} IST`
                                     : 'Not yet triggered today'}
@@ -253,11 +267,18 @@ export default function AutoScrapeScheduler({ allContests }: AutoScrapeScheduler
                         <button
                           key={c.id}
                           className="btn btn-ghost btn-sm"
-                          style={{ fontSize: '0.75rem', borderStyle: 'dashed' }}
+                          style={{
+                            fontSize: '0.75rem',
+                            borderStyle: 'dashed',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '0.35rem',
+                          }}
                           onClick={() => handleAdd(c.id)}
                           disabled={actionLoading === c.id}
                         >
-                          {actionLoading === c.id ? '...' : `+ ${c.title}`}
+                          <span>{c.platform === 'leetcode' ? '🟠' : '🟢'}</span>
+                          <span>{actionLoading === c.id ? '...' : `+ ${c.title}`}</span>
                         </button>
                       ))}
                     </div>

@@ -58,6 +58,7 @@ export default async function ProfilePage() {
               <span className="profile-meta-pill">🏢 {profile.team || 'Unassigned Team'}</span>
               {profile.manager && <span className="profile-meta-pill">👤 Manager: {profile.manager}</span>}
               {profile.hackerrank_id && <span className="profile-meta-pill hackerrank">⚡ {profile.hackerrank_id}</span>}
+              {profile.leetcode_id && <span className="profile-meta-pill" style={{ background: 'rgba(255,161,22,0.12)', color: '#ffa116', border: '1px solid rgba(255,161,22,0.25)' }}>🟠 @{profile.leetcode_id}</span>}
             </div>
           </div>
         </div>

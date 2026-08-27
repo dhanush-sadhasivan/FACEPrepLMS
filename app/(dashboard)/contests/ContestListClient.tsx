@@ -11,6 +11,7 @@ interface ContestCardData {
   id: string;
   title: string;
   hackerrank_slug: string;
+  platform?: string;
   start_date: string;
   end_date: string;
   created_at: string;
@@ -134,7 +135,7 @@ export default function ContestListClient({
           </h1>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', margin: 0 }}>
             {isAdminOrManager
-              ? 'Manage HackerRank contests, group assignments, and question topic tags'
+              ? 'Manage HackerRank & LeetCode contests, group assignments, and question topic tags'
               : 'View and attempt your assigned competitive programming contests'}
           </p>
         </div>
@@ -300,12 +301,27 @@ export default function ContestListClient({
                           {contest.title}
                         </h3>
                       </Link>
-                      <code className="contest-slug-code">
-                        ⚡ {contest.hackerrank_slug}
+                      <code className="contest-slug-code" style={contest.platform === 'leetcode' ? { color: '#ffa116', borderColor: 'rgba(255,161,22,0.3)', background: 'rgba(255,161,22,0.06)' } : {}}>
+                        {contest.platform === 'leetcode' ? '🟠' : '⚡'} {contest.hackerrank_slug}
                       </code>
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.3rem' }}>
-                      <span className={`badge ${statusClass}`} style={{ fontSize: '0.7rem', fontWeight: 800 }}>{status.toUpperCase()}</span>
+                      <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
+                        <span
+                          style={{
+                            fontSize: '0.68rem',
+                            fontWeight: 700,
+                            padding: '0.12rem 0.4rem',
+                            borderRadius: 4,
+                            background: contest.platform === 'leetcode' ? 'rgba(255, 161, 22, 0.15)' : 'rgba(59, 130, 246, 0.15)',
+                            color: contest.platform === 'leetcode' ? '#ffa116' : '#3b82f6',
+                            border: `1px solid ${contest.platform === 'leetcode' ? 'rgba(255, 161, 22, 0.3)' : 'rgba(59, 130, 246, 0.3)'}`,
+                          }}
+                        >
+                          {contest.platform === 'leetcode' ? '🟠 LeetCode' : '🟢 HackerRank'}
+                        </span>
+                        <span className={`badge ${statusClass}`} style={{ fontSize: '0.7rem', fontWeight: 800 }}>{status.toUpperCase()}</span>
+                      </div>
                       {isDuplicate && (
                         <span className="badge badge-warning" style={{ fontSize: '0.65rem', padding: '0.1rem 0.35rem' }}>DUPLICATE</span>
                       )}

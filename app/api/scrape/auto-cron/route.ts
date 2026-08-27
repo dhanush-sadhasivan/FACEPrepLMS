@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getAdminClient } from '@/lib/supabase/admin';
+import { syncLeetCodeContest } from '@/lib/leetcode-sync';
 
 /**
  * POST /api/scrape/auto-cron
@@ -67,7 +68,7 @@ export async function POST(request: Request) {
       contest_id,
       is_running,
       active_job_id,
-      contests(id, title, hackerrank_slug)
+      contests(id, title, hackerrank_slug, platform)
     `)
     .eq('date', todayIST);
 
@@ -105,21 +106,38 @@ export async function POST(request: Request) {
       .eq('id', schedule.id);
 
     try {
-      console.log(`[auto-cron]   🚀 Triggering scrape for "${contestTitle}"...`);
-      const jobId = await triggerContestScrape(supabase, scraperUrl, expectedKey, schedule.contest_id);
+      if (contest?.platform === 'leetcode') {
+        console.log(`[auto-cron]   🚀 Triggering LeetCode sync for "${contestTitle}"...`);
+        const syncResult = await syncLeetCodeContest(schedule.contest_id);
 
-      // Store job ID + update last triggered timestamp
-      await supabase
-        .from('auto_scrape_schedules')
-        .update({
-          is_running: false,
-          active_job_id: jobId || null,
-          last_triggered_at: new Date().toISOString(),
-        })
-        .eq('id', schedule.id);
+        await supabase
+          .from('auto_scrape_schedules')
+          .update({
+            is_running: false,
+            active_job_id: null,
+            last_triggered_at: new Date().toISOString(),
+          })
+          .eq('id', schedule.id);
 
-      console.log(`[auto-cron]   ✅ [${contestTitle}] scrape started. jobId=${jobId}`);
-      results.push({ contestId: schedule.contest_id, title: contestTitle, status: 'triggered', jobId: jobId || undefined });
+        console.log(`[auto-cron]   ✅ [${contestTitle}] LeetCode sync finished. ${syncResult.message}`);
+        results.push({ contestId: schedule.contest_id, title: contestTitle, status: 'synced_leetcode' });
+      } else {
+        console.log(`[auto-cron]   🚀 Triggering scrape for "${contestTitle}"...`);
+        const jobId = await triggerContestScrape(supabase, scraperUrl, expectedKey, schedule.contest_id);
+
+        // Store job ID + update last triggered timestamp
+        await supabase
+          .from('auto_scrape_schedules')
+          .update({
+            is_running: false,
+            active_job_id: jobId || null,
+            last_triggered_at: new Date().toISOString(),
+          })
+          .eq('id', schedule.id);
+
+        console.log(`[auto-cron]   ✅ [${contestTitle}] scrape started. jobId=${jobId}`);
+        results.push({ contestId: schedule.contest_id, title: contestTitle, status: 'triggered', jobId: jobId || undefined });
+      }
     } catch (err: any) {
       console.error(`[auto-cron]   ❌ [${contestTitle}] failed: ${err.message}`);
 

@@ -16,7 +16,7 @@ export async function PATCH(req: Request) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   
   const body = await req.json()
-  const { full_name, emp_email, hackerrank_id } = body
+  const { full_name, emp_email, hackerrank_id, leetcode_id } = body
 
   if (hackerrank_id && hackerrank_id.trim() !== '') {
     const cleanHr = hackerrank_id.trim();
@@ -41,9 +41,14 @@ export async function PATCH(req: Request) {
     }
   }
 
+  const updatePayload: Record<string, any> = { full_name, emp_email, hackerrank_id };
+  if (leetcode_id !== undefined) {
+    updatePayload.leetcode_id = leetcode_id ? leetcode_id.trim() : null;
+  }
+
   const { data, error } = await supabase
     .from('users')
-    .update({ full_name, emp_email, hackerrank_id })
+    .update(updatePayload)
     .eq('id', user.id)
     .select()
     .single()

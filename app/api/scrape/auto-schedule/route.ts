@@ -42,7 +42,7 @@ export async function GET() {
       active_job_id,
       last_triggered_at,
       created_at,
-      contests(id, title, hackerrank_slug, start_date, end_date)
+      contests(id, title, hackerrank_slug, platform, start_date, end_date)
     `)
     .eq('date', todayIST)
     .order('created_at', { ascending: true });

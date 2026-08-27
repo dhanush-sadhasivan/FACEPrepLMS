@@ -7,3 +7,10 @@ This version has breaking changes — APIs, conventions, and file structure may 
 This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
 
 <!-- END:nextjs-agent-rules -->
+
+---
+
+# Codebase Documentation & Auto-Sync Rules
+- Before making changes to `lms`, always consult [`../CODEBASE.md`](file:///C:/Users/sdhan/Documents/antigravity/lucid-pascal/CODEBASE.md).
+- Whenever any change is made to `lms` (components, pages, API routes, library utilities, or database schemas), update [`../CODEBASE.md`](file:///C:/Users/sdhan/Documents/antigravity/lucid-pascal/CODEBASE.md) immediately and add an entry in its Living Changelog table.
+

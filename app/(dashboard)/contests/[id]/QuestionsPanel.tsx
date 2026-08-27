@@ -8,10 +8,12 @@ export default function QuestionsPanel({
   questions = [],
   contestSlug,
   contestId,
+  platform = 'hackerrank',
 }: {
   questions: any[];
   contestSlug: string;
   contestId: string;
+  platform?: string;
 }) {
   const router = useRouter();
   const { showToast } = useToast();
@@ -21,6 +23,12 @@ export default function QuestionsPanel({
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'enabled' | 'disabled'>('all');
+
+  // LeetCode specific state
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [addInput, setAddInput] = useState('');
+  const [addingProblems, setAddingProblems] = useState(false);
+  const [resyncing, setResyncing] = useState(false);
 
   // Local state for question status map
   const [enabledState, setEnabledState] = useState<Record<string, boolean>>(() => {
@@ -164,6 +172,114 @@ export default function QuestionsPanel({
     }
   };
 
+  const handleAddLeetcodeProblems = async () => {
+    if (!addInput.trim()) return;
+    setAddingProblems(true);
+    try {
+      const res = await fetch('/api/leetcode/problem-lookup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ input: addInput.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to lookup problems');
+      if (!data.questions || data.questions.length === 0) {
+        throw new Error('No valid LeetCode problems found in input');
+      }
+
+      const existingSlugs = new Set(questions.map((q: any) => q.slug));
+      const newQuestions = data.questions.filter((q: any) => !existingSlugs.has(q.slug));
+
+      if (newQuestions.length === 0) {
+        showToast('All entered problems are already added to this contest', 'info');
+        setShowAddModal(false);
+        setAddInput('');
+        return;
+      }
+
+      const merged = [
+        ...questions.map((q: any) => ({
+          slug: q.slug,
+          title: q.title,
+          domain: domainState[q.id] || q.domain || 'General',
+          difficulty: q.difficulty || 'Medium',
+          max_score: q.max_score ?? 10,
+          url: q.url || q.hackerrank_url || `https://leetcode.com/problems/${q.slug}/`,
+        })),
+        ...newQuestions.map((q: any) => ({
+          slug: q.slug,
+          title: q.title,
+          domain: q.domain || 'Algorithms',
+          difficulty: q.difficulty || 'Medium',
+          max_score: q.max_score ?? 10,
+          url: q.url || `https://leetcode.com/problems/${q.slug}/`,
+        })),
+      ];
+
+      const saveRes = await fetch(`/api/contests/${contestId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ questions: merged }),
+      });
+      const saveData = await saveRes.json();
+      if (!saveRes.ok) throw new Error(saveData.error || 'Failed to save questions');
+
+      showToast(`Successfully added ${newQuestions.length} problem(s)!`, 'success');
+      setShowAddModal(false);
+      setAddInput('');
+      router.refresh();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Error adding problems';
+      showToast(msg, 'error');
+    } finally {
+      setAddingProblems(false);
+    }
+  };
+
+  const handleResyncLeetcode = async () => {
+    if (questions.length === 0) return;
+    setResyncing(true);
+    try {
+      const slugs = questions.map((q: any) => q.slug);
+      const res = await fetch('/api/leetcode/problem-lookup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ inputs: slugs }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to sync with LeetCode');
+
+      const fetchedMap = new Map<string, any>((data.questions || []).map((q: any) => [q.slug, q]));
+      const updated = questions.map((q: any) => {
+        const fresh: any = fetchedMap.get(q.slug);
+        return {
+          slug: q.slug,
+          title: fresh?.title || q.title,
+          domain: domainState[q.id] || fresh?.domain || q.domain || 'Algorithms',
+          difficulty: fresh?.difficulty || q.difficulty || 'Medium',
+          max_score: fresh?.max_score ?? q.max_score ?? 10,
+          url: `https://leetcode.com/problems/${q.slug}/`,
+        };
+      });
+
+      const saveRes = await fetch(`/api/contests/${contestId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ questions: updated }),
+      });
+      const saveData = await saveRes.json();
+      if (!saveRes.ok) throw new Error(saveData.error || 'Failed to save synced questions');
+
+      showToast(`Successfully re-synced ${updated.length} problem(s) from LeetCode!`, 'success');
+      router.refresh();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Re-sync error';
+      showToast(msg, 'error');
+    } finally {
+      setResyncing(false);
+    }
+  };
+
   // Filtered Questions
   const filteredQuestions = useMemo(() => {
     return questions.filter((q) => {
@@ -199,14 +315,77 @@ export default function QuestionsPanel({
   const totalEnabled = Object.values(enabledState).filter(Boolean).length;
   const totalDisabled = questions.length - totalEnabled;
 
+  const renderAddModal = () => (
+    <div
+      className="modal-overlay"
+      onClick={() => { setShowAddModal(false); setAddInput(''); }}
+      style={{
+        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        zIndex: 1000, padding: '1rem',
+      }}
+    >
+      <div
+        className="card"
+        onClick={e => e.stopPropagation()}
+        style={{
+          maxWidth: 540, width: '100%',
+          background: 'var(--surface)', border: '1px solid var(--border)',
+          borderRadius: 12, padding: '1.5rem',
+        }}
+      >
+        <h3 style={{ fontSize: '1.15rem', fontWeight: 800, margin: '0 0 0.5rem', color: 'var(--text-primary)' }}>
+          ➕ Add LeetCode Problems
+        </h3>
+        <p style={{ fontSize: '0.82rem', color: 'var(--text-muted)', margin: '0 0 1rem' }}>
+          Paste LeetCode problem links, slugs, or a public Problem List URL (one per line):
+        </p>
+
+        <textarea
+          className="input"
+          rows={6}
+          value={addInput}
+          onChange={e => setAddInput(e.target.value)}
+          placeholder={`https://leetcode.com/problem-list/top-interview-questions/\nhttps://leetcode.com/problems/two-sum/\ntwo-sum`}
+          style={{ fontFamily: 'monospace', fontSize: '0.85rem', width: '100%', marginBottom: '1rem' }}
+        />
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={() => { setShowAddModal(false); setAddInput(''); }}
+          >
+            Cancel
+          </button>
+          <button
+            className="btn btn-primary btn-sm"
+            onClick={handleAddLeetcodeProblems}
+            disabled={addingProblems || !addInput.trim()}
+            style={{ background: '#ffa116', borderColor: '#ffa116', color: '#000', fontWeight: 700 }}
+          >
+            {addingProblems ? '⏳ Importing…' : 'Import Problems'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
   if (questions.length === 0) {
     return (
       <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: '2rem', textAlign: 'center' }}>
         <div style={{ fontSize: '2.5rem', marginBottom: '0.75rem' }}>📭</div>
-        <h3 style={{ fontWeight: 800, marginBottom: '0.5rem', fontSize: '1.15rem', color: 'var(--text-primary)' }}>No Questions Scraped</h3>
+        <h3 style={{ fontWeight: 800, marginBottom: '0.5rem', fontSize: '1.15rem', color: 'var(--text-primary)' }}>
+          {platform === 'leetcode' ? 'No LeetCode Problems Added' : 'No Questions Scraped'}
+        </h3>
         <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', maxWidth: 480, margin: '0 auto 1.25rem' }}>
-          This contest has no questions in the database yet. Click below to scrape them directly from HackerRank using slug{' '}
-          <code style={{ background: 'var(--surface-2)', padding: '0.1rem 0.4rem', borderRadius: 4, color: 'var(--accent)', fontWeight: 700 }}>{contestSlug}</code>.
+          {platform === 'leetcode'
+            ? 'This LeetCode track has no problems configured yet. Click below to add problems or import from a LeetCode Problem List URL.'
+            : (
+              <>
+                This contest has no questions in the database yet. Click below to scrape them directly from HackerRank using slug{' '}
+                <code style={{ background: 'var(--surface-2)', padding: '0.1rem 0.4rem', borderRadius: 4, color: 'var(--accent)', fontWeight: 700 }}>{contestSlug}</code>.
+              </>
+            )}
         </p>
 
         {scrapeError && (
@@ -215,9 +394,21 @@ export default function QuestionsPanel({
           </div>
         )}
 
-        <button className="btn btn-primary" onClick={rescrapeQuestions} disabled={scraping}>
-          {scraping ? '⏳ Scraping Questions…' : '🔍 Scrape Questions from HackerRank'}
-        </button>
+        {platform === 'leetcode' ? (
+          <button
+            className="btn btn-primary"
+            onClick={() => setShowAddModal(true)}
+            style={{ background: '#ffa116', borderColor: '#ffa116', color: '#000', fontWeight: 700 }}
+          >
+            ➕ Add LeetCode Problems
+          </button>
+        ) : (
+          <button className="btn btn-primary" onClick={rescrapeQuestions} disabled={scraping}>
+            {scraping ? '⏳ Scraping Questions…' : '🔍 Scrape Questions from HackerRank'}
+          </button>
+        )}
+
+        {showAddModal && renderAddModal()}
       </div>
     );
   }
@@ -228,10 +419,12 @@ export default function QuestionsPanel({
       <div style={{ padding: '0.75rem 1.15rem', borderBottom: '1px solid var(--border)', background: 'var(--surface-2)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.65rem' }}>
         <div>
           <h2 style={{ fontSize: '1.1rem', fontWeight: 900, margin: 0, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <span>⚙️</span> Manage Contest Questions ({questions.length})
+            <span>⚙️</span> Manage {platform === 'leetcode' ? 'Track Problems' : 'Contest Questions'} ({questions.length})
           </h2>
           <p style={{ margin: '0.15rem 0 0 0', fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-            Enable or disable questions to control visibility and progress scraping
+            {platform === 'leetcode'
+              ? 'Enable or disable problems to control participant progress tracking'
+              : 'Enable or disable questions to control visibility and progress scraping'}
           </p>
         </div>
 
@@ -247,9 +440,29 @@ export default function QuestionsPanel({
             )}
           </div>
 
-          <button className="btn btn-sm btn-secondary" onClick={rescrapeQuestions} disabled={scraping} style={{ fontSize: '0.78rem' }}>
-            {scraping ? '⏳ Re-scraping…' : '🔄 Re-scrape from HackerRank'}
-          </button>
+          {platform === 'leetcode' ? (
+            <>
+              <button
+                className="btn btn-sm btn-secondary"
+                onClick={handleResyncLeetcode}
+                disabled={resyncing || questions.length === 0}
+                style={{ fontSize: '0.78rem' }}
+              >
+                {resyncing ? '⏳ Syncing…' : '🔄 Re-sync Problem Details'}
+              </button>
+              <button
+                className="btn btn-sm btn-primary"
+                onClick={() => setShowAddModal(true)}
+                style={{ fontSize: '0.78rem', background: '#ffa116', borderColor: '#ffa116', color: '#000', fontWeight: 700 }}
+              >
+                ➕ Add Problems
+              </button>
+            </>
+          ) : (
+            <button className="btn btn-sm btn-secondary" onClick={rescrapeQuestions} disabled={scraping} style={{ fontSize: '0.78rem' }}>
+              {scraping ? '⏳ Re-scraping…' : '🔄 Re-scrape from HackerRank'}
+            </button>
+          )}
         </div>
       </div>
 
@@ -510,7 +723,11 @@ export default function QuestionsPanel({
                           </button>
 
                           <a
-                            href={q.hackerrank_url || `https://www.hackerrank.com/contests/${contestSlug}/challenges/${q.slug}`}
+                            href={
+                              platform === 'leetcode'
+                                ? `https://leetcode.com/problems/${q.slug}/`
+                                : q.hackerrank_url || `https://www.hackerrank.com/contests/${contestSlug}/challenges/${q.slug}`
+                            }
                             target="_blank"
                             rel="noreferrer"
                             className="btn btn-ghost btn-sm"
@@ -542,6 +759,8 @@ export default function QuestionsPanel({
             <option key={d} value={d} />
           ))}
         </datalist>
+
+        {showAddModal && renderAddModal()}
       </div>
     </div>
   );

@@ -79,13 +79,15 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json();
-    const { title, slug, start_date, end_date, questions, groups, teams } = body;
+    const { title, slug, platform = 'hackerrank', start_date, end_date, questions, groups = [], teams = [], new_group } = body;
+    const finalGroups: string[] = Array.isArray(groups) ? [...groups] : [];
+    const finalTeams: string[] = Array.isArray(teams) ? [...teams] : [];
 
     if (!title || !slug || !start_date || !end_date) {
       return NextResponse.json({ error: 'Missing required contest fields' }, { status: 400 });
     }
 
-    console.log(`[POST /api/contests] Creating contest "${title}" (${slug}) with ${questions?.length || 0} question(s)`);
+    console.log(`[POST /api/contests] Creating contest "${title}" (${slug}) [${platform}] with ${questions?.length || 0} question(s)`);
 
     // 1. Create Contest
     const { data: contest, error: contestError } = await supabaseAdmin
@@ -93,6 +95,7 @@ export async function POST(request: Request) {
       .insert({
         title,
         hackerrank_slug: slug,
+        platform,
         start_date,
         end_date,
         created_by: user.id
@@ -112,7 +115,8 @@ export async function POST(request: Request) {
         slug: q.slug || `q-${idx}`,
         title: q.title || 'Untitled Problem',
         domain: q.domain || 'General',
-        hackerrank_url: q.hackerrank_url || `https://www.hackerrank.com/contests/${slug}/challenges/${q.slug}`,
+        hackerrank_url: q.url || q.hackerrank_url || (platform === 'leetcode' ? `https://leetcode.com/problems/${q.slug}/` : `https://www.hackerrank.com/contests/${slug}/challenges/${q.slug}`),
+        url: q.url || q.hackerrank_url || (platform === 'leetcode' ? `https://leetcode.com/problems/${q.slug}/` : `https://www.hackerrank.com/contests/${slug}/challenges/${q.slug}`),
         difficulty: q.difficulty || 'Medium',
         max_score: q.max_score || 10,
         is_enabled: true,
@@ -126,13 +130,37 @@ export async function POST(request: Request) {
       }
     }
 
+    // 2.5 Handle optional on-the-fly group creation with selected individual trainers
+    if (new_group && new_group.name && Array.isArray(new_group.user_ids) && new_group.user_ids.length > 0) {
+      console.log(`[POST /api/contests] Creating on-the-fly group "${new_group.name}" with ${new_group.user_ids.length} trainer(s)`);
+      const { data: createdGroup, error: groupErr } = await supabaseAdmin
+        .from('groups')
+        .insert({
+          name: new_group.name.trim(),
+          created_by: user.id,
+        })
+        .select()
+        .single();
+
+      if (!groupErr && createdGroup) {
+        const groupMembers = new_group.user_ids.map((uid: string) => ({
+          group_id: createdGroup.id,
+          user_id: uid,
+        }));
+        await supabaseAdmin.from('group_members').insert(groupMembers);
+        finalGroups.push(createdGroup.id);
+      } else if (groupErr) {
+        console.error(`[POST /api/contests] On-the-fly group creation error: ${groupErr.message}`);
+      }
+    }
+
     // 3. Insert Assignments
     const assignmentsData: Array<{ contest_id: string; group_id?: string; team?: string }> = [];
-    if (groups && Array.isArray(groups)) {
-      groups.forEach((groupId: string) => assignmentsData.push({ contest_id: contest.id, group_id: groupId }));
+    if (finalGroups && Array.isArray(finalGroups)) {
+      finalGroups.forEach((groupId: string) => assignmentsData.push({ contest_id: contest.id, group_id: groupId }));
     }
-    if (teams && Array.isArray(teams)) {
-      teams.forEach((teamName: string) => assignmentsData.push({ contest_id: contest.id, team: teamName }));
+    if (finalTeams && Array.isArray(finalTeams)) {
+      finalTeams.forEach((teamName: string) => assignmentsData.push({ contest_id: contest.id, team: teamName }));
     }
 
     if (assignmentsData.length > 0) {

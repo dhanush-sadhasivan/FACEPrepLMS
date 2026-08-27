@@ -4,12 +4,14 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useToast } from '@/components/Toast';
+import CreateGroupAndAssignModal from '@/app/(dashboard)/contests/new/CreateGroupAndAssignModal';
 
 interface EditContestFormProps {
   contest: {
     id: string;
     title: string;
     hackerrank_slug: string;
+    platform?: string;
     start_date: string;
     end_date: string;
   };
@@ -17,6 +19,7 @@ interface EditContestFormProps {
   currentTeams: string[];
   allGroups: Array<{ id: string; name: string }>;
   allTeams: string[];
+  trainers?: any[];
 }
 
 export default function EditContestForm({
@@ -25,6 +28,7 @@ export default function EditContestForm({
   currentTeams,
   allGroups,
   allTeams,
+  trainers = [],
 }: EditContestFormProps) {
   const router = useRouter();
   const { showToast } = useToast();
@@ -42,6 +46,8 @@ export default function EditContestForm({
   const [endDate, setEndDate] = useState(formatDateForInput(contest.end_date));
   const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set(currentGroupIds));
   const [selectedTeams, setSelectedTeams] = useState<Set<string>>(new Set(currentTeams));
+  const [allGroupsList, setAllGroupsList] = useState(allGroups);
+  const [isCreateGroupOpen, setIsCreateGroupOpen] = useState(false);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -127,9 +133,28 @@ export default function EditContestForm({
   return (
     <div>
       <form onSubmit={handleSubmit} className="edit-form" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+        {/* Platform Badge */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <span
+            style={{
+              fontSize: '0.75rem',
+              fontWeight: 700,
+              padding: '0.2rem 0.6rem',
+              borderRadius: 6,
+              background: contest.platform === 'leetcode' ? 'rgba(255, 161, 22, 0.15)' : 'rgba(59, 130, 246, 0.15)',
+              color: contest.platform === 'leetcode' ? '#ffa116' : '#3b82f6',
+              border: `1px solid ${contest.platform === 'leetcode' ? 'rgba(255, 161, 22, 0.3)' : 'rgba(59, 130, 246, 0.3)'}`,
+            }}
+          >
+            {contest.platform === 'leetcode' ? '🟠 LeetCode Track' : '🟢 HackerRank Contest'}
+          </span>
+        </div>
+
         {/* Contest Title */}
         <div className="form-group">
-          <label htmlFor="title" className="label" style={{ fontWeight: 600, display: 'block', marginBottom: '0.35rem' }}>Contest Title</label>
+          <label htmlFor="title" className="label" style={{ fontWeight: 600, display: 'block', marginBottom: '0.35rem' }}>
+            {contest.platform === 'leetcode' ? 'Track Title' : 'Contest Title'}
+          </label>
           <input
             type="text"
             id="title"
@@ -141,9 +166,11 @@ export default function EditContestForm({
           />
         </div>
 
-        {/* HackerRank Slug */}
+        {/* Slug / Identifier */}
         <div className="form-group">
-          <label htmlFor="slug" className="label" style={{ fontWeight: 600, display: 'block', marginBottom: '0.35rem' }}>HackerRank Contest Slug</label>
+          <label htmlFor="slug" className="label" style={{ fontWeight: 600, display: 'block', marginBottom: '0.35rem' }}>
+            {contest.platform === 'leetcode' ? 'LeetCode Track Identifier / Code' : 'HackerRank Contest Slug'}
+          </label>
           <input
             type="text"
             id="slug"
@@ -154,7 +181,9 @@ export default function EditContestForm({
             style={{ width: '100%', padding: '0.6rem 0.8rem', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text-primary)' }}
           />
           <small style={{ color: 'var(--text-muted)', fontSize: '0.78rem', marginTop: '0.25rem', display: 'block' }}>
-            The slug as seen in the HackerRank URL (e.g. <code>pjl-a-ds</code>)
+            {contest.platform === 'leetcode'
+              ? 'Unique internal identifier for this LeetCode track (e.g. lc-marathon-1)'
+              : <>The slug as seen in the HackerRank URL (e.g. <code>pjl-a-ds</code>)</>}
           </small>
         </div>
 
@@ -194,17 +223,34 @@ export default function EditContestForm({
           </p>
 
           {/* Groups */}
-          {allGroups.length > 0 && (
-            <div style={{ marginBottom: '1.25rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>Assigned Groups ({selectedGroups.size}/{allGroups.length}):</span>
-                <div style={{ display: 'flex', gap: '0.5rem' }}>
-                  <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: '0.75rem' }} onClick={() => setSelectedGroups(new Set(allGroups.map(g => g.id)))}>Select All</button>
-                  <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: '0.75rem' }} onClick={() => setSelectedGroups(new Set())}>Clear All</button>
-                </div>
+          <div style={{ marginBottom: '1.25rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <span style={{ fontWeight: 600, fontSize: '0.9rem' }}>Assigned Groups ({selectedGroups.size}/{allGroupsList.length}):</span>
+              <div style={{ display: 'flex', gap: '0.45rem', alignItems: 'center' }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  style={{ fontSize: '0.76rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.3rem' }}
+                  onClick={() => setIsCreateGroupOpen(true)}
+                >
+                  <span>➕</span> Create Group &amp; Select Trainers
+                </button>
+                {allGroupsList.length > 0 && (
+                  <>
+                    <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: '0.75rem' }} onClick={() => setSelectedGroups(new Set(allGroupsList.map(g => g.id)))}>Select All</button>
+                    <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: '0.75rem' }} onClick={() => setSelectedGroups(new Set())}>Clear All</button>
+                  </>
+                )}
               </div>
+            </div>
+
+            {allGroupsList.length === 0 ? (
+              <div style={{ padding: '1rem', background: 'var(--surface-2)', borderRadius: 8, border: '1px solid var(--border)', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                No groups found. Click <strong>&quot;Create Group &amp; Select Trainers&quot;</strong> above to create and assign one.
+              </div>
+            ) : (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '0.5rem', background: 'var(--surface-2)', padding: '0.75rem', borderRadius: 8, border: '1px solid var(--border)' }}>
-                {allGroups.map(g => (
+                {allGroupsList.map(g => (
                   <label key={g.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.88rem' }}>
                     <input
                       type="checkbox"
@@ -215,8 +261,8 @@ export default function EditContestForm({
                   </label>
                 ))}
               </div>
-            </div>
-          )}
+            )}
+          </div>
 
           {/* Teams */}
           {allTeams.length > 0 && (
@@ -271,13 +317,13 @@ export default function EditContestForm({
         <div className="modal-overlay" onClick={() => setShowDeleteModal(false)} style={{ zIndex: 100 }}>
           <div className="modal-content" onClick={e => e.stopPropagation()} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: '1.5rem', maxWidth: 480, width: '90%' }}>
             <h3 style={{ fontSize: '1.15rem', fontWeight: 700, color: 'var(--error)', marginBottom: '0.75rem' }}>
-              ⚠️ Delete Contest
+              ⚠️ Delete {contest.platform === 'leetcode' ? 'LeetCode Track' : 'Contest'}
             </h3>
             <p style={{ fontSize: '0.9rem', color: 'var(--text-primary)', marginBottom: '1rem', lineHeight: 1.5 }}>
-              Are you sure you want to delete <strong>"{contest.title}"</strong> (<code>{contest.hackerrank_slug}</code>)?
+              Are you sure you want to delete <strong>"{contest.title}"</strong> ({contest.platform === 'leetcode' ? 'Track ID' : 'Slug'}: <code>{contest.hackerrank_slug}</code>)?
             </p>
             <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, padding: '0.75rem', fontSize: '0.82rem', color: 'var(--error)', marginBottom: '1.25rem' }}>
-              This action cannot be undone. All questions, assigned permissions, and progress history for this contest will be permanently deleted.
+              This action cannot be undone. All questions, assigned permissions, and progress history for this {contest.platform === 'leetcode' ? 'track' : 'contest'} will be permanently deleted.
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
               <button className="btn btn-secondary" onClick={() => setShowDeleteModal(false)} disabled={isDeleting}>
@@ -290,6 +336,17 @@ export default function EditContestForm({
           </div>
         </div>
       )}
+      {/* Modal to Create Group & Assign Trainers */}
+      <CreateGroupAndAssignModal
+        isOpen={isCreateGroupOpen}
+        onClose={() => setIsCreateGroupOpen(false)}
+        availableTrainers={trainers}
+        defaultGroupName={title ? `${title} Cohort` : ''}
+        onGroupCreated={(newGroup, memberCount) => {
+          setAllGroupsList(prev => [newGroup, ...prev.filter(g => g.id !== newGroup.id)]);
+          setSelectedGroups(prev => new Set([...Array.from(prev), newGroup.id]));
+        }}
+      />
     </div>
   );
 }

@@ -182,7 +182,7 @@ export async function generateAndUploadCdnSnapshots(contestId?: string): Promise
     while (true) {
       const { data: pageRows, error: pErr } = await dbAdmin
         .from('progress')
-        .select('user_id, question_id, score, status')
+        .select('user_id, question_id, score, status, max_score')
         .or('score.gt.0,status.eq.solved')
         .order('id', { ascending: true })
         .range(pFrom, pFrom + pStep - 1);
@@ -199,15 +199,16 @@ export async function generateAndUploadCdnSnapshots(contestId?: string): Promise
       if (!p.user_id || !p.question_id) return;
       const key = `${p.user_id}:${p.question_id}`;
       const existing = userQuestionMap.get(key);
+      const isSolved = p.status === 'solved' && (p.max_score > 0 ? (p.score || 0) >= p.max_score : (p.score || 0) > 0);
       if (!existing) {
         userQuestionMap.set(key, {
           user_id: p.user_id,
           score: p.score || 0,
-          isSolved: p.status === 'solved',
+          isSolved,
         });
       } else {
         existing.score = Math.max(existing.score, p.score || 0);
-        if (p.status === 'solved') existing.isSolved = true;
+        if (isSolved) existing.isSolved = true;
       }
     });
 
@@ -259,17 +260,29 @@ export async function generateAndUploadCdnSnapshots(contestId?: string): Promise
         const teams: string[] = [];
         (assignments || []).forEach((a: any) => {
           if (a.group_id) groupIds.push(a.group_id);
-          if (a.team) teams.push(a.team);
+          if (a.team && a.team.trim() !== '') teams.push(a.team.trim());
         });
 
         const assignedUserIds = new Set<string>();
         if (groupIds.length > 0) {
-          const { data: gm } = await dbAdmin.from('group_members').select('user_id').in('group_id', groupIds);
-          (gm || []).forEach((g: any) => assignedUserIds.add(g.user_id));
+          const { data: gm } = await dbAdmin
+            .from('group_members')
+            .select('user_id, users!inner(role)')
+            .in('group_id', groupIds)
+            .neq('users.role', 'admin');
+          (gm || []).forEach((g: any) => {
+            if (g.user_id) assignedUserIds.add(g.user_id);
+          });
         }
         if (teams.length > 0) {
-          const { data: tu } = await dbAdmin.from('users').select('id').in('team', teams);
-          (tu || []).forEach((t: any) => assignedUserIds.add(t.id));
+          const { data: tu } = await dbAdmin
+            .from('users')
+            .select('id')
+            .in('team', teams)
+            .neq('role', 'admin');
+          (tu || []).forEach((t: any) => {
+            if (t.id) assignedUserIds.add(t.id);
+          });
         }
 
         const contestLeaderMap = new Map<string, any>();
@@ -310,14 +323,22 @@ export async function generateAndUploadCdnSnapshots(contestId?: string): Promise
           if (!enabledQuestionIds.has(p.question_id)) return;
           const u = contestLeaderMap.get(p.user_id);
           if (u) {
-            if (p.status === 'solved') u.solved++;
-            u.score += p.score || 0;
-            const isActive = p.status === 'solved' || p.status === 'attempted' || (p.score || 0) > 0;
+            const score = p.score || 0;
+            const maxScore = p.max_score || 10;
+            const isSolved = p.status === 'solved' && maxScore > 0 && score >= maxScore;
+            if (isSolved) u.solved++;
+            u.score += score;
+            const isActive = isSolved || p.status === 'attempted' || score > 0;
             const subTime = p.last_submission_at || (isActive ? p.updated_at : null);
             if (subTime && (!u.lastActive || new Date(subTime) > new Date(u.lastActive))) {
               u.lastActive = subTime;
             }
-            u.progress.push(p);
+            u.progress.push({
+              ...p,
+              status: isSolved ? 'solved' : (score > 0 || p.status === 'attempted' ? 'attempted' : (p.status || 'unattempted')),
+              score,
+              max_score: maxScore,
+            });
           }
         });
 

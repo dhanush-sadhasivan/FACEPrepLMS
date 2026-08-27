@@ -12,11 +12,13 @@ interface QuestionItem {
   difficulty?: string;
   max_score?: number;
   hackerrank_url?: string;
+  url?: string;
 }
 
 interface ContestViewTabsProps {
   contestId: string;
   contestSlug: string;
+  platform?: string;
   leaderboard: any[];
   questions: QuestionItem[];
   lastScraped: string | null;
@@ -26,6 +28,7 @@ interface ContestViewTabsProps {
 export default function ContestViewTabs({
   contestId,
   contestSlug,
+  platform = 'hackerrank',
   leaderboard,
   questions,
   lastScraped,
@@ -103,7 +106,7 @@ export default function ContestViewTabs({
               Showing {leaderboard.length} assigned participants
             </span>
           </div>
-          <LeaderboardTable contestId={contestId} data={leaderboard} lastScraped={lastScraped} questions={questions} isAdminOrManager={isAdminOrManager} />
+          <LeaderboardTable contestId={contestId} data={leaderboard} lastScraped={lastScraped} questions={questions} isAdminOrManager={isAdminOrManager} platform={platform} />
         </div>
       )}
 
@@ -114,7 +117,7 @@ export default function ContestViewTabs({
             <div>
               <h2 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0 }}>📂 Topic-wise Questions</h2>
               <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', margin: '0.25rem 0 0 0' }}>
-                Select a topic dropdown below to view questions and open them directly in HackerRank.
+                Select a topic dropdown below to view questions and open them directly in {platform === 'leetcode' ? 'LeetCode' : 'HackerRank'}.
               </p>
             </div>
             <button
@@ -218,13 +221,17 @@ export default function ContestViewTabs({
                             </div>
 
                             <a
-                              href={q.hackerrank_url || `https://www.hackerrank.com/contests/${contestSlug}/challenges/${q.slug}`}
+                              href={q.url || q.hackerrank_url || (platform === 'leetcode' ? `https://leetcode.com/problems/${q.slug}/` : `https://www.hackerrank.com/contests/${contestSlug}/challenges/${q.slug}`)}
                               target="_blank"
                               rel="noreferrer"
                               className="btn btn-primary btn-sm"
-                              style={{ flexShrink: 0, marginLeft: '1rem' }}
+                              style={{
+                                flexShrink: 0,
+                                marginLeft: '1rem',
+                                ...(platform === 'leetcode' ? { background: '#ffa116', borderColor: '#ffa116', color: '#000', fontWeight: 700 } : {}),
+                              }}
                             >
-                              Open in HackerRank ↗
+                              {platform === 'leetcode' ? 'Solve on LeetCode ↗' : 'Open in HackerRank ↗'}
                             </a>
                           </div>
                         ))}
@@ -241,7 +248,7 @@ export default function ContestViewTabs({
       {/* ── TAB 3: MANAGE QUESTIONS (ADMIN / MANAGER ONLY) ─────────────────── */}
       {activeTab === 'manage' && isAdminOrManager && (
         <div>
-          <QuestionsPanel questions={questions} contestSlug={contestSlug} contestId={contestId} />
+          <QuestionsPanel questions={questions} contestSlug={contestSlug} contestId={contestId} platform={platform} />
         </div>
       )}
     </div>

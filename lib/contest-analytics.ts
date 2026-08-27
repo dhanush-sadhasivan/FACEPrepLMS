@@ -15,7 +15,7 @@ export interface DatabaseContestAnalyticsItem {
 /**
  * Fetches contest completion analytics using database RPC or paginated fallback.
  */
-export async function getContestAnalytics(supabase: SupabaseClient, limit = 5): Promise<ContestCompletionStat[]> {
+export async function getContestAnalytics(supabase: SupabaseClient, limit = 50): Promise<ContestCompletionStat[]> {
   try {
     const { data: rpcData, error: rpcError } = await supabase.rpc('get_contest_analytics');
 
@@ -108,7 +108,8 @@ export async function getContestAnalytics(supabase: SupabaseClient, limit = 5): 
           p.contest_id === c.id &&
           p.user_id === uid &&
           p.question_id === q.id &&
-          (p.status === 'solved' || (p.score != null && p.max_score != null && p.max_score > 0 && p.score >= p.max_score))
+          p.status === 'solved' &&
+          (p.max_score > 0 ? (p.score || 0) >= p.max_score : (p.score || 0) > 0)
         )
       ).length;
 

@@ -61,7 +61,7 @@ export default async function ReportsPage() {
     const contestBreakdown = contests.map((c: any) => {
       const cQs = questions.filter((q: any) => q.contest_id === c.id);
       const userQs = progress.filter((p: any) => p.contest_id === c.id);
-      const solved = userQs.filter((p: any) => p.status === 'solved' || p.score > 0).length;
+      const solved = userQs.filter((p: any) => p.status === 'solved' && (p.max_score > 0 ? (p.score || 0) >= p.max_score : (p.score || 0) > 0)).length;
       const score = userQs.reduce((acc: number, p: any) => acc + (p.score || 0), 0);
       const maxScore = cQs.reduce((acc: number, q: any) => acc + (q.max_score || 10), 0);
 
@@ -95,7 +95,7 @@ export default async function ReportsPage() {
     });
 
     const totalScore = progress.reduce((acc: number, p: any) => acc + (p.score || 0), 0);
-    const totalSolved = progress.filter((p: any) => p.status === 'solved' || p.score > 0).length;
+    const totalSolved = progress.filter((p: any) => p.status === 'solved' && (p.max_score > 0 ? (p.score || 0) >= p.max_score : (p.score || 0) > 0)).length;
     const itDays = profile.it_days_count || 0;
     const completedRoadmaps = roadmapBreakdown.filter((r: any) => r.status === 'completed').length;
     const completedTodos = todos.filter((t: any) => t.is_completed).length;

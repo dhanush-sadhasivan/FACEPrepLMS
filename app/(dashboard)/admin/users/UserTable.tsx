@@ -156,6 +156,7 @@ export default function UserTable({ initialUsers = [] }: UserTableProps) {
       team: cleanValue(user.team),
       manager: cleanValue(user.manager),
       hackerrank_id: cleanValue(user.hackerrank_id),
+      leetcode_id: cleanValue(user.leetcode_id),
     });
     setIsEditModalOpen(true);
   };
@@ -373,6 +374,7 @@ export default function UserTable({ initialUsers = [] }: UserTableProps) {
                 {renderSortHeader('Team', 'team')}
                 {renderSortHeader('Manager', 'manager')}
                 {renderSortHeader('HackerRank ID', 'hackerrank_id')}
+                <th>LeetCode ID</th>
                 {renderSortHeader('Role', 'role')}
                 <th style={{ textAlign: 'right' }}>Actions</th>
               </tr>
@@ -424,6 +426,23 @@ export default function UserTable({ initialUsers = [] }: UserTableProps) {
                       <span className="meta-chip hackerrank">⚡ {cleanValue(u.hackerrank_id)}</span>
                     ) : (
                       displayValue(u.hackerrank_id)
+                    )}
+                  </td>
+
+                  {/* LeetCode ID */}
+                  <td>
+                    {cleanValue(u.leetcode_id) ? (
+                      <a
+                        href={`https://leetcode.com/u/${cleanValue(u.leetcode_id)}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="meta-chip"
+                        style={{ color: '#ffa116', textDecoration: 'none', fontWeight: 600 }}
+                      >
+                        🟠 @{cleanValue(u.leetcode_id)}
+                      </a>
+                    ) : (
+                      displayValue(u.leetcode_id)
                     )}
                   </td>
 
@@ -572,6 +591,10 @@ export default function UserTable({ initialUsers = [] }: UserTableProps) {
                 <div className="form-group" style={{ gridColumn: '1 / -1' }}>
                   <label className="label">HackerRank ID (Optional)</label>
                   <input type="text" name="hackerrank_id" className="input" placeholder="e.g. john_hr" value={formData.hackerrank_id || ''} onChange={handleChange} />
+                </div>
+                <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                  <label className="label">LeetCode ID (Optional)</label>
+                  <input type="text" name="leetcode_id" className="input" placeholder="e.g. john_lc" value={formData.leetcode_id || ''} onChange={handleChange} />
                 </div>
               </div>
               <div className="modal-actions mt-6" style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>

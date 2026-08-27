@@ -110,7 +110,8 @@ export async function getRoadmapAnalytics(supabase: SupabaseClient): Promise<Roa
         progressRows.some((p: any) =>
           p.user_id === uid &&
           String(p.question_id) === qid &&
-          (p.status === 'solved' || (p.score != null && p.max_score != null && p.max_score > 0 && p.score >= p.max_score))
+          p.status === 'solved' &&
+          (p.max_score > 0 ? (p.score || 0) >= p.max_score : (p.score || 0) > 0)
         )
       ).length;
 

@@ -7,6 +7,7 @@ type ProfileData = {
   full_name: string;
   emp_email: string;
   hackerrank_id: string;
+  leetcode_id: string;
 };
 
 export default function ProfileForm({ initialData }: { initialData: any }) {
@@ -14,10 +15,12 @@ export default function ProfileForm({ initialData }: { initialData: any }) {
     full_name: initialData.full_name || '',
     emp_email: initialData.emp_email || initialData.email || '',
     hackerrank_id: initialData.hackerrank_id || '',
+    leetcode_id: initialData.leetcode_id || '',
   });
   const [loading, setLoading] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
   const [hrError, setHrError] = useState<string | null>(null);
+  const [lcError, setLcError] = useState<string | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const router = useRouter();
 
@@ -26,6 +29,7 @@ export default function ProfileForm({ initialData }: { initialData: any }) {
     setLoading(true);
     setMessage(null);
     setHrError(null);
+    setLcError(null);
 
     if (formData.hackerrank_id && formData.hackerrank_id.trim() !== '') {
       const cleanHr = formData.hackerrank_id.trim();
@@ -43,7 +47,30 @@ export default function ProfileForm({ initialData }: { initialData: any }) {
             return;
           }
         } catch {
-          // ignore network timeout
+          // ignore network failure
+        } finally {
+          setIsValidating(false);
+        }
+      }
+    }
+
+    if (formData.leetcode_id && formData.leetcode_id.trim() !== '') {
+      const cleanLc = formData.leetcode_id.trim();
+      if (!['nil', 'null', 'n/a', 'undefined', 'none', '-'].includes(cleanLc.toLowerCase())) {
+        setIsValidating(true);
+        try {
+          const vRes = await fetch(`/api/users/validate-leetcode?username=${encodeURIComponent(cleanLc)}`);
+          const vData = await vRes.json();
+          if (!vData.valid) {
+            const errTxt = vData.error || `LeetCode ID "${cleanLc}" does not exist on LeetCode.`;
+            setLcError(errTxt);
+            setMessage({ type: 'error', text: errTxt });
+            setLoading(false);
+            setIsValidating(false);
+            return;
+          }
+        } catch {
+          // ignore network failure
         } finally {
           setIsValidating(false);
         }
@@ -129,6 +156,27 @@ export default function ProfileForm({ initialData }: { initialData: any }) {
             style={hrError ? { borderColor: '#ef4444', background: 'rgba(239,68,68,0.05)' } : {}}
           />
           {hrError && <span style={{ fontSize: '0.8rem', color: '#ef4444', marginTop: '0.25rem', display: 'block', fontWeight: 600 }}>⚠️ {hrError}</span>}
+        </div>
+
+        <div className="form-group-compact full-width">
+          <label htmlFor="leetcode_id" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>LeetCode Username (for LeetCode progress scraping)</span>
+            {isValidating && <span style={{ fontSize: '0.75rem', color: '#ffa116' }}>🔍 Verifying ID on LeetCode…</span>}
+          </label>
+          <input
+            type="text"
+            id="leetcode_id"
+            name="leetcode_id"
+            placeholder="e.g. john_lc"
+            value={formData.leetcode_id}
+            onChange={(e) => {
+              setLcError(null);
+              handleChange(e);
+            }}
+            disabled={loading}
+            style={lcError ? { borderColor: '#ef4444', background: 'rgba(239,68,68,0.05)' } : {}}
+          />
+          {lcError && <span style={{ fontSize: '0.8rem', color: '#ef4444', marginTop: '0.25rem', display: 'block', fontWeight: 600 }}>⚠️ {lcError}</span>}
         </div>
       </div>
 

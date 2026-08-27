@@ -22,12 +22,12 @@ export async function GET() {
   // 2. Fetch user's question progress
   const { data: progressData } = await supabase
     .from('progress')
-    .select('question_id, status, score')
+    .select('question_id, status, score, max_score')
     .eq('user_id', user.id);
 
   const solvedQuestionIds = new Set<string>();
   (progressData || []).forEach(p => {
-    if (p.status === 'solved' || (p.score && p.score > 0)) {
+    if (p.status === 'solved' && (p.max_score > 0 ? (p.score || 0) >= p.max_score : (p.score || 0) > 0)) {
       solvedQuestionIds.add(p.question_id);
     }
   });

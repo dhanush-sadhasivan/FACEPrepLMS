@@ -15,16 +15,24 @@ export default async function NewContestPage() {
     redirect('/contests');
   }
 
-  const { data: groups } = await supabase.from('groups').select('*');
+  const [groupsRes, usersRes, trainersRes] = await Promise.all([
+    supabase.from('groups').select('*').order('name', { ascending: true }),
+    supabase.from('users').select('team').not('team', 'is', null),
+    supabase
+      .from('users')
+      .select('id, full_name, emp_id, email, team, role, hackerrank_id, leetcode_id')
+      .neq('role', 'admin')
+      .order('full_name', { ascending: true }),
+  ]);
 
-  // Extract distinct teams from users table (team column)
-  const { data: users } = await supabase.from('users').select('team').not('team', 'is', null);
-  const distinctTeams = Array.from(new Set((users || []).map((u: { team: string }) => u.team).filter(Boolean)));
+  const groups = groupsRes.data || [];
+  const distinctTeams = Array.from(new Set((usersRes.data || []).map((u: { team: string }) => u.team).filter(Boolean)));
+  const trainers = trainersRes.data || [];
 
   return (
     <div className="p-6">
       <h1 className="text-2xl font-bold mb-6">Create New Contest</h1>
-      <ContestWizard groups={groups || []} teams={distinctTeams as string[]} />
+      <ContestWizard groups={groups} teams={distinctTeams as string[]} trainers={trainers} />
     </div>
   );
 }

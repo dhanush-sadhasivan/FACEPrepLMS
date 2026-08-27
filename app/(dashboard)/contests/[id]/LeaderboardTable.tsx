@@ -29,13 +29,37 @@ const STEP_LABELS: Record<string, string> = {
 type LeaderboardSortField = 'rank' | 'name' | 'emp_id' | 'team' | 'solved' | 'score' | 'lastActive';
 type SortDirection = 'asc' | 'desc' | null;
 
-export default function LeaderboardTable({ contestId, data = [], lastScraped, questions = [], isAdminOrManager }: any) {
+export default function LeaderboardTable({ contestId, data = [], lastScraped, questions = [], isAdminOrManager, platform = 'hackerrank' }: any) {
   const router = useRouter();
   const [scraping, setScraping] = useState(false);
   const [jobStatus, setJobStatus] = useState<JobStatus | null>(null);
   const [scrapeMessage, setScrapeMessage] = useState('');
   const [scrapeError, setScrapeError] = useState('');
   const [selectedTrainer, setSelectedTrainer] = useState<any>(null);
+
+  const triggerLeetcodeSync = async () => {
+    setScraping(true);
+    setScrapeMessage('🔄 Syncing LeetCode solves for assigned participants…');
+    setScrapeError('');
+    try {
+      const res = await fetch('/api/leetcode/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contestId }),
+      });
+      const result = await res.json();
+      if (!res.ok) {
+        setScrapeError(result.error || `Sync failed (HTTP ${res.status})`);
+      } else {
+        setScrapeMessage(`✅ ${result.message || 'LeetCode sync complete!'}`);
+        router.refresh();
+      }
+    } catch (err: any) {
+      setScrapeError(`Sync error: ${err.message}`);
+    } finally {
+      setScraping(false);
+    }
+  };
   
   // Search & Filter State
   const [searchTerm, setSearchTerm] = useState('');
@@ -388,16 +412,34 @@ export default function LeaderboardTable({ contestId, data = [], lastScraped, qu
 
         <div style={{ display: 'flex', gap: '0.45rem', flexShrink: 0 }}>
           {isAdminOrManager && (
-            <button className="btn btn-primary btn-sm" onClick={triggerScrape} disabled={scraping} style={{ fontSize: '0.8rem' }}>
-              {scraping ? (
-                <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                  <span style={{ display: 'inline-block', width: 12, height: 12, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-                  Scraping…
-                </span>
-              ) : (
-                '🔄 Scrape Progress'
-              )}
-            </button>
+            platform === 'leetcode' ? (
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={triggerLeetcodeSync}
+                disabled={scraping}
+                style={{ fontSize: '0.8rem', background: '#ffa116', borderColor: '#ffa116', color: '#000', fontWeight: 700 }}
+              >
+                {scraping ? (
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <span style={{ display: 'inline-block', width: 12, height: 12, border: '2px solid rgba(0,0,0,0.3)', borderTopColor: '#000', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                    Syncing LeetCode…
+                  </span>
+                ) : (
+                  '⟳ Sync LeetCode Solves'
+                )}
+              </button>
+            ) : (
+              <button className="btn btn-primary btn-sm" onClick={triggerScrape} disabled={scraping} style={{ fontSize: '0.8rem' }}>
+                {scraping ? (
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                    <span style={{ display: 'inline-block', width: 12, height: 12, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                    Scraping…
+                  </span>
+                ) : (
+                  '🔄 Scrape Progress'
+                )}
+              </button>
+            )
           )}
           {data.length > 0 && (
             <button className="btn btn-secondary btn-sm" onClick={exportCsv} style={{ fontSize: '0.8rem' }}>
@@ -461,6 +503,8 @@ export default function LeaderboardTable({ contestId, data = [], lastScraped, qu
           <p style={{ color: 'var(--text-muted)', fontSize: '0.84rem', maxWidth: 460, margin: '0 auto' }}>
             {searchTerm || selectedTeam !== 'all'
               ? 'Try clearing your search query or team filter to view all participants.'
+              : platform === 'leetcode'
+              ? 'Make sure this contest has assigned Groups or Teams, and that users have their LeetCode IDs set in their profiles.'
               : 'Make sure this contest has assigned Groups or Teams, and that users have their HackerRank IDs set in their profiles.'}
           </p>
         </div>
@@ -473,6 +517,7 @@ export default function LeaderboardTable({ contestId, data = [], lastScraped, qu
                 {renderSortHeader('Trainer Name', 'name', 'left')}
                 {renderSortHeader('Emp ID', 'emp_id', 'left')}
                 {renderSortHeader('Team', 'team', 'left')}
+                {renderSortHeader(platform === 'leetcode' ? 'LeetCode ID' : 'Handle', 'emp_id', 'left')}
                 {renderSortHeader('Questions Progress', 'solved', 'left', { minWidth: 190 })}
                 {renderSortHeader('Total Score', 'score', 'right')}
                 {renderSortHeader('Last Active', 'lastActive', 'right')}
@@ -583,6 +628,31 @@ export default function LeaderboardTable({ contestId, data = [], lastScraped, qu
                       >
                         {cleanDisplay(row.team)}
                       </span>
+                    </td>
+
+                    {/* Handle Cell */}
+                    <td style={{ padding: '0.5rem 0.95rem', verticalAlign: 'middle' }}>
+                      {platform === 'leetcode' ? (
+                        row.leetcode_id ? (
+                          <a
+                            href={`https://leetcode.com/u/${row.leetcode_id}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            onClick={e => e.stopPropagation()}
+                            style={{ color: '#ffa116', fontWeight: 600, textDecoration: 'none', fontSize: '0.82rem' }}
+                          >
+                            @{row.leetcode_id}
+                          </a>
+                        ) : (
+                          <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>No LC ID</span>
+                        )
+                      ) : (
+                        row.hackerrank_id ? (
+                          <span style={{ color: 'var(--accent)', fontSize: '0.82rem' }}>@{row.hackerrank_id}</span>
+                        ) : (
+                          <span style={{ color: 'var(--text-muted)' }}>—</span>
+                        )
+                      )}
                     </td>
 
                     {/* Questions Progress Bar */}

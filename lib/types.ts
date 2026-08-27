@@ -1,5 +1,6 @@
 export type UserRole = 'admin' | 'manager' | 'trainer'
 export type ContestStatus = 'upcoming' | 'active' | 'past'
+export type PlatformType = 'hackerrank' | 'leetcode'
 export type QuestionStatus = 'solved' | 'attempted' | 'unattempted'
 export type AccessRequestStatus = 'pending' | 'approved' | 'denied'
 export type NotificationType = 'access_request' | 'contest_assigned' | 'access_approved' | 'access_denied' | 'system' | 'announcement'
@@ -14,6 +15,7 @@ export interface User {
   team: string
   manager: string
   hackerrank_id: string
+  leetcode_id?: string | null
   role: UserRole
   created_at: string
 }
@@ -30,6 +32,7 @@ export interface Contest {
   id: string
   title: string
   hackerrank_slug: string
+  platform?: PlatformType
   start_date: string
   end_date: string
   created_by: string
@@ -47,9 +50,25 @@ export interface Question {
   topic?: string | null
   domain: string
   hackerrank_url: string
+  url?: string
   max_score: number
   difficulty: string
   order_index: number
+}
+
+export interface LeetCodeUserStats {
+  user_id: string
+  username: string
+  ranking: number | null
+  contest_rating: number | null
+  solved_easy: number
+  solved_medium: number
+  solved_hard: number
+  solved_total: number
+  submission_calendar: Record<string, number>
+  last_synced_at: string
+  sync_status: string
+  sync_error?: string | null
 }
 
 export interface Progress {

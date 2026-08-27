@@ -123,7 +123,7 @@
 }
 
 .contest-slug-code {
-  fontSize: 0.75rem;
+  font-size: 0.75rem;
   font-weight: 700;
   color: var(--accent);
   background: var(--surface-2);

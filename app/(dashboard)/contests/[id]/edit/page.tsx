@@ -57,11 +57,12 @@ export default async function ContestEditPage({ params }: Props) {
     .select('id, name')
     .order('name', { ascending: true });
 
-  // 4. Fetch all available unique teams from users table
+  // 4. Fetch all available unique teams and trainers from users table
   const { data: users } = await supabaseAdmin
     .from('users')
-    .select('team')
-    .not('team', 'is', null);
+    .select('id, full_name, emp_id, email, team, role, hackerrank_id, leetcode_id')
+    .neq('role', 'admin')
+    .order('full_name', { ascending: true });
 
   const teamSet = new Set<string>();
   (users || []).forEach((u: any) => {
@@ -79,7 +80,7 @@ export default async function ContestEditPage({ params }: Props) {
 
       <div className="card" style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: '1.5rem' }}>
         <h1 className="text-xl font-bold mb-4" style={{ fontSize: '1.35rem', fontWeight: 700, marginBottom: '1.25rem' }}>
-          Edit Contest &amp; Manage Assignments
+          Edit {contest.platform === 'leetcode' ? 'LeetCode Track' : 'Contest'} &amp; Manage Assignments
         </h1>
         <EditContestForm
           contest={contest}
@@ -87,6 +88,7 @@ export default async function ContestEditPage({ params }: Props) {
           currentTeams={currentTeams}
           allGroups={allGroups || []}
           allTeams={allTeams}
+          trainers={users || []}
         />
       </div>
     </div>

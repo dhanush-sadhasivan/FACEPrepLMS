@@ -199,7 +199,7 @@ export default function TrainerCompletionAnalytics({
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: 'var(--text-muted)' }}>
                   <span>💡 {c.questionCount} Questions in Contest</span>
-                  <span>{c.completedTrainersCount} of {c.assignedTrainersCount || totalTrainersCount} trainers completed</span>
+                  <span>{c.completedTrainersCount} of {c.assignedTrainersCount} trainers completed</span>
                 </div>
               </div>
             ))
