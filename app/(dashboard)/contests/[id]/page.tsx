@@ -249,9 +249,9 @@ export default async function ContestDetailPage({ params }: { params: Promise<{ 
               {contest.platform === 'leetcode' ? 'Track ID' : 'HackerRank Slug'}: <code style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', padding: '0.1rem 0.45rem', borderRadius: 4, color: contest.platform === 'leetcode' ? '#ffa116' : 'var(--accent)', fontWeight: 700 }}>{contest.hackerrank_slug}</code>
             </span>
             <span>&bull;</span>
-            <span>🗓️ <strong>Start:</strong> {startDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+            <span suppressHydrationWarning>🗓️ <strong>Start:</strong> {startDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })}</span>
             <span>&bull;</span>
-            <span>⏳ <strong>End:</strong> {endDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+            <span suppressHydrationWarning>⏳ <strong>End:</strong> {endDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })}</span>
           </div>
         </div>
 

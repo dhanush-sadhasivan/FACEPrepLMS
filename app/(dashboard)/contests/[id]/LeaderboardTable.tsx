@@ -31,11 +31,16 @@ type SortDirection = 'asc' | 'desc' | null;
 
 export default function LeaderboardTable({ contestId, data = [], lastScraped, questions = [], isAdminOrManager, platform = 'hackerrank' }: any) {
   const router = useRouter();
+  const [mounted, setMounted] = useState(false);
   const [scraping, setScraping] = useState(false);
   const [jobStatus, setJobStatus] = useState<JobStatus | null>(null);
   const [scrapeMessage, setScrapeMessage] = useState('');
   const [scrapeError, setScrapeError] = useState('');
   const [selectedTrainer, setSelectedTrainer] = useState<any>(null);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const triggerLeetcodeSync = async () => {
     setScraping(true);
@@ -406,7 +411,7 @@ export default function LeaderboardTable({ contestId, data = [], lastScraped, qu
           )}
 
           <div style={{ color: 'var(--text-muted)', fontSize: '0.78rem', marginLeft: 'auto' }} suppressHydrationWarning>
-            Last synced: <strong>{lastScraped ? new Date(lastScraped).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : 'Never'}</strong>
+            Last synced: <strong suppressHydrationWarning>{mounted && lastScraped ? new Date(lastScraped).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' }) : (lastScraped ? '—' : 'Never')}</strong>
           </div>
         </div>
 
@@ -691,7 +696,7 @@ export default function LeaderboardTable({ contestId, data = [], lastScraped, qu
 
                     {/* Last Active */}
                     <td style={{ padding: '0.5rem 0.95rem', textAlign: 'right', fontSize: '0.8rem', color: 'var(--text-muted)', verticalAlign: 'middle' }} suppressHydrationWarning>
-                      {row.lastActive ? new Date(row.lastActive).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : '—'}
+                      {mounted && row.lastActive ? new Date(row.lastActive).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata' }) : (row.lastActive ? '—' : '—')}
                     </td>
                   </tr>
                 );
