@@ -2,9 +2,10 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useToast } from '@/components/Toast';
+import { ITAttendanceDispute } from '@/lib/types';
 import './page.css';
 
-type ActiveTab = 'profile_changes' | 'access_requests';
+type ActiveTab = 'profile_changes' | 'access_requests' | 'it_disputes';
 
 export default function HelpdeskManagerPage() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('profile_changes');
@@ -17,15 +18,24 @@ export default function HelpdeskManagerPage() {
   const [accessRequests, setAccessRequests] = useState<any[]>([]);
   const [loadingAccess, setLoadingAccess] = useState(true);
 
+  // IT Attendance Disputes
+  const [itDisputes, setItDisputes] = useState<ITAttendanceDispute[]>([]);
+  const [loadingDisputes, setLoadingDisputes] = useState(true);
+
   // Common UI states
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'resolved' | 'rejected'>('all');
   const [search, setSearch] = useState('');
   const [actionId, setActionId] = useState<string | null>(null);
 
-  // Reject Modal State
+  // Reject Modal State for Profile Tickets
   const [rejectModalTicket, setRejectModalTicket] = useState<any | null>(null);
   const [rejectReason, setRejectReason] = useState('');
   const [rejecting, setRejecting] = useState(false);
+
+  // Reject Modal State for IT Disputes
+  const [disputeRejectModal, setDisputeRejectModal] = useState<ITAttendanceDispute | null>(null);
+  const [disputeRejectReason, setDisputeRejectReason] = useState('');
+  const [rejectingDispute, setRejectingDispute] = useState(false);
 
   const { showToast } = useToast();
 
@@ -61,15 +71,33 @@ export default function HelpdeskManagerPage() {
     }
   }, [showToast]);
 
+  const fetchITDisputes = useCallback(async () => {
+    setLoadingDisputes(true);
+    try {
+      const res = await fetch('/api/internal-training/attendance/dispute');
+      if (res.ok) {
+        const data = await res.json();
+        setItDisputes(data);
+      }
+    } catch (err) {
+      console.error(err);
+      showToast('Error loading IT attendance disputes', 'error');
+    } finally {
+      setLoadingDisputes(false);
+    }
+  }, [showToast]);
+
   const refreshAll = () => {
     fetchProfileTickets();
     fetchAccessRequests();
+    fetchITDisputes();
   };
 
   useEffect(() => {
     fetchProfileTickets();
     fetchAccessRequests();
-  }, [fetchProfileTickets, fetchAccessRequests]);
+    fetchITDisputes();
+  }, [fetchProfileTickets, fetchAccessRequests, fetchITDisputes]);
 
   // Handle Profile Ticket Approval
   const handleApproveProfileTicket = async (ticketId: string) => {
@@ -126,6 +154,61 @@ export default function HelpdeskManagerPage() {
     }
   };
 
+  // Handle IT Dispute Approval (Decrements IT Day)
+  const handleApproveDispute = async (disputeId: string) => {
+    setActionId(disputeId);
+    try {
+      const res = await fetch(`/api/internal-training/attendance/dispute/${disputeId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'approve' }),
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        showToast('✅ Dispute approved: IT day attendance adjusted!', 'success');
+        setItDisputes((prev) =>
+          prev.map((d) => (d.id === disputeId ? data.dispute : d))
+        );
+      } else {
+        showToast(`Failed: ${data.error || 'Unknown error'}`, 'error');
+      }
+    } catch (err: any) {
+      showToast(`Error: ${err.message}`, 'error');
+    } finally {
+      setActionId(null);
+    }
+  };
+
+  // Handle IT Dispute Rejection
+  const handleRejectDispute = async () => {
+    if (!disputeRejectModal) return;
+    setRejectingDispute(true);
+    try {
+      const res = await fetch(`/api/internal-training/attendance/dispute/${disputeRejectModal.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'reject', admin_notes: disputeRejectReason.trim() }),
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        showToast('IT attendance dispute declined.', 'info');
+        setItDisputes((prev) =>
+          prev.map((d) => (d.id === disputeRejectModal.id ? data.dispute : d))
+        );
+        setDisputeRejectModal(null);
+        setDisputeRejectReason('');
+      } else {
+        showToast(`Failed: ${data.error || 'Unknown error'}`, 'error');
+      }
+    } catch (err: any) {
+      showToast(`Error: ${err.message}`, 'error');
+    } finally {
+      setRejectingDispute(false);
+    }
+  };
+
   // Handle Contest Access Decision
   const handleAccessDecision = async (requestId: string, status: 'approved' | 'denied') => {
     setActionId(requestId);
@@ -170,6 +253,14 @@ export default function HelpdeskManagerPage() {
     return { total, pending, approved, denied };
   }, [accessRequests]);
 
+  const disputeMetrics = useMemo(() => {
+    const total = itDisputes.length;
+    const pending = itDisputes.filter((d) => d.status === 'pending').length;
+    const resolved = itDisputes.filter((d) => d.status === 'resolved').length;
+    const rejected = itDisputes.filter((d) => d.status === 'rejected').length;
+    return { total, pending, resolved, rejected };
+  }, [itDisputes]);
+
   // Filtered Profile Tickets
   const filteredProfileTickets = useMemo(() => {
     return profileTickets.filter((t) => {
@@ -203,7 +294,47 @@ export default function HelpdeskManagerPage() {
     });
   }, [accessRequests, search, statusFilter]);
 
-  const currentLoading = activeTab === 'profile_changes' ? loadingTickets : loadingAccess;
+  // Filtered IT Attendance Disputes
+  const filteredDisputes = useMemo(() => {
+    return itDisputes.filter((d) => {
+      const q = search.toLowerCase().trim();
+      const name = (d.requester?.full_name || '').toLowerCase();
+      const email = (d.requester?.email || '').toLowerCase();
+      const empId = (d.requester?.emp_id || '').toLowerCase();
+      const roadmapTitle = (d.roadmap?.title || '').toLowerCase();
+      const reason = (d.reason || '').toLowerCase();
+      const locType = (d.location_at_check_in?.type || '').toLowerCase();
+      const locDetail = (d.location_at_check_in?.detail || '').toLowerCase();
+
+      const matchesSearch =
+        !q ||
+        name.includes(q) ||
+        email.includes(q) ||
+        empId.includes(q) ||
+        roadmapTitle.includes(q) ||
+        reason.includes(q) ||
+        locType.includes(q) ||
+        locDetail.includes(q);
+
+      const matchesStatus = statusFilter === 'all' || d.status === statusFilter;
+
+      return matchesSearch && matchesStatus;
+    });
+  }, [itDisputes, search, statusFilter]);
+
+  const currentLoading =
+    activeTab === 'profile_changes'
+      ? loadingTickets
+      : activeTab === 'access_requests'
+      ? loadingAccess
+      : loadingDisputes;
+
+  const currentMetrics =
+    activeTab === 'profile_changes'
+      ? profileMetrics
+      : activeTab === 'access_requests'
+      ? { total: accessMetrics.total, pending: accessMetrics.pending, resolved: accessMetrics.approved, rejected: accessMetrics.denied }
+      : disputeMetrics;
 
   return (
     <div className="helpdesk-page">
@@ -214,7 +345,7 @@ export default function HelpdeskManagerPage() {
             <span>🎫</span> Helpdesk &amp; Support Ticket Manager
           </h1>
           <p className="helpdesk-subtitle">
-            Review and approve trainer profile change requests, unique handle bindings, and contest access extensions.
+            Review and approve trainer profile change requests, IT attendance disputes, and contest access extensions.
           </p>
         </div>
 
@@ -224,13 +355,21 @@ export default function HelpdeskManagerPage() {
       </header>
 
       {/* Main Tabs */}
-      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem' }}>
+      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem', flexWrap: 'wrap' }}>
         <button
           className={`btn ${activeTab === 'profile_changes' ? 'btn-primary' : 'btn-secondary'} btn-sm`}
           onClick={() => { setActiveTab('profile_changes'); setStatusFilter('all'); }}
           style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', fontWeight: 700 }}
         >
           <span>👤</span> Profile Change Tickets ({profileMetrics.pending > 0 ? `🚨 ${profileMetrics.pending} Pending` : profileMetrics.total})
+        </button>
+
+        <button
+          className={`btn ${activeTab === 'it_disputes' ? 'btn-primary' : 'btn-secondary'} btn-sm`}
+          onClick={() => { setActiveTab('it_disputes'); setStatusFilter('all'); }}
+          style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', fontWeight: 700 }}
+        >
+          <span>🎓</span> IT Attendance Disputes ({disputeMetrics.pending > 0 ? `🚨 ${disputeMetrics.pending} Pending` : disputeMetrics.total})
         </button>
 
         <button
@@ -248,7 +387,7 @@ export default function HelpdeskManagerPage() {
           <div className="stat-widget-icon" style={{ color: 'var(--accent)' }}>🎟️</div>
           <div>
             <div className="stat-widget-val" style={{ color: 'var(--accent)' }}>
-              {activeTab === 'profile_changes' ? profileMetrics.total : accessMetrics.total}
+              {currentMetrics.total}
             </div>
             <div className="stat-widget-label">Total Requests</div>
           </div>
@@ -258,7 +397,7 @@ export default function HelpdeskManagerPage() {
           <div className="stat-widget-icon" style={{ color: '#f59e0b' }}>⏳</div>
           <div>
             <div className="stat-widget-val" style={{ color: '#f59e0b' }}>
-              {activeTab === 'profile_changes' ? profileMetrics.pending : accessMetrics.pending}
+              {currentMetrics.pending}
             </div>
             <div className="stat-widget-label">Pending Review</div>
           </div>
@@ -268,9 +407,9 @@ export default function HelpdeskManagerPage() {
           <div className="stat-widget-icon" style={{ color: '#10b981' }}>✅</div>
           <div>
             <div className="stat-widget-val" style={{ color: '#10b981' }}>
-              {activeTab === 'profile_changes' ? profileMetrics.resolved : accessMetrics.approved}
+              {currentMetrics.resolved}
             </div>
-            <div className="stat-widget-label">Approved &amp; Applied</div>
+            <div className="stat-widget-label">Approved &amp; Resolved</div>
           </div>
         </div>
 
@@ -278,7 +417,7 @@ export default function HelpdeskManagerPage() {
           <div className="stat-widget-icon" style={{ color: '#ef4444' }}>❌</div>
           <div>
             <div className="stat-widget-val" style={{ color: '#ef4444' }}>
-              {activeTab === 'profile_changes' ? profileMetrics.rejected : accessMetrics.denied}
+              {currentMetrics.rejected}
             </div>
             <div className="stat-widget-label">Declined</div>
           </div>
@@ -298,19 +437,19 @@ export default function HelpdeskManagerPage() {
             className={`status-pill-btn ${statusFilter === 'pending' ? 'active' : ''}`}
             onClick={() => setStatusFilter('pending')}
           >
-            ⏳ Pending ({activeTab === 'profile_changes' ? profileMetrics.pending : accessMetrics.pending})
+            ⏳ Pending ({currentMetrics.pending})
           </button>
           <button
             className={`status-pill-btn ${statusFilter === 'resolved' ? 'active' : ''}`}
             onClick={() => setStatusFilter('resolved')}
           >
-            ✅ Approved ({activeTab === 'profile_changes' ? profileMetrics.resolved : accessMetrics.approved})
+            ✅ Approved ({currentMetrics.resolved})
           </button>
           <button
             className={`status-pill-btn ${statusFilter === 'rejected' ? 'active' : ''}`}
             onClick={() => setStatusFilter('rejected')}
           >
-            ❌ Declined ({activeTab === 'profile_changes' ? profileMetrics.rejected : accessMetrics.denied})
+            ❌ Declined ({currentMetrics.rejected})
           </button>
         </div>
 
@@ -319,7 +458,13 @@ export default function HelpdeskManagerPage() {
           <input
             type="text"
             className="search-box-input"
-            placeholder={activeTab === 'profile_changes' ? 'Search by name, email, handle, reason…' : 'Search by trainer, contest, reason…'}
+            placeholder={
+              activeTab === 'profile_changes'
+                ? 'Search by name, email, handle, reason…'
+                : activeTab === 'it_disputes'
+                ? 'Search by trainer, roadmap, location, reason…'
+                : 'Search by trainer, contest, reason…'
+            }
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -454,6 +599,121 @@ export default function HelpdeskManagerPage() {
                       {t.admin_notes && (
                         <div style={{ color: isApproved ? 'var(--success)' : 'var(--error)', fontWeight: 600 }}>
                           Note: &quot;{t.admin_notes}&quot;
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )
+      )}
+
+      {/* Content Rendering: IT Attendance Disputes */}
+      {activeTab === 'it_disputes' && (
+        loadingDisputes ? (
+          <div style={{ padding: '4rem', textAlign: 'center', color: 'var(--text-muted)' }}>
+            <div className="roadmaps-spinner" style={{ margin: '0 auto 0.75rem' }} />
+            Loading IT attendance disputes…
+          </div>
+        ) : filteredDisputes.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '3.5rem 1.5rem', background: 'var(--surface)', border: '1px dashed var(--border)', borderRadius: 12 }}>
+            <div style={{ fontSize: '2.5rem', marginBottom: '0.5rem' }}>🎓</div>
+            <h3 style={{ fontWeight: 800, fontSize: '1.1rem', margin: '0.25rem 0' }}>No IT Attendance Disputes Found</h3>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+              {search ? `No disputes matching "${search}"` : 'All IT attendance disputes have been resolved!'}
+            </p>
+          </div>
+        ) : (
+          <div className="tickets-grid">
+            {filteredDisputes.map((d) => {
+              const isPending = d.status === 'pending';
+              const isApproved = d.status === 'resolved';
+              const isRejected = d.status === 'rejected';
+              const isProcessing = actionId === d.id;
+
+              return (
+                <div key={d.id} className={`ticket-card status-${d.status}`}>
+                  <div>
+                    <div className="ticket-header">
+                      <div>
+                        <h3 className="ticket-user-name">{d.requester?.full_name || 'Trainer'}</h3>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                          {d.requester?.email || '—'} • Emp ID: <code style={{ color: 'var(--text-primary)' }}>{d.requester?.emp_id || 'N/A'}</code>
+                        </div>
+                      </div>
+
+                      <span
+                        className={`badge ${isPending ? 'badge-warning' : isApproved ? 'badge-success' : 'badge-danger'}`}
+                        style={{ fontSize: '0.68rem', fontWeight: 800 }}
+                      >
+                        {isPending ? '⏳ PENDING REVIEW' : isApproved ? '✅ NOT AN IT DAY' : '❌ IT DAY UPHELD'}
+                      </span>
+                    </div>
+
+                    <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: '0.75rem', margin: '0.75rem 0', display: 'flex', flexDirection: 'column', gap: '0.35rem', fontSize: '0.82rem' }}>
+                      <div>
+                        <strong>Roadmap:</strong>{' '}
+                        <span style={{ color: 'var(--accent)', fontWeight: 800 }}>{d.roadmap?.title || 'Internal Training'}</span>
+                      </div>
+                      <div>
+                        <strong>Check-In Date:</strong>{' '}
+                        <span>{d.check_in_date}</span>
+                      </div>
+                      {d.location_at_check_in && (
+                        <div>
+                          <strong>Location at Check-in:</strong>{' '}
+                          <span style={{ color: '#10b981', fontWeight: 700 }}>
+                            📍 {d.location_at_check_in.type}
+                            {d.location_at_check_in.detail ? ` (${d.location_at_check_in.detail})` : ''}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="ticket-message-box" style={{ margin: '0.5rem 0' }}>
+                      <strong>Trainer Reason:</strong> &quot;{d.reason}&quot;
+                    </div>
+
+                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.35rem' }} suppressHydrationWarning>
+                      🗓️ Submitted: {new Date(d.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    </div>
+                  </div>
+
+                  {isPending ? (
+                    <div className="ticket-actions" style={{ marginTop: '0.9rem' }}>
+                      <button
+                        className="btn btn-sm btn-success"
+                        onClick={() => handleApproveDispute(d.id)}
+                        disabled={isProcessing}
+                        style={{ flex: 1, fontSize: '0.78rem', fontWeight: 800 }}
+                      >
+                        {isProcessing ? 'Adjusting…' : '✅ Approve (Adjust IT Day)'}
+                      </button>
+                      <button
+                        className="btn btn-sm btn-ghost"
+                        onClick={() => { setDisputeRejectModal(d); setDisputeRejectReason(''); }}
+                        disabled={isProcessing}
+                        style={{ flex: 1, fontSize: '0.78rem', fontWeight: 800, color: '#ef4444', borderColor: 'rgba(239,68,68,0.3)' }}
+                      >
+                        ❌ Decline…
+                      </button>
+                    </div>
+                  ) : (
+                    <div style={{ marginTop: '0.75rem', paddingTop: '0.6rem', borderTop: '1px solid var(--border)', fontSize: '0.74rem', color: 'var(--text-muted)', display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                      <div>
+                        👤 <strong>{isApproved ? 'Approved by:' : 'Declined by:'}</strong>{' '}
+                        <span style={{ color: 'var(--text-primary)', fontWeight: 700 }}>
+                          {d.resolver?.full_name || 'Administrator'}
+                        </span>
+                        {d.resolved_at && (
+                          <span> on {new Date(d.resolved_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                        )}
+                      </div>
+                      {d.admin_notes && (
+                        <div style={{ color: isApproved ? 'var(--success)' : 'var(--error)', fontWeight: 600 }}>
+                          Note: &quot;{d.admin_notes}&quot;
                         </div>
                       )}
                     </div>
@@ -601,6 +861,53 @@ export default function HelpdeskManagerPage() {
                 style={{ background: '#ef4444', borderColor: '#ef4444', color: '#fff', fontWeight: 700 }}
               >
                 {rejecting ? 'Declining…' : '❌ Confirm Decline'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Rejection Modal for IT Attendance Disputes */}
+      {disputeRejectModal && (
+        <div className="modal-overlay" style={{ zIndex: 1000 }}>
+          <div className="modal" style={{ maxWidth: 480 }}>
+            <h2 className="modal-title" style={{ color: '#ef4444' }}>
+              ❌ Decline IT Attendance Dispute
+            </h2>
+            <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
+              You are declining the IT attendance dispute from <strong>{disputeRejectModal.requester?.full_name}</strong> for {disputeRejectModal.check_in_date}. Today will remain counted as an IT day.
+            </p>
+
+            <div className="form-group mb-4">
+              <label className="label">Decline Reason / Comments (Optional)</label>
+              <textarea
+                className="input"
+                rows={3}
+                placeholder="e.g. Activity was verified as IT, training schedule was active, etc."
+                value={disputeRejectReason}
+                onChange={(e) => setDisputeRejectReason(e.target.value)}
+                disabled={rejectingDispute}
+                style={{ resize: 'vertical' }}
+              />
+            </div>
+
+            <div className="modal-actions" style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setDisputeRejectModal(null)}
+                disabled={rejectingDispute}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-danger"
+                onClick={handleRejectDispute}
+                disabled={rejectingDispute}
+                style={{ background: '#ef4444', borderColor: '#ef4444', color: '#fff', fontWeight: 700 }}
+              >
+                {rejectingDispute ? 'Declining…' : '❌ Confirm Decline'}
               </button>
             </div>
           </div>

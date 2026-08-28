@@ -70,10 +70,31 @@ export async function PATCH(req: Request, { params }: { params: Params }) {
       if (requested.hackerrank_id !== undefined) updatePayload.hackerrank_id = requested.hackerrank_id || null;
       if (requested.leetcode_id !== undefined) updatePayload.leetcode_id = requested.leetcode_id || null;
 
-      const { error: userUpdateErr } = await dbAdmin
+      let { error: userUpdateErr } = await dbAdmin
         .from('users')
         .update(updatePayload)
         .eq('id', targetUserId);
+
+      if (userUpdateErr) {
+        if (
+          userUpdateErr.message?.includes('updated_at') ||
+          userUpdateErr.message?.includes('updated_by') ||
+          userUpdateErr.code === 'PGRST204' ||
+          userUpdateErr.code === 'PGRST200' ||
+          userUpdateErr.code === '42703'
+        ) {
+          console.warn('[support-tickets/resolve] User update failed with audit columns, retrying without audit fields...');
+          const fallbackPayload = { ...updatePayload };
+          delete fallbackPayload.updated_by;
+          delete fallbackPayload.updated_at;
+
+          const fallbackRes = await dbAdmin
+            .from('users')
+            .update(fallbackPayload)
+            .eq('id', targetUserId);
+          userUpdateErr = fallbackRes.error;
+        }
+      }
 
       if (userUpdateErr) {
         console.error('[support-tickets/resolve] User update error:', userUpdateErr.message);

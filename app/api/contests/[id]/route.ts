@@ -98,22 +98,12 @@ export async function PATCH(request: Request, { params }: { params: Params }) {
       (tu || []).forEach((t: any) => { if (t.id) validAssignedUserIds.add(t.id); });
     }
 
-    try {
-      if (validAssignedUserIds.size > 0) {
-        await supabaseAdmin
-          .from('progress')
-          .delete()
-          .eq('contest_id', id)
-          .not('user_id', 'in', `(${Array.from(validAssignedUserIds).join(',')})`);
-      } else {
-        await supabaseAdmin
-          .from('progress')
-          .delete()
-          .eq('contest_id', id);
-      }
-    } catch (cleanErr: any) {
-      console.warn(`[contests/${id}] Failed to clean unassigned progress rows:`, cleanErr.message);
-    }
+    // NOTE: Previously, orphaned progress rows for unassigned users were permanently
+    // deleted here. This caused irreversible data loss when assignments changed.
+    // The CDN cache and contest detail pages already filter by current assignment at
+    // display time, so there is no need to delete progress data from the database.
+    // Orphaned progress is harmlessly retained and will reappear if the user is
+    // re-assigned to the contest.
 
     // 4. Immediately regenerate CDN storage snapshot and revalidate Next.js cache
     try {

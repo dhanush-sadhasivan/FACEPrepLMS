@@ -15,11 +15,15 @@ export default async function DashboardLayout({
     redirect('/login');
   }
 
-  const { data: userData } = await supabase
+  const { data: userData, error: userError } = await supabase
     .from('users')
     .select('role, full_name')
     .eq('id', user.id)
     .single();
+
+  if (userError) {
+    console.error('[DashboardLayout] Failed to fetch user role:', userError.message);
+  }
 
   const role = userData?.role || 'trainer';
   const currentUser = {

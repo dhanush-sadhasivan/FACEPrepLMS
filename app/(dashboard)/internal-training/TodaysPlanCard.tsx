@@ -12,7 +12,7 @@ interface TodaysPlanCardProps {
   needsCheckInToday?: boolean;
   nextDayToUnlock?: number;
   nextPlanPreview?: ITDayPlan | null;
-  onCheckInToday?: () => Promise<void>;
+  onCheckInToday?: () => void | Promise<void>;
   isCheckingIn?: boolean;
   onQuestionClickConfirmed: (question: ITDayQuestion) => Promise<void>;
   onToggleCustomComplete: (questionId: string, isCompleted: boolean) => Promise<void>;
@@ -110,7 +110,7 @@ export default function TodaysPlanCard({
             {isCheckingIn ? (
               <span>⏳ Unlocking Day {targetDay}...</span>
             ) : (
-              <span>✨ Check In for IT Today (Unlock Day {targetDay})</span>
+              <span>✨ Toggle ON: Count IT & Unlock Day {targetDay}</span>
             )}
           </button>
         </div>

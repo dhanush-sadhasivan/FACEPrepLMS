@@ -294,6 +294,63 @@ async function handleContestsReport(
       allScores.push(totalUserScore);
     });
 
+    // Also include unassigned users who have progress data for this contest
+    // (e.g. users who were previously assigned but later removed)
+    const unassignedProgressUsers = new Set<string>();
+    allProgress
+      .filter((p) => p.contest_id === contest.id && !assignedUserIds.has(p.user_id))
+      .forEach((p) => unassignedProgressUsers.add(p.user_id));
+
+    unassignedProgressUsers.forEach((userId) => {
+      const u = userMap.get(userId);
+      if (!u || u.role === 'admin') return;
+
+      const userProgress = allProgress.filter((p) => p.contest_id === contest.id && p.user_id === userId);
+      const solvedQs = userProgress.filter(isQuestionSolved);
+      const solvedCount = solvedQs.length;
+      const totalUserScore = userProgress.reduce((acc, p) => acc + (p.score || 0), 0);
+      const completionPct = totalQs > 0 ? Math.round((solvedCount / totalQs) * 100) : 0;
+      const accuracyPct = maxContestScore > 0 ? Math.round((totalUserScore / maxContestScore) * 100) : 0;
+
+      let latestSubDate: string | null = null;
+      userProgress.forEach((p) => {
+        if (p.last_submission_at) {
+          if (!latestSubDate || new Date(p.last_submission_at) > new Date(latestSubDate)) {
+            latestSubDate = p.last_submission_at;
+          }
+        }
+      });
+
+      let status = 'Unattempted (Unassigned)';
+      if (completionPct >= 100) status = 'Mastered (Unassigned)';
+      else if (solvedCount > 0 || userProgress.length > 0) status = 'In Progress (Unassigned)';
+
+      contestUserRows.push({
+        contestId: contest.id,
+        contestTitle: contest.title,
+        hackerrankSlug: contest.hackerrank_slug,
+        contestStartDate: contest.start_date,
+        contestEndDate: contest.end_date,
+        userId: u.id,
+        trainerName: u.full_name,
+        empId: u.emp_id || '—',
+        email: u.email,
+        team: u.team || 'N/A',
+        manager: u.manager || '—',
+        hackerrankId: u.hackerrank_id || '—',
+        solvedCount,
+        totalQuestions: totalQs,
+        completionPct,
+        accuracyPct,
+        score: totalUserScore,
+        maxPossibleScore: maxContestScore,
+        status,
+        lastSubmissionAt: latestSubDate,
+      });
+
+      allScores.push(totalUserScore);
+    });
+
     // Sort to assign ranks
     contestUserRows.sort((a, b) => b.score - a.score || b.solvedCount - a.solvedCount || a.trainerName.localeCompare(b.trainerName));
     const totalContestRows = contestUserRows.length;

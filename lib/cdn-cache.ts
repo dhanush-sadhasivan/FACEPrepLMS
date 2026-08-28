@@ -176,6 +176,7 @@ export async function generateAndUploadCdnSnapshots(contestId?: string): Promise
     let allProgressRows: any[] = [];
     let pFrom = 0;
     const pStep = 1000;
+    let progressFetchFailed = false;
     while (true) {
       const { data: pageRows, error: pErr } = await dbAdmin
         .from('progress')
@@ -184,10 +185,20 @@ export async function generateAndUploadCdnSnapshots(contestId?: string): Promise
         .order('id', { ascending: true })
         .range(pFrom, pFrom + pStep - 1);
 
-      if (pErr || !pageRows || pageRows.length === 0) break;
+      if (pErr) {
+        console.error('[cdn-cache] DB error fetching progress rows — aborting snapshot generation:', pErr.message);
+        progressFetchFailed = true;
+        break;
+      }
+      if (!pageRows || pageRows.length === 0) break;
       allProgressRows = allProgressRows.concat(pageRows);
       if (pageRows.length < pStep) break;
       pFrom += pStep;
+    }
+
+    // If progress fetch failed on the first page, abort to avoid uploading corrupted (all-zeros) data
+    if (progressFetchFailed && allProgressRows.length === 0) {
+      return { success: false, message: 'Aborted: DB error fetching progress data — refusing to upload corrupted snapshot.' };
     }
 
     // Deduplicate by (user_id, question_id) and aggregate scores
@@ -312,7 +323,11 @@ export async function generateAndUploadCdnSnapshots(contestId?: string): Promise
             .order('id', { ascending: true })
             .range(cpFrom, cpFrom + pStep - 1);
 
-          if (cpErr || !pageRows || pageRows.length === 0) break;
+          if (cpErr) {
+            console.error(`[cdn-cache] DB error fetching contest progress for ${contestId}:`, cpErr.message);
+            break;
+          }
+          if (!pageRows || pageRows.length === 0) break;
           contestProgressRows = contestProgressRows.concat(pageRows);
           if (pageRows.length < pStep) break;
           cpFrom += pStep;

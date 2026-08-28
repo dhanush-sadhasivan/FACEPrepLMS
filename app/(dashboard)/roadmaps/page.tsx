@@ -87,7 +87,7 @@ export default function RoadmapsPage() {
       }
       await mutateRoadmaps();
     } catch (err: any) {
-      setSyncMessage(`⚡ Scrape sync initiated! Progress re-evaluated.`);
+      setSyncMessage(`❌ Scrape sync failed: ${err?.message || 'Network error. Please check your connection and try again.'}`);
       await mutateRoadmaps();
     } finally {
       setIsSyncing(false);

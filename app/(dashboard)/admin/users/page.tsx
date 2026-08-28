@@ -8,16 +8,34 @@ export const dynamic = 'force-dynamic';
 
 export default async function UsersPage() {
   const supabase = await createClient();
-  const { data: users, error } = await supabase
+
+  // Try with updater join first; fall back to plain select if the join fails
+  // (e.g. if migration 09 adding updated_by column hasn't been applied)
+  let fetchedUsers: any[] | null = null;
+  let fetchError: any = null;
+
+  const { data: usersWithJoin, error: joinError } = await supabase
     .from('users')
     .select('*, updater:users!updated_by(id, full_name, role)')
     .order('created_at', { ascending: false });
 
-  if (error) {
-    console.error('Error fetching users:', error);
+  if (joinError) {
+    console.warn('Users fetch with updater join failed, falling back to plain select:', joinError.message);
+    const { data: usersPlain, error: plainError } = await supabase
+      .from('users')
+      .select('*')
+      .order('created_at', { ascending: false });
+    fetchedUsers = usersPlain;
+    fetchError = plainError;
+  } else {
+    fetchedUsers = usersWithJoin;
   }
 
-  const typedUsers: User[] = users || [];
+  if (fetchError) {
+    console.error('Error fetching users:', fetchError);
+  }
+
+  const typedUsers: User[] = fetchedUsers || [];
 
   const adminCount = typedUsers.filter((u) => u.role?.toLowerCase() === 'admin').length;
   const managerCount = typedUsers.filter((u) => u.role?.toLowerCase() === 'manager').length;

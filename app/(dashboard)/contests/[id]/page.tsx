@@ -116,10 +116,10 @@ export default async function ContestDetailPage({ params }: { params: Promise<{ 
   // ── 2. Build Leaderboard data (Check CDN Storage Cache first) ───────────────
   let leaderboard: any[] = [];
   
-  if (assignedUserIds.size === 0) {
-    // If no participants are assigned to this contest, guarantee an empty leaderboard
-    leaderboard = [];
-  } else {
+  // If no explicit assignments exist, we still show users with actual progress data
+  const hasAssignments = assignedUserIds.size > 0;
+
+  if (hasAssignments) {
     const cachedContest = await getCachedContestData(contest.id);
 
     if (cachedContest && Array.isArray(cachedContest.leaderboard) && cachedContest.leaderboard.length > 0) {
@@ -192,6 +192,69 @@ export default async function ContestDetailPage({ params }: { params: Promise<{ 
       }
 
       (progress || []).forEach((p: any) => {
+        if (!enabledQuestionIdsSet.has(p.question_id)) return;
+        const u = userMap.get(p.user_id);
+        if (u) {
+          const score = p.score || 0;
+          const maxScore = p.max_score || 10;
+          const isSolved = p.status === 'solved' && maxScore > 0 && score >= maxScore;
+          if (isSolved) u.solved++;
+          u.score += score;
+          const isActiveSubmission = isSolved || p.status === 'attempted' || score > 0;
+          const subTime = p.last_submission_at || (isActiveSubmission ? p.updated_at : null);
+          if (subTime && (!u.lastActive || new Date(subTime) > new Date(u.lastActive))) {
+            u.lastActive = subTime;
+          }
+          u.progress.push({
+            ...p,
+            status: isSolved ? 'solved' : (score > 0 || p.status === 'attempted' ? 'attempted' : (p.status || 'unattempted')),
+          });
+        }
+      });
+
+      leaderboard = Array.from(userMap.values()).sort((a, b) => b.score - a.score);
+    }
+  } else {
+    // No explicit assignments — show all non-admin users who have progress data
+    const { data: progressUsers } = await dbAdmin
+      .from('progress')
+      .select('user_id')
+      .eq('contest_id', contest.id);
+
+    const progressUserIds = Array.from(new Set((progressUsers || []).map((p: any) => p.user_id).filter(Boolean)));
+
+    if (progressUserIds.length > 0) {
+      const { data: progressUserProfiles } = await dbAdmin
+        .from('users')
+        .select('id, full_name, emp_id, team, hackerrank_id, leetcode_id')
+        .in('id', progressUserIds)
+        .neq('role', 'admin');
+
+      const userMap = new Map();
+      (progressUserProfiles || []).forEach((u: any) => {
+        userMap.set(u.id, {
+          user_id: u.id,
+          name: u.full_name || 'Anonymous',
+          emp_id: u.emp_id || '—',
+          team: u.team || 'N/A',
+          hackerrank_id: u.hackerrank_id,
+          leetcode_id: u.leetcode_id,
+          solved: 0,
+          total: enabledQuestionsList.length,
+          score: 0,
+          maxScore: totalContestMaxScore,
+          lastActive: null,
+          progress: [],
+        });
+      });
+
+      const { data: allProgress } = await dbAdmin
+        .from('progress')
+        .select('*')
+        .eq('contest_id', contest.id)
+        .in('user_id', progressUserIds);
+
+      (allProgress || []).forEach((p: any) => {
         if (!enabledQuestionIdsSet.has(p.question_id)) return;
         const u = userMap.get(p.user_id);
         if (u) {

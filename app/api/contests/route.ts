@@ -37,7 +37,8 @@ export async function GET(request: Request) {
   const groupIds = (userGroups || []).map((g: { group_id: string }) => g.group_id);
 
   const conditions: string[] = [];
-  if (profile?.team) conditions.push(`team.eq.${profile.team}`);
+  // Quote team name to handle spaces and special characters in PostgREST filters
+  if (profile?.team) conditions.push(`team.eq."${profile.team}"`);
   if (groupIds.length > 0) conditions.push(`group_id.in.(${groupIds.join(',')})`);
 
   if (conditions.length === 0) {

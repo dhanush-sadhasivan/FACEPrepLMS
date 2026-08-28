@@ -49,7 +49,8 @@ export default async function ContestsPage() {
     const conditions: string[] = [];
 
     if (profile.team) {
-      conditions.push(`team.eq.${profile.team}`);
+      // Quote team name to handle spaces and special characters in PostgREST filters
+      conditions.push(`team.eq."${profile.team}"`);
     }
     if (userGroupIds.length > 0) {
       conditions.push(`group_id.in.(${userGroupIds.join(',')})`);

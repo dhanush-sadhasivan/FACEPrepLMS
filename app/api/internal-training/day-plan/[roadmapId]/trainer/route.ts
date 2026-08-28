@@ -221,6 +221,25 @@ export async function GET(
 
   const pendingQuestionsCount = pendingByDay.reduce((acc, dp) => acc + dp.questions.length, 0);
 
+  // Check for any pending IT dispute for today or current roadmap
+  let pendingDispute = null;
+  try {
+    const { data: disputeData } = await dbAdmin
+      .from('it_attendance_disputes')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('roadmap_id', roadmapId)
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    pendingDispute = disputeData || null;
+  } catch (dispErr) {
+    // Graceful fallback if table is not yet created
+    console.warn('[trainer-plan] Could not query it_attendance_disputes:', dispErr);
+  }
+
   return NextResponse.json({
     roadmap,
     config,
@@ -238,6 +257,7 @@ export async function GET(
       total_questions_count: totalQuestionsCount,
       pending_questions_count: pendingQuestionsCount,
       needs_check_in_today: needsCheckInToday,
+      location: progress?.location || null,
     },
     todayPlan,
     nextPlanPreview,
@@ -248,6 +268,8 @@ export async function GET(
     isCheckedInToday,
     needsCheckInToday,
     nextDayToUnlock,
+    location: progress?.location || null,
+    pendingDispute,
     today,
   });
 }
@@ -267,7 +289,10 @@ export async function POST(
   }
 
   try {
-    const result = await recordITAttendance(user.id, roadmapId);
+    const body = await request.json().catch(() => ({}));
+    const location = body?.location || null;
+
+    const result = await recordITAttendance(user.id, roadmapId, location);
     return NextResponse.json(result);
   } catch (err: any) {
     return NextResponse.json(
@@ -276,3 +301,4 @@ export async function POST(
     );
   }
 }
+

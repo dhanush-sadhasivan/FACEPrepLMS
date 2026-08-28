@@ -5,7 +5,25 @@ export async function updateSession(request: NextRequest) {
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    { cookies: { getAll() { return request.cookies.getAll() }, setAll(cs) { cs.forEach(({name,value,options}) => { request.cookies.set(name,value); supabaseResponse = NextResponse.next({request}); supabaseResponse.cookies.set(name,value,options) }) } } }
+    {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll()
+        },
+        setAll(cookiesToSet) {
+          // First, set all cookies on the request (so downstream middleware sees them)
+          cookiesToSet.forEach(({ name, value }) => {
+            request.cookies.set(name, value)
+          })
+          // Create the response ONCE with the updated request
+          supabaseResponse = NextResponse.next({ request })
+          // Then set all cookies on the single response object
+          cookiesToSet.forEach(({ name, value, options }) => {
+            supabaseResponse.cookies.set(name, value, options)
+          })
+        },
+      },
+    }
   )
   const { data: { user } } = await supabase.auth.getUser()
   if (!user && !request.nextUrl.pathname.startsWith('/login') && !request.nextUrl.pathname.startsWith('/api')) {

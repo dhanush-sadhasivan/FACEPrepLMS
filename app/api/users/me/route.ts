@@ -12,11 +12,25 @@ export async function GET() {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   
   const dbAdmin = getAdminClient();
-  const { data } = await dbAdmin
+
+  // Try with updater join; fall back to plain select if join fails
+  const { data, error } = await dbAdmin
     .from('users')
     .select('*, updater:users!updated_by(id, full_name, role)')
     .eq('id', user.id)
     .single();
+
+  if (error) {
+    console.warn('users/me GET: updater join failed, falling back:', error.message);
+    const { data: plain, error: plainErr } = await dbAdmin
+      .from('users')
+      .select('*')
+      .eq('id', user.id)
+      .single();
+    if (plainErr) return NextResponse.json({ error: plainErr.message }, { status: 500 });
+    return NextResponse.json(plain);
+  }
+
   return NextResponse.json(data);
 }
 
@@ -73,13 +87,39 @@ export async function PATCH(req: Request) {
       updated_at: now,
     };
 
-    const { data, error } = await supabaseAdmin
+    let { data, error } = await supabaseAdmin
       .from('users')
       .update(updatePayload)
       .eq('id', user.id)
       .select('*, updater:users!updated_by(id, full_name, role)')
       .single();
       
+    if (error) {
+      // If error is due to updated_at / updated_by columns or updater join
+      if (
+        error.message?.includes('updated_at') ||
+        error.message?.includes('updated_by') ||
+        error.code === 'PGRST204' ||
+        error.code === 'PGRST200' ||
+        error.code === '42703'
+      ) {
+        console.warn('users/me PATCH: update with audit fields failed, retrying without audit fields:', error.message);
+        const fallbackPayload = { ...updatePayload };
+        delete fallbackPayload.updated_by;
+        delete fallbackPayload.updated_at;
+
+        const fallbackRes = await supabaseAdmin
+          .from('users')
+          .update(fallbackPayload)
+          .eq('id', user.id)
+          .select('*')
+          .single();
+
+        data = fallbackRes.data;
+        error = fallbackRes.error;
+      }
+    }
+
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }

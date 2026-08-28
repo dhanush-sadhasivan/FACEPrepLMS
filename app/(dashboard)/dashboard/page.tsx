@@ -106,7 +106,11 @@ export default async function DashboardPage() {
         .order('id', { ascending: true })
         .range(pFrom, pFrom + pStep - 1);
 
-      if (pErr || !pageRows || pageRows.length === 0) break;
+      if (pErr) {
+        console.error('[Dashboard] Error fetching progress rows:', pErr.message);
+        break; // Stop on DB error but keep any data fetched so far
+      }
+      if (!pageRows || pageRows.length === 0) break;
       allProgressRows = allProgressRows.concat(pageRows);
       if (pageRows.length < pStep) break;
       pFrom += pStep;
@@ -277,11 +281,13 @@ export default async function DashboardPage() {
         emp_id: u.emp_id,
         team: u.team || 'N/A',
         leetcode_id: u.leetcode_id,
-        solved_easy: stats?.easy_solved ?? 0,
-        solved_medium: stats?.medium_solved ?? 0,
-        solved_hard: stats?.hard_solved ?? 0,
-        solved_total: stats?.total_solved ?? 0,
+        solved_easy: stats?.solved_easy ?? 0,
+        solved_medium: stats?.solved_medium ?? 0,
+        solved_hard: stats?.solved_hard ?? 0,
+        solved_total: stats?.solved_total ?? 0,
         ranking: stats?.ranking ?? null,
+        contest_rating: stats?.contest_rating ?? null,
+        submission_calendar: stats?.submission_calendar ?? null,
         assigned_solved: assignedSolvedMap.get(u.id) || 0,
         last_synced_at: stats?.last_synced_at ?? null,
       };
@@ -390,7 +396,8 @@ export default async function DashboardPage() {
     trainerProgress = { score: totalScore, solved: solvedCount };
 
     const conditions: string[] = [];
-    if (userData?.team) conditions.push(`team.eq.${userData.team}`);
+    // Quote team name to handle spaces and special characters in PostgREST filters
+    if (userData?.team) conditions.push(`team.eq."${userData.team}"`);
     if (groupIds.length > 0) conditions.push(`group_id.in.(${groupIds.join(',')})`);
 
     let assignedContestIds: string[] = [];

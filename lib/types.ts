@@ -263,12 +263,60 @@ export interface ITDayPlan {
   calculated_date?: string // Computed date string e.g. "2026-08-19"
 }
 
+export type ITLocationType =
+  | 'Coimbatore-office'
+  | 'Chennai-office'
+  | 'Vijayawada-office'
+  | 'Hyderabad-office'
+  | 'Work from Home'
+  | 'Outstation'
+  | string
+
+export interface ITAttendanceLocation {
+  type: ITLocationType
+  detail?: string
+}
+
+export interface ITAttendanceDispute {
+  id: string
+  user_id: string
+  roadmap_id: string
+  check_in_date: string
+  reason: string
+  location_at_check_in?: ITAttendanceLocation | null
+  status: 'pending' | 'resolved' | 'rejected'
+  resolved_by?: string | null
+  resolved_at?: string | null
+  admin_notes?: string | null
+  created_at: string
+  updated_at?: string
+  requester?: {
+    id: string
+    full_name: string
+    email: string
+    emp_id: string
+    team?: string
+  } | null
+  roadmap?: {
+    id: string
+    title: string
+  } | null
+  resolver?: {
+    id: string
+    full_name: string
+    email: string
+  } | null
+}
+
 export interface ITTrainerProgress {
   id: string
   user_id: string
   roadmap_id: string
   started_at: string | null // ISO date string "YYYY-MM-DD"
   current_day: number
+  it_days_logged?: number
+  last_check_in_date?: string | null
+  location?: ITAttendanceLocation | null
   extended_days: number
   extension_count: number
   created_at?: string
@@ -302,8 +350,10 @@ export interface ITTrainerOverviewItem {
   it_days_count: number
   extended_days: number
   extension_count: number
+  location?: ITAttendanceLocation | null
   is_online?: boolean
   last_it_check_date?: string | null
   is_it_counted_today?: boolean
 }
+
 

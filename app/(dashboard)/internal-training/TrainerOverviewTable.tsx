@@ -793,6 +793,28 @@ export default function TrainerOverviewTable({ onlineUserIds: propOnlineUserIds 
                             ✏️
                           </button>
                         </div>
+                        {t.location && (
+                          <div
+                            style={{
+                              fontSize: '0.68rem',
+                              color: '#10b981',
+                              fontWeight: 700,
+                              marginTop: '0.25rem',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.2rem',
+                              whiteSpace: 'nowrap',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              maxWidth: '180px',
+                            }}
+                            title={`Today's location: ${t.location.type}${t.location.detail ? ` (${t.location.detail})` : ''}`}
+                          >
+                            <span>📍</span>
+                            <span>{t.location.type}</span>
+                            {t.location.detail && <span style={{ color: 'var(--text-muted)' }}>({t.location.detail})</span>}
+                          </div>
+                        )}
                       </td>
 
                       {/* Extended Days */}

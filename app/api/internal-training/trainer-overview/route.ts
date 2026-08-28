@@ -68,7 +68,10 @@ export async function GET() {
     dbAdmin.from('group_members').select('group_id, user_id'),
     dbAdmin.from('users').select('id, full_name, emp_id, email, team, role').neq('role', 'admin'),
     dbAdmin.from('it_trainer_progress').select('*').in('roadmap_id', roadmapIds),
-    dbAdmin.auth.admin.listUsers({ perPage: 1000 }).catch(() => ({ data: { users: [] } })),
+    dbAdmin.auth.admin.listUsers({ perPage: 1000 }).catch((authErr: any) => {
+      console.warn('[trainer-overview] Failed to list auth users (online status will be unavailable):', authErr?.message || authErr);
+      return { data: { users: [] } };
+    }),
   ]);
 
   const configs = configsRes.data || [];
@@ -270,6 +273,7 @@ export async function GET() {
         it_days_count: itDaysLogged,
         extended_days: p?.extended_days || 0,
         extension_count: p?.extension_count || 0,
+        location: isCountedToday ? p?.location || null : null,
         is_online: false, // populated on client via Realtime Presence
         last_it_check_date: lastCheckIn,
         is_it_counted_today: isCountedToday,

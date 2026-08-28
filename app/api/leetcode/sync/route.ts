@@ -65,8 +65,8 @@ export async function POST(req: Request) {
         });
       }
 
-      // 2. Fetch Recent AC submissions
-      const recentAc = await fetchRecentAc(targetUser.leetcode_id, 30);
+      // 2. Fetch Recent AC submissions (limit 100 to capture recent history)
+      const recentAc = await fetchRecentAc(targetUser.leetcode_id, 100);
       const acMap = new Map<string, any>();
       recentAc.forEach((r) => {
         const sl = parseProblemSlug(r.titleSlug);
@@ -82,7 +82,7 @@ export async function POST(req: Request) {
 
       const conditions: string[] = [];
       if (targetUser.team && targetUser.team !== 'N/A') {
-        conditions.push(`team.eq.${targetUser.team}`);
+        conditions.push(`team.eq."${targetUser.team}"`);
       }
       if (groupIds.length > 0) {
         conditions.push(`group_id.in.(${groupIds.join(',')})`);

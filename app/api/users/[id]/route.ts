@@ -84,12 +84,38 @@ export async function PATCH(req: Request, { params }: { params: Params }) {
       }
     }
 
-    const { data, error } = await supabaseAdmin
+    let { data, error } = await supabaseAdmin
       .from('users')
       .update(updatePayload)
       .eq('id', id)
-      .select()
+      .select('*, updater:users!updated_by(id, full_name, role)')
       .single();
+
+    // If update or select failed due to missing updated_at / updated_by columns or updater join
+    if (error) {
+      if (
+        error.message?.includes('updated_at') ||
+        error.message?.includes('updated_by') ||
+        error.code === 'PGRST204' ||
+        error.code === 'PGRST200' ||
+        error.code === '42703'
+      ) {
+        console.warn(`[users/[id]] update failed with audit fields (${error.message}), retrying without audit fields...`);
+        const fallbackPayload = { ...updatePayload };
+        delete fallbackPayload.updated_by;
+        delete fallbackPayload.updated_at;
+
+        const fallbackRes = await supabaseAdmin
+          .from('users')
+          .update(fallbackPayload)
+          .eq('id', id)
+          .select('*')
+          .single();
+
+        data = fallbackRes.data;
+        error = fallbackRes.error;
+      }
+    }
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 400 });

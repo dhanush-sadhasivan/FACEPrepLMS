@@ -7,7 +7,9 @@ import RoadmapSelector from './RoadmapSelector';
 import TodaysPlanCard from './TodaysPlanCard';
 import PendingQuestionsPanel from './PendingQuestionsPanel';
 import TrainerOverviewTable from './TrainerOverviewTable';
-import { ITDayQuestion } from '@/lib/types';
+import ITCheckInModal from './ITCheckInModal';
+import ITDisputeModal from './ITDisputeModal';
+import { ITDayQuestion, ITAttendanceLocation } from '@/lib/types';
 import './page.css';
 
 interface InternalTrainingClientProps {
@@ -35,6 +37,11 @@ export default function InternalTrainingClient({
   const [loadingPlan, setLoadingPlan] = useState(true);
   const [trainerData, setTrainerData] = useState<any>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+
+  // Modals for Attendance Toggle
+  const [isCheckInModalOpen, setIsCheckInModalOpen] = useState(false);
+  const [isDisputeModalOpen, setIsDisputeModalOpen] = useState(false);
+  const [isActionInProgress, setIsActionInProgress] = useState(false);
 
   const showToast = (msg: string) => {
     setToastMsg(msg);
@@ -68,30 +75,62 @@ export default function InternalTrainingClient({
     }
   }, [selectedRoadmapId, loadTrainerPlan]);
 
-  const [isCheckingIn, setIsCheckingIn] = useState(false);
-
-  // Handle explicit per-roadmap IT check-in to unlock today's curriculum
-  const handleCheckInToday = async () => {
+  // Handle explicit per-roadmap IT check-in with location to unlock today's curriculum
+  const handleConfirmCheckIn = async (location: ITAttendanceLocation) => {
     if (!selectedRoadmapId) return;
-    setIsCheckingIn(true);
+    setIsActionInProgress(true);
     try {
       const res = await fetch(`/api/internal-training/day-plan/${selectedRoadmapId}/trainer`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ location }),
       });
 
       if (res.ok) {
         const data = await res.json();
-        showToast(`🎉 Day ${data.roadmapDaysLogged} Unlocked! IT attendance recorded for this roadmap.`);
+        showToast(`🎉 Day ${data.roadmapDaysLogged} Unlocked! IT attendance recorded at ${location.type}.`);
+        setIsCheckInModalOpen(false);
         await loadTrainerPlan(selectedRoadmapId);
       } else {
-        showToast('Failed to record check-in');
+        const errData = await res.json().catch(() => ({}));
+        showToast(`Failed: ${errData.error || 'Failed to record check-in'}`);
       }
     } catch (err) {
       console.error('Error during check-in:', err);
       showToast('Error recording check-in');
     } finally {
-      setIsCheckingIn(false);
+      setIsActionInProgress(false);
+    }
+  };
+
+  // Handle dispute ticket submission when toggling OFF an IT day
+  const handleConfirmDispute = async (reason: string) => {
+    if (!selectedRoadmapId) return;
+    setIsActionInProgress(true);
+    try {
+      const res = await fetch('/api/internal-training/attendance/dispute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          roadmapId: selectedRoadmapId,
+          reason,
+          checkInDate: trainerData?.today,
+        }),
+      });
+
+      if (res.ok) {
+        showToast('📩 Support ticket raised! Your manager will review the attendance dispute.');
+        setIsDisputeModalOpen(false);
+        await loadTrainerPlan(selectedRoadmapId);
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        showToast(`Failed: ${errData.error || 'Failed to raise dispute'}`);
+      }
+    } catch (err) {
+      console.error('Error raising dispute:', err);
+      showToast('Error submitting dispute ticket');
+    } finally {
+      setIsActionInProgress(false);
     }
   };
 
@@ -140,6 +179,7 @@ export default function InternalTrainingClient({
 
   const isAdminOrManager = currentUser.role === 'admin' || currentUser.role === 'manager';
   const hasAssignedRoadmaps = assignedRoadmaps.length > 0;
+  const currentRoadmap = assignedRoadmaps.find((r) => r.id === selectedRoadmapId);
 
   return (
     <div className="it-dashboard-page">
@@ -198,15 +238,18 @@ export default function InternalTrainingClient({
       {/* Personal Trainer Daily Plan Section (Only shown if this user is allocated with an IT roadmap) */}
       {hasAssignedRoadmaps && (
         <>
-          {/* IT Day Stats Widget */}
+          {/* IT Day Stats & Interactive Toggle Widget */}
           <ITDayStatus
             itDaysCount={trainerData?.itDaysLogged ?? 0}
             isITCountedToday={trainerData?.isCheckedInToday ?? false}
             totalPlannedDays={trainerData?.progress?.total_days ?? 0}
             currentDay={trainerData?.progress?.current_day ?? 0}
-            onITStatusChanged={() => {
-              if (selectedRoadmapId) loadTrainerPlan(selectedRoadmapId);
-            }}
+            location={trainerData?.location || null}
+            pendingDispute={trainerData?.pendingDispute || null}
+            topicTitle={trainerData?.todayPlan?.topic_title || trainerData?.nextPlanPreview?.topic_title}
+            onOpenCheckIn={() => setIsCheckInModalOpen(true)}
+            onOpenDispute={() => setIsDisputeModalOpen(true)}
+            isActionInProgress={isActionInProgress}
           />
 
           {/* Roadmap Selector (if multiple assigned) */}
@@ -234,8 +277,8 @@ export default function InternalTrainingClient({
                 needsCheckInToday={trainerData?.needsCheckInToday ?? false}
                 nextDayToUnlock={trainerData?.nextDayToUnlock ?? 1}
                 nextPlanPreview={trainerData?.nextPlanPreview || null}
-                onCheckInToday={handleCheckInToday}
-                isCheckingIn={isCheckingIn}
+                onCheckInToday={() => setIsCheckInModalOpen(true)}
+                isCheckingIn={isActionInProgress}
                 onQuestionClickConfirmed={handleQuestionClickConfirmed}
                 onToggleCustomComplete={handleToggleCustomComplete}
               />
@@ -250,6 +293,28 @@ export default function InternalTrainingClient({
           )}
         </>
       )}
+
+      {/* Check In / Toggle ON Location Modal */}
+      <ITCheckInModal
+        isOpen={isCheckInModalOpen}
+        onClose={() => setIsCheckInModalOpen(false)}
+        onConfirm={handleConfirmCheckIn}
+        topicTitle={trainerData?.nextPlanPreview?.topic_title || trainerData?.todayPlan?.topic_title}
+        dayNumber={trainerData?.nextDayToUnlock ?? 1}
+        totalDays={trainerData?.progress?.total_days ?? 0}
+        isSubmitting={isActionInProgress}
+      />
+
+      {/* Dispute / Toggle OFF Modal */}
+      <ITDisputeModal
+        isOpen={isDisputeModalOpen}
+        onClose={() => setIsDisputeModalOpen(false)}
+        onConfirm={handleConfirmDispute}
+        currentLocation={trainerData?.location || null}
+        dayNumber={trainerData?.progress?.current_day || 1}
+        roadmapTitle={currentRoadmap?.title || 'Internal Training'}
+        isSubmitting={isActionInProgress}
+      />
 
       {/* Unallocated Trainer Notice */}
       {!hasAssignedRoadmaps && !isAdminOrManager && (

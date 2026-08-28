@@ -43,6 +43,25 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Contest not found' }, { status: 404 });
   }
 
+  // 1.5 Handle LeetCode platform contests via native LeetCode sync engine
+  if (contest.platform === 'leetcode') {
+    console.log(`[scrape/trigger] Contest "${contest.title}" is a LeetCode contest. Routing to LeetCode sync engine...`);
+    try {
+      const { syncLeetCodeContest } = await import('@/lib/leetcode-sync');
+      const result = await syncLeetCodeContest(contestId);
+      return NextResponse.json({
+        status: 'completed',
+        platform: 'leetcode',
+        syncedCount: result.syncedCount,
+        totalNewlySolved: result.totalNewlySolved,
+        message: result.message,
+      });
+    } catch (lcErr: any) {
+      console.error(`[scrape/trigger] LeetCode sync error:`, lcErr);
+      return NextResponse.json({ error: lcErr.message || 'LeetCode sync failed' }, { status: 500 });
+    }
+  }
+
   // 2. Fetch enabled questions
   let questionsData: any[] | null = null;
   const { data: filteredQs, error: qErr } = await supabase

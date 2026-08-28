@@ -28,11 +28,26 @@ export default async function ProfilePage() {
     redirect('/login');
   }
 
-  const { data: profile } = await supabase
+  // Try with updater join first; fall back to plain select if the join fails
+  // (e.g. if migration 09 adding updated_by column hasn't been applied)
+  let profile: any = null;
+  const { data: profileWithJoin, error: joinError } = await supabase
     .from('users')
     .select('*, updater:users!updated_by(id, full_name, role)')
     .eq('id', user.id)
     .single();
+
+  if (joinError) {
+    console.warn('Profile fetch with updater join failed, falling back:', joinError.message);
+    const { data: profilePlain } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', user.id)
+      .single();
+    profile = profilePlain;
+  } else {
+    profile = profileWithJoin;
+  }
 
   if (!profile) {
     return <div className="profile-error">Failed to load user profile.</div>;

@@ -1,5 +1,6 @@
 import { getAdminClient } from '@/lib/supabase/admin';
 import { formatISODate } from '@/lib/it-calendar';
+import { ITAttendanceLocation } from '@/lib/types';
 
 export interface ITAttendanceResult {
   success: boolean;
@@ -7,18 +8,21 @@ export interface ITAttendanceResult {
   globalItDays: number;
   alreadyCheckedInToday: boolean;
   today: string;
+  location?: ITAttendanceLocation | null;
 }
 
 /**
  * Records per-roadmap IT attendance for a trainer.
  * - Increments `it_days_logged` on the specific it_trainer_progress row
  * - Sets `last_check_in_date = today` on that row
+ * - Saves `location` on the it_trainer_progress row
  * - Recalculates global `users.it_days_count` as count of unique dates
  *   across ALL of the user's it_trainer_progress rows
  */
 export async function recordITAttendance(
   userId: string,
   roadmapId: string,
+  location?: ITAttendanceLocation | null,
 ): Promise<ITAttendanceResult> {
   const supabase = getAdminClient();
   const today = formatISODate(new Date());
@@ -45,16 +49,39 @@ export async function recordITAttendance(
   }
 
   // 2. Update the per-roadmap progress row
-  await supabase
+  const updatePayload: Record<string, any> = {
+    it_days_logged: newDaysLogged,
+    current_day: newDaysLogged,
+    last_check_in_date: today,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (location) {
+    updatePayload.location = location;
+  }
+
+  let { error: updateErr } = await supabase
     .from('it_trainer_progress')
-    .update({
-      it_days_logged: newDaysLogged,
-      current_day: newDaysLogged,
-      last_check_in_date: today,
-      updated_at: new Date().toISOString(),
-    })
+    .update(updatePayload)
     .eq('user_id', userId)
     .eq('roadmap_id', roadmapId);
+
+  // Fallback if column 'location' doesn't exist yet in remote schema
+  if (updateErr && (updateErr.message?.includes('location') || updateErr.code === '42703' || updateErr.code === 'PGRST204')) {
+    console.warn('[recordITAttendance] location column missing in it_trainer_progress, falling back without location...');
+    delete updatePayload.location;
+    const retryRes = await supabase
+      .from('it_trainer_progress')
+      .update(updatePayload)
+      .eq('user_id', userId)
+      .eq('roadmap_id', roadmapId);
+    updateErr = retryRes.error;
+  }
+
+  if (updateErr) {
+    console.error('[recordITAttendance] Error updating it_trainer_progress:', updateErr);
+  }
+
 
   // 3. Recalculate global IT days count:
   //    Count unique last_check_in_date values across ALL of this user's roadmaps
