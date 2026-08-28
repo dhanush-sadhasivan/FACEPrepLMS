@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
-import ProfileForm from './ProfileForm';
+import ProfileDetailsView from './ProfileDetailsView';
 import ProfileBadgesWidget from './ProfileBadgesWidget';
 import './page.css';
 
@@ -64,16 +64,12 @@ export default async function ProfilePage() {
         </div>
       </div>
 
-      {/* Account Settings Card */}
-      <div className="profile-settings-card">
-        <div className="profile-section-header">
-          <span>⚙️ Account Preferences & Settings</span>
-        </div>
-        <ProfileForm initialData={profile} />
-      </div>
+      {/* Account Details & Support Tickets */}
+      <ProfileDetailsView initialData={profile} />
 
       {/* Earned Skills & Badges Section */}
       <ProfileBadgesWidget />
     </div>
   );
 }
+

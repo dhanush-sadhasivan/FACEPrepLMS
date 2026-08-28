@@ -35,6 +35,22 @@ export async function POST(req: Request) {
     }
 
     const supabaseAdmin = getAdminClient();
+
+    // Check LeetCode handle uniqueness
+    if (cleanLc) {
+      const { data: existing } = await supabaseAdmin
+        .from('users')
+        .select('id, full_name, email')
+        .ilike('leetcode_id', cleanLc);
+
+      if (existing && existing.length > 0) {
+        const match = existing[0];
+        return NextResponse.json({
+          error: `LeetCode ID "${cleanLc}" is already assigned to user "${match.full_name}" (${match.email}). Each user must have a unique LeetCode account.`,
+        }, { status: 409 });
+      }
+    }
+
     const finalPassword = (password && password.trim().length > 0)
       ? password.trim()
       : Math.random().toString(36).slice(-8) + 'A1!';

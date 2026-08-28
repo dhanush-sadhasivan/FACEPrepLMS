@@ -1,9 +1,11 @@
 import { NextResponse } from 'next/server';
 import { parseLeetcodeUsername, fetchProfileStats } from '@/lib/leetcode';
+import { getAdminClient } from '@/lib/supabase/admin';
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const username = searchParams.get('username');
+  const excludeUserId = searchParams.get('excludeUserId');
 
   if (!username || username.trim() === '') {
     return NextResponse.json({ valid: true });
@@ -15,11 +17,33 @@ export async function GET(req: Request) {
   }
 
   try {
+    // 1. Uniqueness check against other users in LMS database
+    const dbAdmin = getAdminClient();
+    let duplicateQuery = dbAdmin
+      .from('users')
+      .select('id, full_name, email, leetcode_id')
+      .ilike('leetcode_id', clean);
+
+    if (excludeUserId) {
+      duplicateQuery = duplicateQuery.neq('id', excludeUserId);
+    }
+
+    const { data: existingUsers, error: dupErr } = await duplicateQuery;
+    if (!dupErr && existingUsers && existingUsers.length > 0) {
+      const match = existingUsers[0];
+      return NextResponse.json({
+        valid: false,
+        isDuplicate: true,
+        error: `LeetCode ID "${clean}" is already linked to user "${match.full_name}" (${match.email}). Each user must have a unique LeetCode account.`,
+      });
+    }
+
+    // 2. Fetch and verify profile on LeetCode
     const profile = await fetchProfileStats(clean);
     if (!profile.found) {
       return NextResponse.json({
         valid: false,
-        error: `LeetCode profile "${clean}" does not exist or is private.`,
+        error: `LeetCode profile "${clean}" does not exist on LeetCode. Please check the spelling.`,
       });
     }
 
@@ -32,7 +56,10 @@ export async function GET(req: Request) {
     });
   } catch (err: any) {
     console.warn(`[validate-leetcode] Check error for ${clean}:`, err.message);
-    // If rate-limited or transient network failure, don't completely block user save
-    return NextResponse.json({ valid: true, warning: 'Could not verify at this moment.' });
+    return NextResponse.json({
+      valid: true,
+      username: clean,
+      warning: 'Could not verify with LeetCode API at this moment.',
+    });
   }
 }

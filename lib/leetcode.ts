@@ -67,7 +67,7 @@ async function gql<T = any>(query: string, variables: Record<string, any>): Prom
       Referer: 'https://leetcode.com',
       Origin: 'https://leetcode.com',
       'User-Agent':
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
     },
     body: JSON.stringify({ query, variables }),
   });
@@ -81,7 +81,16 @@ async function gql<T = any>(query: string, variables: Record<string, any>): Prom
 
   const json = await res.json();
   if (json.errors?.length) {
-    throw new Error(json.errors.map((e: any) => e.message).join('; '));
+    const isUserNotFound = json.errors.some((e: any) =>
+      e.message?.toLowerCase().includes('that user does not exist') ||
+      e.message?.toLowerCase().includes('user does not exist')
+    );
+    if (json.data !== undefined && (isUserNotFound || json.data?.matchedUser !== undefined)) {
+      return json.data;
+    }
+    if (!json.data) {
+      throw new Error(json.errors.map((e: any) => e.message).join('; '));
+    }
   }
   return json.data;
 }
@@ -195,9 +204,57 @@ export async function fetchProfileStats(username: string): Promise<LeetCodeProfi
     };
   }
 
-  const data = await gqlWithRetry(PROFILE_QUERY, { username: cleanUser });
-  const user = data?.matchedUser;
-  if (!user) {
+  try {
+    const data = await gqlWithRetry(PROFILE_QUERY, { username: cleanUser });
+    const user = data?.matchedUser;
+    if (!user) {
+      return {
+        username: cleanUser,
+        found: false,
+        ranking: null,
+        realName: '',
+        avatar: '',
+        contestRating: null,
+        solved: { easy: 0, medium: 0, hard: 0, total: 0 },
+        submissionCalendar: {},
+      };
+    }
+
+    const counts = { easy: 0, medium: 0, hard: 0, total: 0 };
+    for (const row of user.submitStatsGlobal?.acSubmissionNum || []) {
+      const d = (row.difficulty || '').toLowerCase();
+      if (d === 'all') counts.total = row.count || 0;
+      else if (counts[d as keyof typeof counts] !== undefined) {
+        (counts as any)[d] = row.count || 0;
+      }
+    }
+    if (!counts.total) {
+      counts.total = counts.easy + counts.medium + counts.hard;
+    }
+
+    let submissionCalendar: Record<string, number> = {};
+    try {
+      const calData = await gqlWithRetry(CALENDAR_QUERY, { username: cleanUser });
+      const raw = calData?.matchedUser?.userCalendar?.submissionCalendar;
+      if (raw) submissionCalendar = JSON.parse(raw);
+    } catch {
+      // calendar is best-effort
+    }
+
+    return {
+      username: user.username,
+      found: true,
+      ranking: user.profile?.ranking ?? null,
+      realName: user.profile?.realName || '',
+      avatar: user.profile?.userAvatar || '',
+      contestRating: data?.userContestRanking?.rating
+        ? Math.round(data.userContestRanking.rating)
+        : null,
+      solved: counts,
+      submissionCalendar,
+    };
+  } catch (err: any) {
+    console.warn(`[leetcode] fetchProfileStats error for ${cleanUser}:`, err.message);
     return {
       username: cleanUser,
       found: false,
@@ -209,40 +266,6 @@ export async function fetchProfileStats(username: string): Promise<LeetCodeProfi
       submissionCalendar: {},
     };
   }
-
-  const counts = { easy: 0, medium: 0, hard: 0, total: 0 };
-  for (const row of user.submitStatsGlobal?.acSubmissionNum || []) {
-    const d = (row.difficulty || '').toLowerCase();
-    if (d === 'all') counts.total = row.count || 0;
-    else if (counts[d as keyof typeof counts] !== undefined) {
-      (counts as any)[d] = row.count || 0;
-    }
-  }
-  if (!counts.total) {
-    counts.total = counts.easy + counts.medium + counts.hard;
-  }
-
-  let submissionCalendar: Record<string, number> = {};
-  try {
-    const calData = await gqlWithRetry(CALENDAR_QUERY, { username: cleanUser });
-    const raw = calData?.matchedUser?.userCalendar?.submissionCalendar;
-    if (raw) submissionCalendar = JSON.parse(raw);
-  } catch {
-    // calendar is best-effort
-  }
-
-  return {
-    username: user.username,
-    found: true,
-    ranking: user.profile?.ranking ?? null,
-    realName: user.profile?.realName || '',
-    avatar: user.profile?.userAvatar || '',
-    contestRating: data?.userContestRanking?.rating
-      ? Math.round(data.userContestRanking.rating)
-      : null,
-    solved: counts,
-    submissionCalendar,
-  };
 }
 
 export interface RecentAcSubmission {

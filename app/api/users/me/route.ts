@@ -19,7 +19,14 @@ export async function PATCH(req: Request) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  
+
+  const { data: caller } = await supabase.from('users').select('role').eq('id', user.id).single();
+  if (caller?.role !== 'admin' && caller?.role !== 'manager') {
+    return NextResponse.json({
+      error: 'Direct profile edits are disabled for account integrity. Please submit a Profile Change Request via the Support Ticket button on your Profile page.',
+    }, { status: 403 });
+  }
+
   try {
     const body = await req.json();
     const { full_name, emp_email, hackerrank_id, leetcode_id } = body;
@@ -33,6 +40,24 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ error: 'Full name is required.' }, { status: 400 });
     }
 
+    const supabaseAdmin = getAdminClient();
+
+    // Check LeetCode ID uniqueness if setting a handle
+    if (cleanLc) {
+      const { data: existing } = await supabaseAdmin
+        .from('users')
+        .select('id, full_name, email')
+        .ilike('leetcode_id', cleanLc)
+        .neq('id', user.id);
+
+      if (existing && existing.length > 0) {
+        const match = existing[0];
+        return NextResponse.json({
+          error: `LeetCode ID "${cleanLc}" is already linked to user "${match.full_name}" (${match.email}). Each user must have a unique LeetCode account.`,
+        }, { status: 409 });
+      }
+    }
+
     const updatePayload: Record<string, any> = {
       full_name: cleanName,
       emp_email: cleanEmpEmail,
@@ -40,7 +65,6 @@ export async function PATCH(req: Request) {
       leetcode_id: cleanLc,
     };
 
-    const supabaseAdmin = getAdminClient();
     const { data, error } = await supabaseAdmin
       .from('users')
       .update(updatePayload)

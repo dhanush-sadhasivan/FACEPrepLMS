@@ -55,6 +55,22 @@ export async function PATCH(req: Request, { params }: { params: Params }) {
 
     const supabaseAdmin = getAdminClient();
 
+    // Verify LeetCode uniqueness across other users
+    if (cleanLc) {
+      const { data: existing } = await supabaseAdmin
+        .from('users')
+        .select('id, full_name, email')
+        .ilike('leetcode_id', cleanLc)
+        .neq('id', id);
+
+      if (existing && existing.length > 0) {
+        const match = existing[0];
+        return NextResponse.json({
+          error: `LeetCode ID "${cleanLc}" is already assigned to user "${match.full_name}" (${match.email}). Each user must have a unique LeetCode account.`,
+        }, { status: 409 });
+      }
+    }
+
     // If email is provided, also sync email to auth.users and public.users
     if (cleanEmail) {
       updatePayload.email = cleanEmail;
