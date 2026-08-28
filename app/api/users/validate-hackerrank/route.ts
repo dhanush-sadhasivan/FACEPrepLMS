@@ -1,15 +1,16 @@
 import { NextResponse } from 'next/server';
+import { parseHackerrankUsername } from '@/lib/utils';
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const username = searchParams.get('username');
 
-  if (!username || username.trim() === '') {
+  if (!username) {
     return NextResponse.json({ valid: true });
   }
 
-  const clean = username.trim();
-  if (['nil', 'null', 'n/a', 'undefined', 'none', '-'].includes(clean.toLowerCase())) {
+  const clean = parseHackerrankUsername(username);
+  if (!clean) {
     return NextResponse.json({ valid: true });
   }
 
@@ -25,19 +26,19 @@ export async function GET(req: Request) {
     if (res.status === 404) {
       return NextResponse.json({
         valid: false,
-        error: `HackerRank username "${clean}" was not found on HackerRank. Please verify the handle.`
+        error: `HackerRank username "${clean}" was not found on HackerRank. Please verify the handle.`,
       });
     }
 
     if (res.ok) {
       const data = await res.json().catch(() => null);
       if (data?.model?.username || data?.model?.id) {
-        return NextResponse.json({ valid: true, username: data.model.username });
+        return NextResponse.json({ valid: true, username: data.model.username || clean });
       }
-      if (data?.status === false || !data?.model) {
+      if (data?.status === false && data?.message) {
         return NextResponse.json({
           valid: false,
-          error: `HackerRank username "${clean}" does not exist on HackerRank.`
+          error: `HackerRank username "${clean}" does not exist on HackerRank.`,
         });
       }
     }
@@ -45,5 +46,6 @@ export async function GET(req: Request) {
     console.warn(`[validate-hackerrank] Check failed for ${clean}:`, err.message);
   }
 
-  return NextResponse.json({ valid: true });
+  // Graceful fallback for rate limits or anti-bot responses
+  return NextResponse.json({ valid: true, username: clean, warning: 'HackerRank handle saved.' });
 }

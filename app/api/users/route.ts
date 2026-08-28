@@ -1,36 +1,38 @@
 import { NextResponse } from 'next/server';
 import { getAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
+import { parseHackerrankUsername, sanitizeField } from '@/lib/utils';
+import { parseLeetcodeUsername } from '@/lib/leetcode';
+import { generateAndUploadCdnSnapshots } from '@/lib/cdn-cache';
+import { revalidatePath, revalidateTag } from 'next/cache';
 import { Resend } from 'resend';
-
-function sanitizeField(val?: string | null): string | null {
-  if (!val) return null;
-  const trimmed = val.trim();
-  if (['nil', 'null', 'n/a', 'undefined', 'none', '-'].includes(trimmed.toLowerCase())) {
-    return null;
-  }
-  return trimmed;
-}
 
 export async function POST(req: Request) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  
   const { data: caller } = await supabase.from('users').select('role').eq('id', user.id).single();
   if (caller?.role !== 'admin' && caller?.role !== 'manager') {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
+
   try {
     const body = await req.json();
-    const { email, full_name, emp_id, role, team, manager, hackerrank_id, password } = body;
+    const { email, emp_email, full_name, emp_id, role, team, manager, hackerrank_id, leetcode_id, password } = body;
 
-    if (!email || !full_name || !emp_id) {
+    const cleanEmail = sanitizeField(email);
+    const cleanEmpEmail = sanitizeField(emp_email);
+    const cleanName = sanitizeField(full_name);
+    const cleanEmpId = sanitizeField(emp_id);
+    const cleanTeam = sanitizeField(team);
+    const cleanManager = sanitizeField(manager);
+    const cleanHr = parseHackerrankUsername(hackerrank_id);
+    const cleanLc = parseLeetcodeUsername(leetcode_id);
+
+    if (!cleanEmail || !cleanName || !cleanEmpId) {
       return NextResponse.json({ error: 'Missing required fields: email, full_name, emp_id' }, { status: 400 });
     }
-
-    const cleanEmail = email.trim();
-    const cleanName = full_name.trim();
-    const cleanEmpId = emp_id.trim();
 
     const supabaseAdmin = getAdminClient();
     const finalPassword = (password && password.trim().length > 0)
@@ -50,17 +52,19 @@ export async function POST(req: Request) {
     const userId = authUser.user.id;
 
     // 2. Insert into public.users with sanitized fields
-    const { data: user, error: dbError } = await supabaseAdmin
+    const { data: newUser, error: dbError } = await supabaseAdmin
       .from('users')
       .insert({
         id: userId,
         email: cleanEmail,
+        emp_email: cleanEmpEmail,
         full_name: cleanName,
         emp_id: cleanEmpId,
-        role: role || 'trainer',
-        team: sanitizeField(team),
-        manager: sanitizeField(manager),
-        hackerrank_id: sanitizeField(hackerrank_id),
+        role: (role && ['admin', 'manager', 'trainer'].includes(role.toLowerCase())) ? role.toLowerCase() : 'trainer',
+        team: cleanTeam,
+        manager: cleanManager,
+        hackerrank_id: cleanHr,
+        leetcode_id: cleanLc,
       })
       .select()
       .single();
@@ -69,6 +73,16 @@ export async function POST(req: Request) {
       await supabaseAdmin.auth.admin.deleteUser(userId);
       return NextResponse.json({ error: dbError.message }, { status: 400 });
     }
+
+    // Refresh CDN snapshots in background
+    try {
+      generateAndUploadCdnSnapshots().catch(() => {});
+      revalidateTag('leaderboard', 'max');
+      revalidateTag('global-stats', 'max');
+      revalidatePath('/admin/users');
+      revalidatePath('/dashboard');
+      revalidatePath('/contests');
+    } catch {}
 
     // 3. Send invite email via Resend if key exists
     if (process.env.RESEND_API_KEY) {
@@ -85,7 +99,7 @@ export async function POST(req: Request) {
       }
     }
 
-    return NextResponse.json({ ...user, tempPassword: finalPassword }, { status: 201 });
+    return NextResponse.json({ ...newUser, tempPassword: finalPassword }, { status: 201 });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json({ error: message }, { status: 500 });

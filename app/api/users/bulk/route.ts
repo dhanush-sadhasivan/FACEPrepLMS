@@ -1,25 +1,22 @@
 import { NextResponse } from 'next/server';
 import { getAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
+import { parseHackerrankUsername, sanitizeField } from '@/lib/utils';
+import { parseLeetcodeUsername } from '@/lib/leetcode';
+import { generateAndUploadCdnSnapshots } from '@/lib/cdn-cache';
+import { revalidatePath, revalidateTag } from 'next/cache';
 import { Resend } from 'resend';
-
-function sanitizeField(val?: string | null): string | null {
-  if (!val) return null;
-  const trimmed = val.trim();
-  if (['nil', 'null', 'n/a', 'undefined', 'none', '-'].includes(trimmed.toLowerCase())) {
-    return null;
-  }
-  return trimmed;
-}
 
 export async function POST(req: Request) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  
   const { data: caller } = await supabase.from('users').select('role').eq('id', user.id).single();
   if (caller?.role !== 'admin' && caller?.role !== 'manager') {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
+
   try {
     const { users } = await req.json();
     if (!Array.isArray(users)) {
@@ -34,9 +31,12 @@ export async function POST(req: Request) {
 
     for (const user of users) {
       const email = sanitizeField(user.email || user.emp_email);
-      const full_name = sanitizeField(user.full_name);
-      const emp_id = sanitizeField(user.emp_id);
-      const { role, team, manager, hackerrank_id } = user;
+      const emp_email = sanitizeField(user.emp_email);
+      const full_name = sanitizeField(user.full_name || user.name);
+      const emp_id = sanitizeField(user.emp_id || user.empid);
+      const { role, team, manager } = user;
+      const hackerrank_id = parseHackerrankUsername(user.hackerrank_id || user.hackerrank || user.hr_id);
+      const leetcode_id = parseLeetcodeUsername(user.leetcode_id || user.leetcode || user.lc_id);
       const providedPassword = user.temp_password || user.tempPassword || user.password;
 
       if (!email || !full_name || !emp_id) {
@@ -67,12 +67,14 @@ export async function POST(req: Request) {
       const { error: dbError } = await supabaseAdmin.from('users').insert({
         id: userId,
         email,
+        emp_email,
         full_name,
         emp_id,
-        role: (role && role.trim()) ? role.trim().toLowerCase() : 'trainer',
+        role: (role && ['admin', 'manager', 'trainer'].includes(role.trim().toLowerCase())) ? role.trim().toLowerCase() : 'trainer',
         team: sanitizeField(team),
         manager: sanitizeField(manager),
-        hackerrank_id: sanitizeField(hackerrank_id),
+        hackerrank_id,
+        leetcode_id,
       });
 
       if (dbError) {
@@ -99,6 +101,17 @@ export async function POST(req: Request) {
           // Email failure should not block user creation
         }
       }
+    }
+
+    if (created > 0) {
+      try {
+        generateAndUploadCdnSnapshots().catch(() => {});
+        revalidateTag('leaderboard', 'max');
+        revalidateTag('global-stats', 'max');
+        revalidatePath('/admin/users');
+        revalidatePath('/dashboard');
+        revalidatePath('/contests');
+      } catch {}
     }
 
     return NextResponse.json({ created, skipped, errors, createdUsers });

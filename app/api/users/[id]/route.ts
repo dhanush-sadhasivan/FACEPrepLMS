@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server';
 import { getAdminClient } from '@/lib/supabase/admin';
 import { createClient } from '@/lib/supabase/server';
+import { parseHackerrankUsername, sanitizeField } from '@/lib/utils';
+import { parseLeetcodeUsername } from '@/lib/leetcode';
+import { generateAndUploadCdnSnapshots } from '@/lib/cdn-cache';
+import { revalidatePath, revalidateTag } from 'next/cache';
 
 type Params = Promise<{ id: string }>;
 
@@ -8,46 +12,81 @@ export async function PATCH(req: Request, { params }: { params: Params }) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  
   const { data: caller } = await supabase.from('users').select('role').eq('id', user.id).single();
   if (caller?.role !== 'admin' && caller?.role !== 'manager') {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
+
   const { id } = await params;
   try {
     const body = await req.json();
-    const { full_name, emp_id, role, team, manager, hackerrank_id } = body;
+    const { full_name, emp_id, emp_email, email, role, team, manager, hackerrank_id, leetcode_id } = body;
 
-    if (hackerrank_id && hackerrank_id.trim() !== '') {
-      const cleanHr = hackerrank_id.trim();
-      if (!['nil', 'null', 'n/a', 'undefined', 'none', '-'].includes(cleanHr.toLowerCase())) {
-        try {
-          const hrRes = await fetch(`https://www.hackerrank.com/rest/hackers/${encodeURIComponent(cleanHr)}`, {
-            headers: { 'User-Agent': 'Mozilla/5.0' },
-            cache: 'no-store',
-          });
-          if (hrRes.status === 404) {
-            return NextResponse.json({ error: `HackerRank ID "${cleanHr}" does not exist on HackerRank. Please check the spelling.` }, { status: 400 });
-          }
-          if (hrRes.ok) {
-            const hrData = await hrRes.json().catch(() => null);
-            if (hrData?.status === false || (hrData && !hrData.model)) {
-              return NextResponse.json({ error: `HackerRank ID "${cleanHr}" does not exist on HackerRank. Please check the spelling.` }, { status: 400 });
-            }
-          }
-        } catch {
-          // silent fallback
-        }
-      }
+    const cleanName = sanitizeField(full_name);
+    const cleanEmpId = sanitizeField(emp_id);
+    const cleanEmpEmail = sanitizeField(emp_email);
+    const cleanEmail = sanitizeField(email);
+    const cleanTeam = sanitizeField(team);
+    const cleanManager = sanitizeField(manager);
+    const cleanHr = parseHackerrankUsername(hackerrank_id);
+    const cleanLc = parseLeetcodeUsername(leetcode_id);
+
+    if (!cleanName || !cleanEmpId) {
+      return NextResponse.json({ error: 'Full name and Employee ID are required.' }, { status: 400 });
+    }
+
+    const updatePayload: Record<string, any> = {
+      full_name: cleanName,
+      emp_id: cleanEmpId,
+      team: cleanTeam,
+      manager: cleanManager,
+      hackerrank_id: cleanHr,
+      leetcode_id: cleanLc,
+    };
+
+    if (role && ['admin', 'manager', 'trainer'].includes(role.toLowerCase())) {
+      updatePayload.role = role.toLowerCase();
+    }
+
+    if (cleanEmpEmail !== undefined) {
+      updatePayload.emp_email = cleanEmpEmail;
     }
 
     const supabaseAdmin = getAdminClient();
+
+    // If email is provided, also sync email to auth.users and public.users
+    if (cleanEmail) {
+      updatePayload.email = cleanEmail;
+      try {
+        await supabaseAdmin.auth.admin.updateUserById(id, { email: cleanEmail });
+      } catch (authErr: any) {
+        console.warn(`[users/[id]] Auth email update error for ${id}:`, authErr.message);
+      }
+    }
+
     const { data, error } = await supabaseAdmin
       .from('users')
-      .update({ full_name, emp_id, role, team, manager, hackerrank_id })
+      .update(updatePayload)
       .eq('id', id)
       .select()
       .single();
-    if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+
+    // Refresh CDN snapshots in background so updated details reflect across the LMS
+    try {
+      generateAndUploadCdnSnapshots().catch(() => {});
+      revalidateTag('leaderboard', 'max');
+      revalidateTag('global-stats', 'max');
+      revalidatePath('/admin/users');
+      revalidatePath('/profile');
+      revalidatePath('/dashboard');
+      revalidatePath('/contests');
+    } catch {}
+
     return NextResponse.json(data);
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Unknown error';
@@ -59,10 +98,12 @@ export async function DELETE(req: Request, { params }: { params: Params }) {
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  
   const { data: caller } = await supabase.from('users').select('role').eq('id', user.id).single();
   if (caller?.role !== 'admin' && caller?.role !== 'manager') {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
+
   const { id } = await params;
   try {
     const supabaseAdmin = getAdminClient();
@@ -70,6 +111,17 @@ export async function DELETE(req: Request, { params }: { params: Params }) {
     if (dbError) throw dbError;
     const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(id);
     if (authError) throw authError;
+
+    // Refresh CDN snapshots in background
+    try {
+      generateAndUploadCdnSnapshots().catch(() => {});
+      revalidateTag('leaderboard', 'max');
+      revalidateTag('global-stats', 'max');
+      revalidatePath('/admin/users');
+      revalidatePath('/dashboard');
+      revalidatePath('/contests');
+    } catch {}
+
     return NextResponse.json({ success: true });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Unknown error';

@@ -2,6 +2,8 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { parseHackerrankUsername, sanitizeField } from '@/lib/utils';
+import { parseLeetcodeUsername } from '@/lib/leetcode';
 
 type ProfileData = {
   full_name: string;
@@ -18,9 +20,6 @@ export default function ProfileForm({ initialData }: { initialData: any }) {
     leetcode_id: initialData.leetcode_id || '',
   });
   const [loading, setLoading] = useState(false);
-  const [isValidating, setIsValidating] = useState(false);
-  const [hrError, setHrError] = useState<string | null>(null);
-  const [lcError, setLcError] = useState<string | null>(null);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const router = useRouter();
 
@@ -28,71 +27,47 @@ export default function ProfileForm({ initialData }: { initialData: any }) {
     e.preventDefault();
     setLoading(true);
     setMessage(null);
-    setHrError(null);
-    setLcError(null);
 
-    if (formData.hackerrank_id && formData.hackerrank_id.trim() !== '') {
-      const cleanHr = formData.hackerrank_id.trim();
-      if (!['nil', 'null', 'n/a', 'undefined', 'none', '-'].includes(cleanHr.toLowerCase())) {
-        setIsValidating(true);
-        try {
-          const vRes = await fetch(`/api/users/validate-hackerrank?username=${encodeURIComponent(cleanHr)}`);
-          const vData = await vRes.json();
-          if (!vData.valid) {
-            const errTxt = vData.error || `HackerRank ID "${cleanHr}" does not exist on HackerRank.`;
-            setHrError(errTxt);
-            setMessage({ type: 'error', text: errTxt });
-            setLoading(false);
-            setIsValidating(false);
-            return;
-          }
-        } catch {
-          // ignore network failure
-        } finally {
-          setIsValidating(false);
-        }
-      }
-    }
+    const cleanName = sanitizeField(formData.full_name);
+    const cleanEmpEmail = sanitizeField(formData.emp_email);
+    const cleanHr = parseHackerrankUsername(formData.hackerrank_id);
+    const cleanLc = parseLeetcodeUsername(formData.leetcode_id);
 
-    if (formData.leetcode_id && formData.leetcode_id.trim() !== '') {
-      const cleanLc = formData.leetcode_id.trim();
-      if (!['nil', 'null', 'n/a', 'undefined', 'none', '-'].includes(cleanLc.toLowerCase())) {
-        setIsValidating(true);
-        try {
-          const vRes = await fetch(`/api/users/validate-leetcode?username=${encodeURIComponent(cleanLc)}`);
-          const vData = await vRes.json();
-          if (!vData.valid) {
-            const errTxt = vData.error || `LeetCode ID "${cleanLc}" does not exist on LeetCode.`;
-            setLcError(errTxt);
-            setMessage({ type: 'error', text: errTxt });
-            setLoading(false);
-            setIsValidating(false);
-            return;
-          }
-        } catch {
-          // ignore network failure
-        } finally {
-          setIsValidating(false);
-        }
-      }
+    if (!cleanName) {
+      setMessage({ type: 'error', text: 'Full Name is required.' });
+      setLoading(false);
+      return;
     }
 
     try {
       const res = await fetch('/api/users/me', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({
+          full_name: cleanName,
+          emp_email: cleanEmpEmail,
+          hackerrank_id: cleanHr,
+          leetcode_id: cleanLc,
+        }),
       });
 
+      const data = await res.json();
+
       if (!res.ok) {
-        const data = await res.json();
         throw new Error(data.error || 'Failed to update profile');
       }
 
-      setMessage({ type: 'success', text: '✅ Profile updated successfully!' });
+      setFormData({
+        full_name: data.full_name || cleanName,
+        emp_email: data.emp_email || cleanEmpEmail || '',
+        hackerrank_id: data.hackerrank_id || '',
+        leetcode_id: data.leetcode_id || '',
+      });
+
+      setMessage({ type: 'success', text: '✅ Profile updated successfully! Changes saved across all dashboards.' });
       router.refresh();
     } catch (err: any) {
-      setMessage({ type: 'error', text: err.message });
+      setMessage({ type: 'error', text: err.message || 'Failed to update profile' });
     } finally {
       setLoading(false);
     }
@@ -138,45 +113,39 @@ export default function ProfileForm({ initialData }: { initialData: any }) {
         </div>
 
         <div className="form-group-compact full-width">
-          <label htmlFor="hackerrank_id" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <label htmlFor="hackerrank_id">
             <span>HackerRank Username (for progress scraping)</span>
-            {isValidating && <span style={{ fontSize: '0.75rem', color: 'var(--accent)' }}>🔍 Verifying ID on HackerRank…</span>}
           </label>
           <input
             type="text"
             id="hackerrank_id"
             name="hackerrank_id"
-            placeholder="e.g. john_hr"
+            placeholder="e.g. john_hr or profile URL"
             value={formData.hackerrank_id}
-            onChange={(e) => {
-              setHrError(null);
-              handleChange(e);
-            }}
+            onChange={handleChange}
             disabled={loading}
-            style={hrError ? { borderColor: '#ef4444', background: 'rgba(239,68,68,0.05)' } : {}}
           />
-          {hrError && <span style={{ fontSize: '0.8rem', color: '#ef4444', marginTop: '0.25rem', display: 'block', fontWeight: 600 }}>⚠️ {hrError}</span>}
+          <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.2rem', display: 'block' }}>
+            Enter your HackerRank username or profile URL.
+          </span>
         </div>
 
         <div className="form-group-compact full-width">
-          <label htmlFor="leetcode_id" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <label htmlFor="leetcode_id">
             <span>LeetCode Username (for LeetCode progress scraping)</span>
-            {isValidating && <span style={{ fontSize: '0.75rem', color: '#ffa116' }}>🔍 Verifying ID on LeetCode…</span>}
           </label>
           <input
             type="text"
             id="leetcode_id"
             name="leetcode_id"
-            placeholder="e.g. john_lc"
+            placeholder="e.g. john_lc or profile URL"
             value={formData.leetcode_id}
-            onChange={(e) => {
-              setLcError(null);
-              handleChange(e);
-            }}
+            onChange={handleChange}
             disabled={loading}
-            style={lcError ? { borderColor: '#ef4444', background: 'rgba(239,68,68,0.05)' } : {}}
           />
-          {lcError && <span style={{ fontSize: '0.8rem', color: '#ef4444', marginTop: '0.25rem', display: 'block', fontWeight: 600 }}>⚠️ {lcError}</span>}
+          <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.2rem', display: 'block' }}>
+            Enter your LeetCode username or profile URL.
+          </span>
         </div>
       </div>
 

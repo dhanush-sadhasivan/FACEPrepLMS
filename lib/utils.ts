@@ -59,3 +59,42 @@ export function calculateProgress(solved: number, total: number): number {
   if (total === 0) return 0
   return Math.round((solved / total) * 100)
 }
+
+/**
+ * Accepts a raw username, handle, or any HackerRank profile URL and returns the normalized username.
+ * e.g., "https://www.hackerrank.com/profile/jdoe" -> "jdoe"
+ * e.g., "@jdoe" -> "jdoe", "jdoe" -> "jdoe"
+ */
+export function parseHackerrankUsername(input?: string | null): string | null {
+  if (!input) return null;
+  let s = String(input).trim();
+  if (!s) return null;
+  if (['nil', 'null', 'n/a', 'undefined', 'none', '-'].includes(s.toLowerCase())) {
+    return null;
+  }
+  if (s.includes('hackerrank.com')) {
+    try {
+      const url = new URL(s.startsWith('http') ? s : `https://${s}`);
+      const parts = url.pathname.split('/').filter(Boolean);
+      const cleaned = parts[0] === 'profile' || parts[0] === 'hackers' ? parts.slice(1) : parts;
+      s = cleaned[0] || '';
+    } catch {
+      const m = s.match(/hackerrank\.com\/(?:profile\/|hackers\/)?([^/?#]+)/i);
+      s = m ? m[1] : s;
+    }
+  }
+  s = s.replace(/^@+/, '').replace(/[/?#].*$/, '').trim();
+  return s || null;
+}
+
+/**
+ * Sanitizes generic text fields, converting placeholder tokens ('nil', 'n/a', '-') or empty strings to null.
+ */
+export function sanitizeField(val?: string | null): string | null {
+  if (!val) return null;
+  const trimmed = String(val).trim();
+  if (!trimmed || ['nil', 'null', 'n/a', 'undefined', 'none', '-'].includes(trimmed.toLowerCase())) {
+    return null;
+  }
+  return trimmed;
+}

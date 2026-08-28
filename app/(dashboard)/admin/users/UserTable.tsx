@@ -151,6 +151,7 @@ export default function UserTable({ initialUsers = [] }: UserTableProps) {
     setFormData({
       full_name: cleanValue(user.full_name),
       email: cleanValue(user.email),
+      emp_email: cleanValue(user.emp_email),
       emp_id: cleanValue(user.emp_id),
       role: user.role,
       team: cleanValue(user.team),
@@ -554,6 +555,10 @@ export default function UserTable({ initialUsers = [] }: UserTableProps) {
                 <div className="form-group">
                   <label className="label">Email *</label>
                   <input required type="email" name="email" className="input" value={formData.email || ''} onChange={handleChange} disabled={isEditModalOpen} />
+                </div>
+                <div className="form-group">
+                  <label className="label">Employee Email (Optional)</label>
+                  <input type="email" name="emp_email" className="input" placeholder="e.g. trainer@faceprep.in" value={formData.emp_email || ''} onChange={handleChange} />
                 </div>
                 <div className="form-group">
                   <label className="label">Emp ID *</label>
