@@ -36,7 +36,7 @@ export function getCdnStorageUrl(fileName: string): string {
 
 /**
  * Fetch the global leaderboard from the Supabase Storage Smart CDN.
- * Uses Next.js caching with background revalidation.
+ * Uses no-store so every render gets the freshest uploaded file.
  *
  * @returns CachedLeaderboardPayload or null on cache miss
  */
@@ -45,10 +45,7 @@ export async function getCachedGlobalLeaderboard(): Promise<CachedLeaderboardPay
 
   try {
     const res = await fetch(cdnUrl, {
-      next: {
-        revalidate: 60, // Stale-while-revalidate every 60 seconds
-        tags: ['leaderboard', 'global-stats'],
-      },
+      cache: 'no-store',        // Always fetch fresh — the CDN file is the cache
       headers: {
         'Accept': 'application/json',
       },
@@ -70,6 +67,8 @@ export async function getCachedGlobalLeaderboard(): Promise<CachedLeaderboardPay
 
 /**
  * Fetch contest leaderboard and questions from the Supabase Storage Smart CDN.
+ * Uses no-store so every render gets the freshest uploaded file immediately
+ * without waiting for Next.js data-cache revalidation.
  *
  * @param contestId - Contest UUID
  * @returns CachedContestPayload or null on cache miss
@@ -80,10 +79,7 @@ export async function getCachedContestData(contestId: string): Promise<CachedCon
 
   try {
     const res = await fetch(cdnUrl, {
-      next: {
-        revalidate: 60, // Stale-while-revalidate every 60 seconds
-        tags: [`contest-${contestId}`, 'contests'],
-      },
+      cache: 'no-store',        // Always fetch fresh — the CDN file is the cache
       headers: {
         'Accept': 'application/json',
       },
@@ -102,6 +98,7 @@ export async function getCachedContestData(contestId: string): Promise<CachedCon
     return null;
   }
 }
+
 
 /**
  * Fetch pre-computed roadmap analytics snapshot from Supabase Storage CDN.

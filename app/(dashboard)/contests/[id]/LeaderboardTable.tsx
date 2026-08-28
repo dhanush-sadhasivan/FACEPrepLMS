@@ -65,6 +65,26 @@ export default function LeaderboardTable({ contestId, data = [], lastScraped, qu
       setScraping(false);
     }
   };
+
+  const forceRefreshDisplay = async () => {
+    setScraping(true);
+    setScrapeMessage('🔄 Refreshing display from database…');
+    setScrapeError('');
+    try {
+      const res = await fetch(`/api/scrape/revalidate?contestId=${contestId}`, { method: 'POST' });
+      const result = await res.json();
+      if (!res.ok) {
+        setScrapeError(result.error || `Refresh failed (HTTP ${res.status})`);
+      } else {
+        setScrapeMessage('✅ Display refreshed from database!');
+        router.refresh();
+      }
+    } catch (err: any) {
+      setScrapeError(`Refresh error: ${err.message}`);
+    } finally {
+      setScraping(false);
+    }
+  };
   
   // Search & Filter State
   const [searchTerm, setSearchTerm] = useState('');
@@ -445,6 +465,17 @@ export default function LeaderboardTable({ contestId, data = [], lastScraped, qu
                 )}
               </button>
             )
+          )}
+          {isAdminOrManager && (
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={forceRefreshDisplay}
+              disabled={scraping}
+              title="Regenerate leaderboard display from latest database data"
+              style={{ fontSize: '0.8rem' }}
+            >
+              {scraping ? '⏳' : '↻ Refresh Display'}
+            </button>
           )}
           {data.length > 0 && (
             <button className="btn btn-secondary btn-sm" onClick={exportCsv} style={{ fontSize: '0.8rem' }}>
