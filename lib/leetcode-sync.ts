@@ -1,6 +1,7 @@
 import { getAdminClient } from '@/lib/supabase/admin';
 import { fetchProfileStats, fetchRecentAc, parseProblemSlug, sleep } from '@/lib/leetcode';
-import { revalidatePath } from 'next/cache';
+import { revalidatePath, revalidateTag } from 'next/cache';
+import { generateAndUploadCdnSnapshots } from '@/lib/cdn-cache';
 
 export async function syncLeetCodeContest(contestId: string): Promise<{
   success: boolean;
@@ -117,7 +118,9 @@ export async function syncLeetCodeContest(contestId: string): Promise<{
       }
 
       // 2. Fetch recent AC submissions
-      const recentAc = await fetchRecentAc(u.leetcode_id, 30);
+      // Use a generous limit (100) so that problems solved earlier in the user's
+      // history are still captured — the default of 30 was too small for active users.
+      const recentAc = await fetchRecentAc(u.leetcode_id, 100);
       const acMap = new Map<string, any>();
       recentAc.forEach((r) => {
         const sl = parseProblemSlug(r.titleSlug);
@@ -164,7 +167,20 @@ export async function syncLeetCodeContest(contestId: string): Promise<{
     .update({ last_scraped_at: new Date().toISOString() })
     .eq('id', contestId);
 
+  // Regenerate CDN snapshot so the LMS leaderboard page immediately reads
+  // fresh data instead of the stale Supabase Storage file.
   try {
+    await generateAndUploadCdnSnapshots(contestId);
+    console.log(`[leetcode-sync] CDN snapshot regenerated for contest ${contestId}`);
+  } catch (cdnErr: any) {
+    console.warn(`[leetcode-sync] CDN regeneration failed (non-fatal):`, cdnErr.message);
+  }
+
+  // Bust Next.js fetch cache so the next page request reads the new CDN file
+  try {
+    revalidateTag(`contest-${contestId}`, 'max');
+    revalidateTag('contests', 'max');
+    revalidateTag('leaderboard', 'max');
     revalidatePath(`/contests/${contestId}`);
     revalidatePath('/contests');
     revalidatePath('/dashboard');
@@ -177,3 +193,4 @@ export async function syncLeetCodeContest(contestId: string): Promise<{
     totalNewlySolved,
   };
 }
+

@@ -3,7 +3,8 @@ import { createClient } from '@/lib/supabase/server';
 import { getAdminClient } from '@/lib/supabase/admin';
 import { fetchProfileStats, fetchRecentAc, parseProblemSlug, sleep } from '@/lib/leetcode';
 import { syncLeetCodeContest } from '@/lib/leetcode-sync';
-import { revalidatePath } from 'next/cache';
+import { revalidatePath, revalidateTag } from 'next/cache';
+import { generateAndUploadCdnSnapshots } from '@/lib/cdn-cache';
 
 export async function POST(req: Request) {
   const supabase = await createClient();
@@ -131,12 +132,25 @@ export async function POST(req: Request) {
             if (!upsertErr) newlyCompleted++;
           }
         }
+
+        // Regenerate CDN snapshot for this contest so the leaderboard shows fresh data
+        try {
+          await generateAndUploadCdnSnapshots(contest.id);
+        } catch (cdnErr: any) {
+          console.warn(`[leetcode/sync] CDN regeneration failed for ${contest.id}:`, cdnErr.message);
+        }
       }
 
       try {
         revalidatePath('/contests');
         revalidatePath('/dashboard');
         revalidatePath('/leetcode');
+        for (const contest of assignedContests || []) {
+          revalidateTag(`contest-${contest.id}`, 'max');
+          revalidatePath(`/contests/${contest.id}`);
+        }
+        revalidateTag('contests', 'max');
+        revalidateTag('leaderboard', 'max');
       } catch {}
 
       return NextResponse.json({

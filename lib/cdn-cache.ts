@@ -153,7 +153,7 @@ export async function generateAndUploadCdnSnapshots(contestId?: string): Promise
     while (true) {
       const { data: uPage } = await dbAdmin
         .from('users')
-        .select('id, full_name, emp_id, team')
+        .select('id, full_name, emp_id, team, hackerrank_id, leetcode_id')
         .neq('role', 'admin')
         .order('id', { ascending: true })
         .range(uFrom, uFrom + uStep - 1);
@@ -293,6 +293,8 @@ export async function generateAndUploadCdnSnapshots(contestId?: string): Promise
               name: u.full_name || 'Anonymous',
               emp_id: u.emp_id || '—',
               team: u.team || 'N/A',
+              hackerrank_id: u.hackerrank_id || null,
+              leetcode_id: u.leetcode_id || null,
               solved: 0,
               total: enabledQuestions.length,
               score: 0,
