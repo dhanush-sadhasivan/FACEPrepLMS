@@ -11,7 +11,12 @@ export async function GET() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   
-  const { data } = await supabase.from('users').select('*').eq('id', user.id).single();
+  const dbAdmin = getAdminClient();
+  const { data } = await dbAdmin
+    .from('users')
+    .select('*, updater:users!updated_by(id, full_name, role)')
+    .eq('id', user.id)
+    .single();
   return NextResponse.json(data);
 }
 
@@ -58,18 +63,21 @@ export async function PATCH(req: Request) {
       }
     }
 
+    const now = new Date().toISOString();
     const updatePayload: Record<string, any> = {
       full_name: cleanName,
       emp_email: cleanEmpEmail,
       hackerrank_id: cleanHr,
       leetcode_id: cleanLc,
+      updated_by: user.id,
+      updated_at: now,
     };
 
     const { data, error } = await supabaseAdmin
       .from('users')
       .update(updatePayload)
       .eq('id', user.id)
-      .select()
+      .select('*, updater:users!updated_by(id, full_name, role)')
       .single();
       
     if (error) {

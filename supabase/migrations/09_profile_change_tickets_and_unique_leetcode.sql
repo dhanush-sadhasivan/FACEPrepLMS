@@ -8,7 +8,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_users_unique_leetcode_id
   ON public.users (lower(trim(leetcode_id)))
   WHERE leetcode_id IS NOT NULL AND trim(leetcode_id) != '';
 
--- 2. Create support_tickets table for profile changes and support requests
+-- 2. Add audit trace columns to public.users to track who updated a user's profile
+ALTER TABLE public.users
+  ADD COLUMN IF NOT EXISTS updated_by uuid REFERENCES public.users(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS updated_at timestamptz DEFAULT now();
+
+-- 3. Create support_tickets table for profile changes and support requests
 CREATE TABLE IF NOT EXISTS public.support_tickets (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,

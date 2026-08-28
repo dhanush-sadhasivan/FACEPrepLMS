@@ -61,7 +61,10 @@ export async function PATCH(req: Request, { params }: { params: Params }) {
       }
 
       // 2. Apply requested changes to public.users
-      const updatePayload: Record<string, any> = {};
+      const updatePayload: Record<string, any> = {
+        updated_by: user.id,
+        updated_at: resolvedAt,
+      };
       if (requested.full_name) updatePayload.full_name = requested.full_name;
       if (requested.emp_email !== undefined) updatePayload.emp_email = requested.emp_email || null;
       if (requested.hackerrank_id !== undefined) updatePayload.hackerrank_id = requested.hackerrank_id || null;

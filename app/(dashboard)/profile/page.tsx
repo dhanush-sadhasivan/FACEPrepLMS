@@ -30,7 +30,7 @@ export default async function ProfilePage() {
 
   const { data: profile } = await supabase
     .from('users')
-    .select('*')
+    .select('*, updater:users!updated_by(id, full_name, role)')
     .eq('id', user.id)
     .single();
 

@@ -36,6 +36,7 @@ export async function PATCH(req: Request, { params }: { params: Params }) {
       return NextResponse.json({ error: 'Full name and Employee ID are required.' }, { status: 400 });
     }
 
+    const now = new Date().toISOString();
     const updatePayload: Record<string, any> = {
       full_name: cleanName,
       emp_id: cleanEmpId,
@@ -43,6 +44,8 @@ export async function PATCH(req: Request, { params }: { params: Params }) {
       manager: cleanManager,
       hackerrank_id: cleanHr,
       leetcode_id: cleanLc,
+      updated_by: user.id,
+      updated_at: now,
     };
 
     if (role && ['admin', 'manager', 'trainer'].includes(role.toLowerCase())) {

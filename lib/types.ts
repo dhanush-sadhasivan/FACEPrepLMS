@@ -18,6 +18,13 @@ export interface User {
   leetcode_id?: string | null
   role: UserRole
   created_at: string
+  updated_by?: string | null
+  updated_at?: string | null
+  updater?: {
+    id: string
+    full_name: string
+    role?: string
+  } | null
 }
 
 export interface Group {
