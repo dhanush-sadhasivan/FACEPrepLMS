@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
+import Link from 'next/link';
 import { User } from '@/lib/types';
 import { useToast } from '@/components/Toast';
 
@@ -388,7 +389,13 @@ export default function UserTable({ initialUsers = [] }: UserTableProps) {
                     <div className="user-identity-cell">
                       <div className="user-avatar">{getInitials(u.full_name)}</div>
                       <div className="user-name-box">
-                        <span className="user-full-name">{u.full_name || 'Unnamed User'}</span>
+                        <Link
+                          href={`/users/${u.id}`}
+                          style={{ textDecoration: 'none', color: 'inherit' }}
+                          title="View performance profile"
+                        >
+                          <span className="user-full-name" style={{ cursor: 'pointer' }}>{u.full_name || 'Unnamed User'}</span>
+                        </Link>
                         <span className="user-email-text">{u.email}</span>
                       </div>
                     </div>

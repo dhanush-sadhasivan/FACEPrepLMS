@@ -1,0 +1,182 @@
+﻿/* ─────────────────────────────────────────────────────────────────────────
+   USER PERFORMANCE PROFILE PAGE
+   Inspired by HackerRank / LeetCode profile aesthetic
+───────────────────────────────────────────────────────────────────────── */
+
+.up-page {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 0 0 3rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+/* ── Hero Card ──────────────────────────────────────────────────────── */
+.up-hero-card {
+  background: var(--gradient-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+
+.up-hero-banner {
+  height: 120px;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 40%, #0f3460 70%, var(--accent) 100%);
+}
+
+.up-hero-body { padding: 0 1.75rem 1.5rem; }
+
+.up-hero-avatar-row {
+  margin-top: -50px;
+  margin-bottom: 0.75rem;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.up-avatar {
+  width: 96px; height: 96px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent) 0%, var(--indigo) 100%);
+  color: #fff;
+  font-size: 2.4rem; font-weight: 900;
+  display: flex; align-items: center; justify-content: center;
+  border: 4px solid var(--surface);
+  box-shadow: 0 4px 18px rgba(0,0,0,0.2);
+  flex-shrink: 0;
+  letter-spacing: -1px;
+}
+
+.up-hero-actions { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.25rem; }
+
+.up-hero-name {
+  font-size: 1.6rem; font-weight: 900;
+  margin: 0 0 0.5rem;
+  color: var(--text-primary);
+  letter-spacing: -0.5px;
+}
+
+.up-hero-meta { display: flex; flex-wrap: wrap; gap: 0.45rem; align-items: center; }
+
+.up-meta-pill {
+  font-size: 0.75rem; font-weight: 600;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  white-space: nowrap;
+  text-decoration: none;
+  transition: border-color 0.15s;
+}
+.up-meta-pill:hover { border-color: var(--accent); color: var(--accent); }
+.up-meta-pill.hr { background: rgba(99,102,241,0.08); color: var(--accent); border-color: rgba(99,102,241,0.25); }
+.up-meta-pill.lc { background: rgba(255,161,22,0.08); color: #ffa116; border-color: rgba(255,161,22,0.25); }
+.up-meta-pill.role-admin { background: rgba(239,68,68,0.08); color: var(--error); border-color: rgba(239,68,68,0.2); }
+.up-meta-pill.role-manager { background: rgba(245,158,11,0.08); color: #f59e0b; border-color: rgba(245,158,11,0.2); }
+
+/* ── Stats Grid ─────────────────────────────────────────────────────── */
+.up-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.75rem;
+}
+.up-stat-card {
+  background: var(--gradient-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.9rem 1rem;
+  display: flex; flex-direction: column; gap: 0.15rem;
+  box-shadow: var(--shadow-sm);
+}
+.up-stat-value { font-size: 1.6rem; font-weight: 900; line-height: 1; color: var(--text-primary); }
+.up-stat-label { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-top: 0.2rem; }
+
+/* ── Section Cards ──────────────────────────────────────────────────── */
+.up-section-card {
+  background: var(--gradient-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.25rem 1.5rem;
+  box-shadow: var(--shadow-sm);
+}
+.up-section-title { font-size: 0.95rem; font-weight: 800; color: var(--text-primary); margin: 0 0 1rem; display: flex; align-items: center; gap: 0.45rem; }
+
+/* ── Heatmap ────────────────────────────────────────────────────────── */
+.up-heatmap-wrapper { overflow-x: auto; padding-bottom: 0.25rem; }
+.up-heatmap-grid { display: flex; gap: 3px; min-width: max-content; }
+.up-heatmap-col { display: flex; flex-direction: column; gap: 3px; }
+.up-heatmap-cell {
+  width: 13px; height: 13px;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.up-heatmap-cell:hover { opacity: 0.75; outline: 1px solid var(--accent); }
+.up-heatmap-legend { display: flex; align-items: center; gap: 4px; font-size: 0.68rem; color: var(--text-muted); margin-top: 0.6rem; justify-content: flex-end; }
+.up-heatmap-legend-cell { width: 11px; height: 11px; border-radius: 2px; }
+
+/* ── LeetCode ───────────────────────────────────────────────────────── */
+.up-lc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 0.65rem; margin-bottom: 0.85rem; }
+.up-lc-metric { background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 0.7rem; text-align: center; }
+.up-lc-metric-value { font-size: 1.5rem; font-weight: 900; line-height: 1; }
+.up-lc-metric-label { font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); margin-top: 0.2rem; }
+.up-diff-bar { height: 7px; border-radius: 999px; display: flex; overflow: hidden; background: var(--surface-3); margin-bottom: 0.75rem; }
+.up-diff-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 0.5rem; text-align: center; }
+.up-diff-item { border-radius: 8px; padding: 0.5rem; }
+
+/* ── Contest List ───────────────────────────────────────────────────── */
+.up-contest-tabs { display: flex; gap: 0.35rem; margin-bottom: 1rem; flex-wrap: wrap; }
+.up-tab-btn {
+  padding: 0.35rem 0.9rem; border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-2); color: var(--text-secondary);
+  font-size: 0.78rem; font-weight: 700; cursor: pointer;
+  transition: all 0.15s ease;
+}
+.up-tab-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.up-contest-list { display: flex; flex-direction: column; gap: 0.65rem; }
+.up-contest-card { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: var(--surface-2); transition: border-color 0.15s; }
+.up-contest-card:hover { border-color: var(--accent); }
+.up-contest-summary {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 0.75rem 1rem; cursor: pointer; list-style: none; gap: 1rem;
+}
+.up-contest-summary::-webkit-details-marker { display: none; }
+.up-contest-info { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
+.up-contest-title { font-size: 0.9rem; font-weight: 700; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.up-contest-meta { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; font-size: 0.72rem; color: var(--text-muted); }
+.up-platform-badge { font-size: 0.65rem; font-weight: 700; padding: 0.08rem 0.4rem; border-radius: 999px; }
+.up-platform-badge.hr { background: rgba(99,102,241,0.12); color: var(--accent); }
+.up-platform-badge.lc { background: rgba(255,161,22,0.12); color: #ffa116; }
+.up-contest-score-chip { display: flex; flex-direction: column; align-items: flex-end; flex-shrink: 0; gap: 0.1rem; }
+.up-contest-solved { font-size: 0.88rem; font-weight: 800; color: var(--text-primary); }
+.up-contest-pts { font-size: 0.7rem; color: var(--accent); font-weight: 700; }
+.up-mini-progress { width: 90px; height: 4px; background: var(--surface-3); border-radius: 999px; overflow: hidden; margin-top: 0.15rem; }
+.up-mini-progress-fill { height: 100%; border-radius: 999px; transition: width 0.3s; }
+
+/* ── Problem Table ──────────────────────────────────────────────────── */
+.up-question-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.up-question-table th { padding: 0.45rem 0.75rem; text-align: left; font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); background: var(--surface-3); border-bottom: 1px solid var(--border); }
+.up-question-table td { padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border); vertical-align: middle; color: var(--text-primary); }
+.up-question-table tr:last-child td { border-bottom: none; }
+.up-question-table tr:hover td { background: var(--surface-3); }
+
+.up-status-badge { display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.7rem; font-weight: 700; padding: 0.15rem 0.5rem; border-radius: 999px; }
+.up-status-badge.solved { background: rgba(16,185,129,0.12); color: #10b981; }
+.up-status-badge.attempted { background: rgba(245,158,11,0.12); color: #f59e0b; }
+.up-status-badge.unattempted { background: var(--surface-3); color: var(--text-muted); }
+
+.up-problem-link { color: var(--text-primary); text-decoration: none; font-weight: 500; transition: color 0.15s; }
+.up-problem-link:hover { color: var(--accent); }
+
+/* ── Misc ───────────────────────────────────────────────────────────── */
+.up-back-link { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.82rem; color: var(--text-muted); text-decoration: none; padding: 0.35rem 0; transition: color 0.15s; }
+.up-back-link:hover { color: var(--accent); }
+.up-empty { text-align: center; padding: 3rem 1rem; color: var(--text-muted); font-size: 0.88rem; }
+.up-empty-icon { font-size: 2.5rem; margin-bottom: 0.5rem; }

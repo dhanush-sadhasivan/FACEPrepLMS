@@ -675,7 +675,7 @@ export default function LeetCodeProgressWidget({
             })()}
 
             {/* Modal Actions */}
-            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', paddingTop: '0.25rem' }}>
+            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end', paddingTop: '0.25rem', flexWrap: 'wrap' }}>
               <button
                 className="btn btn-secondary btn-sm"
                 onClick={() => handleSyncUser(selectedUser.user_id)}
@@ -693,6 +693,14 @@ export default function LeetCodeProgressWidget({
               >
                 Open LeetCode Profile ↗
               </a>
+              <Link
+                href={`/users/${selectedUser.user_id}`}
+                className="btn btn-secondary btn-sm"
+                style={{ fontSize: '0.8rem' }}
+                onClick={() => setSelectedUser(null)}
+              >
+                View Full Profile →
+              </Link>
             </div>
           </div>
         </div>

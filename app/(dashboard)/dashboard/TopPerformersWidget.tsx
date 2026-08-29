@@ -209,7 +209,10 @@ export default function TopPerformersWidget({ performers, currentUserId }: TopPe
                     background: isCurrentUser ? 'rgba(99, 102, 241, 0.08)' : 'var(--surface-2)',
                     border: isCurrentUser ? '1px solid var(--accent)' : '1px solid var(--border)',
                     transition: 'transform 0.2s ease',
+                    cursor: p.user_id ? 'pointer' : 'default',
                   }}
+                  onClick={() => p.user_id && router.push(`/users/${p.user_id}`)}
+                  title={p.user_id ? 'View performance profile' : undefined}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', minWidth: 0 }}>
                     {/* Rank Badge */}
@@ -372,7 +375,10 @@ export default function TopPerformersWidget({ performers, currentUserId }: TopPe
                             borderBottom: '1px solid var(--border)',
                             background: isCurrentUser ? 'rgba(99, 102, 241, 0.08)' : 'transparent',
                             fontWeight: isCurrentUser ? 700 : 400,
+                            cursor: p.user_id ? 'pointer' : 'default',
                           }}
+                          onClick={() => p.user_id && router.push(`/users/${p.user_id}`)}
+                          title={p.user_id ? 'View performance profile' : undefined}
                         >
                           <td style={{ padding: '0.65rem 0.5rem' }}>
                             <span style={{

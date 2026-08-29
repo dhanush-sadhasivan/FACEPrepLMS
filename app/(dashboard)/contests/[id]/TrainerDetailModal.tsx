@@ -1,5 +1,7 @@
 'use client';
 
+import Link from 'next/link';
+
 export default function TrainerDetailModal({ trainer, questions, onClose }: any) {
   // Group questions by domain and map progress
   const domainMap = new Map();
@@ -50,7 +52,17 @@ export default function TrainerDetailModal({ trainer, questions, onClose }: any)
               Emp ID: <code>{trainer.emp_id}</code> &bull; Team: {trainer.team} &bull; Score: <strong style={{ color: 'var(--accent)' }}>{trainer.score} pts</strong> ({trainer.solved}/{trainer.total} solved)
             </p>
           </div>
-          <button className="btn btn-ghost btn-sm" onClick={onClose} style={{ fontSize: '1.25rem' }}>&times;</button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <Link
+              href={`/users/${trainer.user_id}`}
+              className="btn btn-secondary btn-sm"
+              style={{ fontSize: '0.75rem', whiteSpace: 'nowrap' }}
+              onClick={onClose}
+            >
+              View Full Profile →
+            </Link>
+            <button className="btn btn-ghost btn-sm" onClick={onClose} style={{ fontSize: '1.25rem' }}>&times;</button>
+          </div>
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
