@@ -7,6 +7,10 @@ export interface TodoItem {
   user_id?: string;
   title?: string;
   task?: string;
+  description?: string | null;
+  priority?: string;
+  category?: string;
+  due_date?: string | null;
   is_completed: boolean;
   created_at?: string;
 }
@@ -147,10 +151,15 @@ export default function GlobalFloatingTodo() {
         /* ── Floating Window Card ─────────────────────────────────────────── */
         <div
           style={{
-            width: '360px', maxHeight: '520px', background: 'var(--gradient-card)',
-            border: '1px solid var(--border)', borderRadius: '16px',
-            boxShadow: '0 20px 40px rgba(0, 0, 0, 0.25)', display: 'flex',
-            flexDirection: 'column', overflow: 'hidden',
+            width: 'min(420px, calc(100vw - 32px))',
+            maxHeight: 'min(580px, calc(100vh - 120px))',
+            background: 'var(--gradient-card)',
+            border: '1px solid var(--border)',
+            borderRadius: '16px',
+            boxShadow: '0 20px 40px rgba(0, 0, 0, 0.25)',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
           }}
         >
           {/* Header */}
@@ -196,23 +205,54 @@ export default function GlobalFloatingTodo() {
           </div>
 
           {/* New Task Input */}
-          <form onSubmit={handleAddTodo} style={{ padding: '0.85rem 1rem', borderBottom: '1px solid var(--border)', display: 'flex', gap: '0.5rem' }}>
-            <input
-              type="text"
-              placeholder="+ Add a quick note or task..."
+          <form
+            onSubmit={handleAddTodo}
+            style={{
+              padding: '0.85rem 1rem',
+              borderBottom: '1px solid var(--border)',
+              display: 'flex',
+              gap: '0.5rem',
+              alignItems: 'flex-end',
+            }}
+          >
+            <textarea
+              rows={2}
+              placeholder="+ Add a note or task (Enter to add, Shift+Enter for new line)..."
               value={newTask}
               onChange={e => setNewTask(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleAddTodo(e);
+                }
+              }}
               style={{
-                flex: 1, padding: '0.5rem 0.75rem', borderRadius: '8px',
-                border: '1px solid var(--border)', background: 'var(--surface-2)',
-                color: 'var(--text-primary)', fontSize: '0.82rem', outline: 'none',
+                flex: 1,
+                padding: '0.5rem 0.75rem',
+                borderRadius: '8px',
+                border: '1px solid var(--border)',
+                background: 'var(--surface-2)',
+                color: 'var(--text-primary)',
+                fontSize: '0.82rem',
+                outline: 'none',
+                resize: 'none',
+                minHeight: '40px',
+                maxHeight: '100px',
+                lineHeight: 1.4,
+                fontFamily: 'inherit',
               }}
             />
             <button
               type="submit"
               disabled={!newTask.trim() || adding}
               className="btn btn-primary btn-sm"
-              style={{ padding: '0.4rem 0.75rem', fontSize: '0.8rem', fontWeight: 700 }}
+              style={{
+                padding: '0.45rem 0.85rem',
+                fontSize: '0.8rem',
+                fontWeight: 700,
+                height: '38px',
+                flexShrink: 0,
+              }}
             >
               Add
             </button>
@@ -230,44 +270,85 @@ export default function GlobalFloatingTodo() {
                 No notes created yet. Type a note above to add one!
               </div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                 {todos.map(t => {
                   const displayText = t.title || t.task || 'Untitled note';
                   return (
                     <div
                       key={t.id}
                       style={{
-                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                        padding: '0.5rem 0.65rem', borderRadius: '8px',
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        justifyContent: 'space-between',
+                        padding: '0.6rem 0.75rem',
+                        borderRadius: '8px',
                         background: t.is_completed ? 'var(--surface-2)' : 'var(--surface-3)',
                         border: '1px solid var(--border)',
                         opacity: t.is_completed ? 0.65 : 1,
                         transition: 'all 0.2s ease',
+                        gap: '0.5rem',
                       }}
                     >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.65rem', flex: 1, minWidth: 0 }}>
                         <input
                           type="checkbox"
                           checked={t.is_completed}
                           onChange={() => handleToggleTodo(t.id, t.is_completed)}
-                          style={{ cursor: 'pointer', accentColor: 'var(--accent)' }}
+                          style={{
+                            cursor: 'pointer',
+                            accentColor: 'var(--accent)',
+                            marginTop: '0.2rem',
+                            flexShrink: 0,
+                            width: '15px',
+                            height: '15px',
+                          }}
                         />
-                        <span style={{
-                          fontSize: '0.83rem', color: 'var(--text-primary)',
-                          textDecoration: t.is_completed ? 'line-through' : 'none',
-                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                        }}>
-                          {displayText}
-                        </span>
+                        <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, gap: '0.2rem' }}>
+                          <span
+                            title={displayText}
+                            style={{
+                              fontSize: '0.83rem',
+                              lineHeight: '1.45',
+                              color: 'var(--text-primary)',
+                              textDecoration: t.is_completed ? 'line-through' : 'none',
+                              wordBreak: 'break-word',
+                              overflowWrap: 'anywhere',
+                              whiteSpace: 'pre-wrap',
+                            }}
+                          >
+                            {displayText}
+                          </span>
+                          {t.description && t.description !== displayText && (
+                            <span
+                              style={{
+                                fontSize: '0.76rem',
+                                lineHeight: '1.4',
+                                color: 'var(--text-muted)',
+                                textDecoration: t.is_completed ? 'line-through' : 'none',
+                                wordBreak: 'break-word',
+                                overflowWrap: 'anywhere',
+                                whiteSpace: 'pre-wrap',
+                              }}
+                            >
+                              {t.description}
+                            </span>
+                          )}
+                        </div>
                       </div>
 
                       <button
                         onClick={() => handleDeleteTodo(t.id)}
                         title="Delete note"
                         style={{
-                          background: 'transparent', border: 'none', color: 'var(--text-muted)',
-                          cursor: 'pointer', fontSize: '0.85rem', padding: '0.1rem 0.3rem',
-                          marginLeft: '0.4rem', opacity: 0.7,
+                          background: 'transparent',
+                          border: 'none',
+                          color: 'var(--text-muted)',
+                          cursor: 'pointer',
+                          fontSize: '0.85rem',
+                          padding: '0.1rem 0.3rem',
+                          opacity: 0.7,
+                          flexShrink: 0,
+                          marginTop: '0.1rem',
                         }}
                         onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
                         onMouseLeave={e => (e.currentTarget.style.opacity = '0.7')}
