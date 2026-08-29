@@ -1,6 +1,6 @@
 ﻿import { createClient } from '@/lib/supabase/server';
-import { getAdminClient } from '@/lib/supabase/admin';
 import { redirect } from 'next/navigation';
+import { getUserPerformanceProfile } from '@/lib/user-performance-profile';
 import UserProfileClient from './UserProfileClient';
 import './page.css';
 
@@ -9,11 +9,15 @@ export default async function UserProfilePage({
 }: {
   params: Promise<{ userId: string }>;
 }) {
-  const { userId } = await params;
+  let { userId } = await params;
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
   if (!user) redirect('/login');
+
+  if (userId === 'me') {
+    userId = user.id;
+  }
 
   const { data: viewer } = await supabase
     .from('users')
@@ -27,24 +31,25 @@ export default async function UserProfilePage({
     redirect('/dashboard');
   }
 
-  const dbAdmin = getAdminClient();
-  const { data: profileData, error } = await dbAdmin.rpc(
-    'get_user_performance_profile',
-    { target_user_id: userId }
-  );
+  const result = await getUserPerformanceProfile(userId);
 
-  if (error || !profileData || (profileData as any).error) {
+  if (!result.success || !result.data) {
     return (
       <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-        <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>😕</div>
-        <div>User profile not found.</div>
+        <div style={{ fontSize: '2.2rem', marginBottom: '0.5rem' }}>😕</div>
+        <div style={{ fontWeight: 700, fontSize: '1.15rem', color: 'var(--text-primary)', marginBottom: '0.35rem' }}>
+          User Profile Not Found
+        </div>
+        <div style={{ fontSize: '0.85rem' }}>
+          {result.error || 'The requested user could not be found or has not participated in any tracked activities.'}
+        </div>
       </div>
     );
   }
 
   return (
     <UserProfileClient
-      data={profileData as any}
+      data={result.data}
       viewerRole={viewerRole}
       currentUserId={user.id}
     />

@@ -1,5 +1,5 @@
 ﻿import { createClient } from '@/lib/supabase/server';
-import { getAdminClient } from '@/lib/supabase/admin';
+import { getUserPerformanceProfile } from '@/lib/user-performance-profile';
 import { NextResponse } from 'next/server';
 
 export async function GET(
@@ -10,7 +10,10 @@ export async function GET(
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const { userId } = await params;
+  let { userId } = await params;
+  if (userId === 'me') {
+    userId = user.id;
+  }
 
   // Fetch viewer role
   const { data: viewer } = await supabase
@@ -26,19 +29,10 @@ export async function GET(
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
-  const dbAdmin = getAdminClient();
-  const { data, error } = await dbAdmin.rpc('get_user_performance_profile', {
-    target_user_id: userId,
-  });
-
-  if (error) {
-    console.error('[profile/route] RPC error:', error.message);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  const result = await getUserPerformanceProfile(userId);
+  if (!result.success || !result.data) {
+    return NextResponse.json({ error: result.error || 'User not found' }, { status: 404 });
   }
 
-  if (!data || (data as any).error) {
-    return NextResponse.json({ error: (data as any)?.error || 'User not found' }, { status: 404 });
-  }
-
-  return NextResponse.json({ ...data, viewerRole });
+  return NextResponse.json({ ...result.data, viewerRole });
 }
