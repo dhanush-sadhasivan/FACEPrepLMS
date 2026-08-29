@@ -53,10 +53,10 @@ export default function ITAttendanceModal() {
       {/* Celebration Toast */}
       {toastMsg && (
         <div style={{
-          position: 'fixed', bottom: 24, right: 24, zIndex: 99999,
-          background: 'linear-gradient(135deg, #10b981, #059669)',
-          color: '#fff', padding: '0.85rem 1.25rem', borderRadius: '12px',
-          fontWeight: 700, fontSize: '0.9rem', boxShadow: '0 10px 25px rgba(16, 185, 129, 0.4)',
+          position: 'fixed', bottom: 28, left: '50%', transform: 'translateX(-50%)', zIndex: 99999,
+          background: 'linear-gradient(135deg, var(--success), #059669)',
+          color: '#fff', padding: '0.85rem 1.35rem', borderRadius: 'var(--radius-full)',
+          fontWeight: 700, fontSize: '0.9rem', boxShadow: '0 10px 30px rgba(16, 185, 129, 0.45)',
           display: 'flex', alignItems: 'center', gap: '0.5rem',
           animation: 'slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
         }}>
@@ -66,12 +66,12 @@ export default function ITAttendanceModal() {
 
       {/* IT Attendance Modal Prompt */}
       {showModal && (
-        <div className="modal-overlay" style={{ zIndex: 99998, background: 'rgba(0, 0, 0, 0.75)', backdropFilter: 'blur(4px)' }}>
-          <div className="modal" style={{ maxWidth: 460, padding: '2rem', borderRadius: '20px', textAlign: 'center', border: '1px solid var(--border)' }}>
+        <div className="modal-overlay" style={{ zIndex: 99998, background: 'rgba(0, 0, 0, 0.7)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' }}>
+          <div className="modal" style={{ maxWidth: 460, padding: '2rem', borderRadius: 'var(--radius-xl)', textAlign: 'center', border: '1px solid var(--border)', background: 'var(--gradient-card)', boxShadow: 'var(--shadow-lg)' }}>
             <div style={{
-              width: 64, height: 64, borderRadius: '50%', background: 'rgba(99, 102, 241, 0.15)',
-              color: '#6366f1', display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: '2rem', margin: '0 auto 1.25rem auto', border: '1px solid rgba(99, 102, 241, 0.3)',
+              width: 64, height: 64, borderRadius: '50%', background: 'var(--indigo-muted)',
+              color: 'var(--indigo)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: '2rem', margin: '0 auto 1.25rem auto', border: '1px solid var(--border)',
             }}>
               🎓
             </div>
@@ -84,7 +84,7 @@ export default function ITAttendanceModal() {
               Did you conduct or participate in <strong>Internal Training (IT)</strong> today?
             </p>
 
-            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '1.5rem', background: 'var(--surface-2)', padding: '0.5rem 0.85rem', borderRadius: '8px', display: 'inline-block' }}>
+            <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginBottom: '1.5rem', background: 'var(--surface-3)', border: '1px solid var(--border)', padding: '0.5rem 0.85rem', borderRadius: 'var(--radius-full)', display: 'inline-block' }}>
               🗓️ Today: {new Date().toLocaleDateString('en-IN', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
             </div>
 
@@ -96,7 +96,7 @@ export default function ITAttendanceModal() {
                 style={{
                   padding: '0.8rem', fontWeight: 800, fontSize: '0.95rem',
                   background: 'linear-gradient(135deg, #10b981, #059669)',
-                  border: 'none', borderRadius: '12px',
+                  border: 'none', borderRadius: 'var(--radius)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem',
                   boxShadow: '0 4px 14px rgba(16, 185, 129, 0.35)',
                 }}
@@ -110,7 +110,7 @@ export default function ITAttendanceModal() {
                 className="btn btn-secondary"
                 style={{
                   padding: '0.75rem', fontWeight: 700, fontSize: '0.9rem',
-                  borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem',
+                  borderRadius: 'var(--radius)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem',
                 }}
               >
                 <span>❌</span> No, not today

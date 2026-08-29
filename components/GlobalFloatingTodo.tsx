@@ -102,14 +102,14 @@ export default function GlobalFloatingTodo() {
   const activeCount = todos.filter(t => !t.is_completed).length;
 
   return (
-    <div style={{ position: 'fixed', bottom: '24px', right: '24px', zIndex: 9990 }}>
+    <div style={{ position: 'fixed', bottom: '88px', right: '24px', zIndex: 9990 }}>
       {/* ── Minimized Floating Pill Badge Button ──────────────────────────── */}
       {!isOpen ? (
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
           <button
             onClick={() => setIsOpen(true)}
             style={{
-              background: 'var(--surface)', border: '1.5px solid var(--accent)',
+              background: 'var(--gradient-card)', border: '1.5px solid var(--accent)',
               borderRadius: '999px', padding: '0.6rem 1.1rem', color: 'var(--text-primary)',
               fontSize: '0.85rem', fontWeight: 700, cursor: 'pointer',
               boxShadow: 'var(--shadow-lg), 0 0 16px rgba(99, 102, 241, 0.25)',
@@ -147,7 +147,7 @@ export default function GlobalFloatingTodo() {
         /* ── Floating Window Card ─────────────────────────────────────────── */
         <div
           style={{
-            width: '360px', maxHeight: '520px', background: 'var(--surface)',
+            width: '360px', maxHeight: '520px', background: 'var(--gradient-card)',
             border: '1px solid var(--border)', borderRadius: '16px',
             boxShadow: '0 20px 40px rgba(0, 0, 0, 0.25)', display: 'flex',
             flexDirection: 'column', overflow: 'hidden',

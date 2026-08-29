@@ -9,7 +9,7 @@
 
 /* Profile Hero Card */
 .profile-hero-card {
-  background: var(--surface);
+  background: var(--gradient-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   overflow: hidden;
@@ -134,7 +134,7 @@
 
 /* Edit Profile Settings Card */
 .profile-settings-card {
-  background: var(--surface);
+  background: var(--gradient-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 1.35rem 1.6rem;

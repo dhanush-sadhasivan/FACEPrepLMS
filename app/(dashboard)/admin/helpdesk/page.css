@@ -40,7 +40,7 @@
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 0.55rem 0.85rem;
+  padding: var(--space-3) var(--space-4);
   display: flex;
   align-items: center;
   gap: 0.65rem;
@@ -127,7 +127,7 @@
 }
 
 .ticket-card {
-  background: var(--surface);
+  background: var(--gradient-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 0.85rem 1.15rem;
@@ -150,9 +150,9 @@
   background: var(--indigo);
 }
 
-.ticket-card.status-pending::before { background: #f59e0b; }
-.ticket-card.status-approved::before { background: #10b981; }
-.ticket-card.status-denied::before { background: #ef4444; }
+.ticket-card.status-pending::before { background: var(--warning); }
+.ticket-card.status-approved::before { background: var(--success); }
+.ticket-card.status-denied::before { background: var(--error); }
 
 .ticket-card:hover {
   transform: translateY(-2px);
@@ -187,7 +187,7 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 0.5rem 0.75rem;
-  fontSize: 0.82rem;
+  font-size: 0.82rem;
   color: var(--text-secondary);
   line-height: 1.45;
   margin: 0.5rem 0;

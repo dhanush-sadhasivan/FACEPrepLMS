@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import TrainerDetailModal from './TrainerDetailModal';
 import Papa from 'papaparse';
+import { Pagination } from '@/components/Pagination';
 
 type JobStatus = {
   id?: string;
@@ -89,6 +90,10 @@ export default function LeaderboardTable({ contestId, data = [], lastScraped, qu
   // Search & Filter State
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTeam, setSelectedTeam] = useState<string>('all');
+
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   // Sorting State
   const [sortField, setSortField] = useState<LeaderboardSortField | null>(null);
@@ -342,6 +347,17 @@ export default function LeaderboardTable({ contestId, data = [], lastScraped, qu
     });
   }, [filteredData, sortField, sortDirection, data]);
 
+  // Reset to page 1 when search or team filter changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, selectedTeam]);
+
+  // Paginated data slice
+  const paginatedData = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return sortedData.slice(start, start + pageSize);
+  }, [sortedData, currentPage, pageSize]);
+
   // Summary Metrics
   const totalCount = data.length;
   const fullMasteredCount = data.filter((d: any) => d.total > 0 && d.solved >= d.total).length;
@@ -354,7 +370,7 @@ export default function LeaderboardTable({ contestId, data = [], lastScraped, qu
     <div>
       {/* ── Top Overview Stats Summary Bar ──────────────────────────────── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.65rem', marginBottom: '0.85rem' }}>
-        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '12px', padding: '0.6rem 0.85rem', display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+        <div style={{ background: 'var(--gradient-card)', border: '1px solid var(--border)', borderRadius: '12px', padding: '0.6rem 0.85rem', display: 'flex', alignItems: 'center', gap: '0.65rem', boxShadow: 'var(--shadow-sm)' }}>
           <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--surface-3)', color: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.1rem', fontWeight: 800 }}>👥</div>
           <div>
             <div style={{ fontSize: '1.1rem', fontWeight: 900, color: 'var(--text-primary)', lineHeight: 1 }}>{totalCount}</div>
@@ -362,7 +378,7 @@ export default function LeaderboardTable({ contestId, data = [], lastScraped, qu
           </div>
         </div>
 
-        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '12px', padding: '0.6rem 0.85rem', display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+        <div style={{ background: 'var(--gradient-card)', border: '1px solid var(--border)', borderRadius: '12px', padding: '0.6rem 0.85rem', display: 'flex', alignItems: 'center', gap: '0.65rem', boxShadow: 'var(--shadow-sm)' }}>
           <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'rgba(16,185,129,0.12)', color: 'var(--success)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.1rem', fontWeight: 800 }}>👑</div>
           <div>
             <div style={{ fontSize: '1.1rem', fontWeight: 900, color: 'var(--success)', lineHeight: 1 }}>{fullMasteredCount}</div>
@@ -370,7 +386,7 @@ export default function LeaderboardTable({ contestId, data = [], lastScraped, qu
           </div>
         </div>
 
-        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '12px', padding: '0.6rem 0.85rem', display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+        <div style={{ background: 'var(--gradient-card)', border: '1px solid var(--border)', borderRadius: '12px', padding: '0.6rem 0.85rem', display: 'flex', alignItems: 'center', gap: '0.65rem', boxShadow: 'var(--shadow-sm)' }}>
           <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'rgba(99,102,241,0.12)', color: 'var(--indigo)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.1rem', fontWeight: 800 }}>📊</div>
           <div>
             <div style={{ fontSize: '1.1rem', fontWeight: 900, color: 'var(--indigo)', lineHeight: 1 }}>{avgCompletionPct}%</div>
@@ -378,7 +394,7 @@ export default function LeaderboardTable({ contestId, data = [], lastScraped, qu
           </div>
         </div>
 
-        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '12px', padding: '0.6rem 0.85rem', display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+        <div style={{ background: 'var(--gradient-card)', border: '1px solid var(--border)', borderRadius: '12px', padding: '0.6rem 0.85rem', display: 'flex', alignItems: 'center', gap: '0.65rem', boxShadow: 'var(--shadow-sm)' }}>
           <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'rgba(245,158,11,0.15)', color: '#f59e0b', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.1rem', fontWeight: 800 }}>🥇</div>
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: '0.86rem', fontWeight: 900, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', lineHeight: 1 }}>
@@ -545,8 +561,8 @@ export default function LeaderboardTable({ contestId, data = [], lastScraped, qu
           </p>
         </div>
       ) : (
-        <div style={{ overflowX: 'auto', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: 'var(--shadow-sm)' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <div className="table-scroll-container" style={{ background: 'var(--gradient-card)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: 'var(--shadow-sm)' }}>
+          <table className="leaderboard-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ borderBottom: '2px solid var(--border)', background: 'var(--surface-2)' }}>
                 {renderSortHeader('Rank', 'rank', 'center', { width: 75 })}
@@ -560,7 +576,7 @@ export default function LeaderboardTable({ contestId, data = [], lastScraped, qu
               </tr>
             </thead>
             <tbody>
-              {sortedData.map((row: any, i: number) => {
+              {paginatedData.map((row: any, i: number) => {
                 const actualRank = data.findIndex((d: any) => d.user_id === row.user_id) + 1;
                 const displayRank = actualRank > 0 ? actualRank : i + 1;
                 const pct = row.total > 0 ? Math.round((row.solved / row.total) * 100) : 0;
@@ -735,6 +751,20 @@ export default function LeaderboardTable({ contestId, data = [], lastScraped, qu
             </tbody>
           </table>
         </div>
+      )}
+
+      {/* ── Pagination Controls ────────────────────────────────── */}
+      {sortedData.length > 0 && (
+        <Pagination
+          currentPage={currentPage}
+          totalItems={sortedData.length}
+          pageSize={pageSize}
+          onPageChange={(page) => setCurrentPage(page)}
+          onPageSizeChange={(size) => {
+            setPageSize(size);
+            setCurrentPage(1);
+          }}
+        />
       )}
 
       {/* Trainer Detail Drilldown Modal */}

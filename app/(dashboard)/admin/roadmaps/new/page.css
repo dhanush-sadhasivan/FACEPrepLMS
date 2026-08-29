@@ -94,9 +94,6 @@
   margin-bottom: 1rem;
 }
 
-.topic-builder-list::-webkit-scrollbar { width: 4px; }
-.topic-builder-list::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 4px; }
-
 .topic-builder-item {
   display: flex;
   align-items: center;

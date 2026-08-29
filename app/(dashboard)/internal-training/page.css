@@ -3,7 +3,7 @@
 ───────────────────────────────────────────────────────────── */
 
 .it-dashboard-page {
-  padding: 0.5rem 0 2.5rem 0;
+  padding: 0;
   display: flex;
   flex-direction: column;
   gap: 2rem;
@@ -59,7 +59,7 @@
 }
 
 .it-stat-card {
-  background: var(--surface);
+  background: var(--gradient-card);
   border: 1px solid var(--border);
   border-radius: 18px;
   padding: 1.35rem 1.6rem;
@@ -141,7 +141,7 @@
 
 /* ── Today's Plan Card ────────────────────────────────────── */
 .todays-plan-card {
-  background: var(--surface);
+  background: var(--gradient-card);
   border: 1px solid var(--border);
   border-radius: 22px;
   padding: 2rem 2.25rem;
@@ -294,7 +294,7 @@
 
 /* ── Pending Questions Panel ──────────────────────────────── */
 .pending-panel {
-  background: var(--surface);
+  background: var(--gradient-card);
   border: 1px solid var(--border);
   border-radius: 22px;
   padding: 2rem 2.25rem;
@@ -313,7 +313,7 @@
    Manager Trainer Cohort Overview Table & Controls
 ───────────────────────────────────────────────────────────── */
 .trainer-overview-section {
-  background: var(--surface);
+  background: var(--gradient-card);
   border: 1px solid var(--border);
   border-radius: 22px;
   padding: 2rem 2.25rem;
@@ -648,7 +648,6 @@
   gap: 0.5rem;
   overflow-x: auto;
   padding: 0.25rem 0.25rem 0.75rem 0.25rem;
-  scrollbar-width: thin;
 }
 
 .it-roadmap-pill-btn {
@@ -708,21 +707,6 @@
   max-height: 640px;
   overflow: auto;
   position: relative;
-}
-
-.it-table-scroll-container::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-.it-table-scroll-container::-webkit-scrollbar-track {
-  background: var(--surface-2);
-}
-.it-table-scroll-container::-webkit-scrollbar-thumb {
-  background: var(--border-2, #cbd5e1);
-  border-radius: 999px;
-}
-.it-table-scroll-container::-webkit-scrollbar-thumb:hover {
-  background: var(--text-muted);
 }
 
 .it-table {
@@ -827,7 +811,7 @@
 
 .it-table th {
   text-align: left;
-  padding: 1rem 1.35rem;
+  padding: var(--space-3) var(--space-4);
   font-size: 0.75rem;
   font-weight: 800;
   text-transform: uppercase;
@@ -850,7 +834,7 @@
 }
 
 .it-table td {
-  padding: 1.15rem 1.35rem;
+  padding: var(--space-3) var(--space-4);
   border-bottom: 1px solid var(--border);
   color: var(--text-primary);
   vertical-align: middle;

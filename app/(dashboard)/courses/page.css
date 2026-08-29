@@ -193,7 +193,7 @@
 
 /* Course Card */
 .course-card {
-  background: var(--surface);
+  background: var(--gradient-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   overflow: hidden;
@@ -363,10 +363,6 @@
   padding: 1.25rem 1.5rem;
 }
 
-.course-detail-syllabus::-webkit-scrollbar { width: 4px; }
-.course-detail-syllabus::-webkit-scrollbar-track { background: transparent; }
-.course-detail-syllabus::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 4px; }
-
 .course-syllabus-heading {
   font-size: 0.82rem;
   font-weight: 700;
@@ -524,7 +520,7 @@
 
 /* Syllabus Detail Progress Tracker */
 .syllabus-progress-card {
-  background: var(--surface-2);
+  background: var(--gradient-card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 0.85rem 1rem;

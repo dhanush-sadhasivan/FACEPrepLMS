@@ -53,9 +53,26 @@ html {
   --radius-xl:   24px;
   --radius-full: 9999px;
 
+  /* Spacing Scale (4px base) */
+  --space-1:  0.25rem;   /* 4px  */
+  --space-2:  0.5rem;    /* 8px  */
+  --space-3:  0.75rem;   /* 12px */
+  --space-4:  1rem;      /* 16px */
+  --space-5:  1.25rem;   /* 20px */
+  --space-6:  1.5rem;    /* 24px */
+  --space-8:  2rem;      /* 32px */
+  --space-10: 2.5rem;    /* 40px */
+  --space-12: 3rem;      /* 48px */
+
+  /* Gradient Surfaces */
+  --gradient-surface:  linear-gradient(135deg, #ffffff 0%, #f8faff 100%);
+  --gradient-accent:   linear-gradient(135deg, #F05237 0%, #ff7b5c 100%);
+  --gradient-subtle:   linear-gradient(135deg, rgba(99,102,241,0.04) 0%, rgba(240,82,55,0.04) 100%);
+  --gradient-card:     linear-gradient(145deg, var(--surface) 0%, var(--surface-2) 100%);
+
   --sidebar-width:           250px;
   --sidebar-width-collapsed: 68px;
-  --topbar-height:           60px;
+  --topbar-height:           56px;
 
   --transition-fast:   all 0.15s ease;
   --transition:        all 0.2s ease;
@@ -100,6 +117,12 @@ html {
   --shadow-lg:   0 12px 48px rgba(0,0,0,0.7), 0 6px 20px rgba(0,0,0,0.4);
   --shadow-glow: 0 0 32px var(--accent-glow);
   --shadow-inset: inset 0 1px 0 rgba(255,255,255,0.04);
+
+  /* Dark Mode Gradient Overrides */
+  --gradient-surface:  linear-gradient(135deg, #0e1018 0%, #131726 100%);
+  --gradient-accent:   linear-gradient(135deg, #F05237 0%, #ff6347 100%);
+  --gradient-subtle:   linear-gradient(135deg, rgba(99,102,241,0.06) 0%, rgba(240,82,55,0.06) 100%);
+  --gradient-card:     linear-gradient(145deg, var(--surface) 0%, var(--surface-2) 100%);
 }
 
 /* ─────────────────────────────────────────────────────
@@ -306,11 +329,11 @@ th {
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--text-muted);
-  padding: 0.85rem 1rem;
+  padding: var(--space-3) var(--space-4);
 }
 
 td {
-  padding: 0.85rem 1rem;
+  padding: var(--space-3) var(--space-4);
   color: var(--text-primary);
   font-weight: 500;
 }
@@ -370,14 +393,14 @@ td {
 }
 
 .stat-card-widget {
-  background: var(--surface);
+  background: var(--gradient-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  padding: 0.65rem 0.95rem;
+  padding: var(--space-3) var(--space-4);
   box-shadow: var(--shadow-sm);
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: var(--space-3);
   transition: transform 0.15s ease, border-color 0.15s ease;
 }
 
@@ -460,4 +483,171 @@ td {
   border-radius: 999px;
   background: var(--surface-3);
   color: var(--text-secondary);
+}
+
+/* ─────────────────────────────────────────────────────
+   GLOBAL SCROLLBAR STYLING (Cross-Browser)
+───────────────────────────────────────────────────── */
+
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-2) transparent;
+}
+
+/* WebKit (Chrome, Edge, Safari) */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-2);
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* ─────────────────────────────────────────────────────
+   GLOBAL FOCUS RING (Accessibility)
+───────────────────────────────────────────────────── */
+*:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: none; /* These use box-shadow focus rings instead */
+}
+
+/* ─────────────────────────────────────────────────────
+   SEMANTIC STATUS BADGES
+───────────────────────────────────────────────────── */
+.status-solved {
+  background: var(--success-muted);
+  color: var(--success);
+  font-weight: 700;
+  font-size: 0.78rem;
+  padding: 0.15rem 0.55rem;
+  border-radius: var(--radius-full);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.status-attempted {
+  background: var(--warning-muted);
+  color: var(--warning);
+  font-weight: 700;
+  font-size: 0.78rem;
+  padding: 0.15rem 0.55rem;
+  border-radius: var(--radius-full);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.status-unattempted {
+  background: var(--error-muted);
+  color: var(--error);
+  font-weight: 700;
+  font-size: 0.78rem;
+  padding: 0.15rem 0.55rem;
+  border-radius: var(--radius-full);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.status-pending {
+  background: var(--info-muted);
+  color: var(--info);
+  font-weight: 700;
+  font-size: 0.78rem;
+  padding: 0.15rem 0.55rem;
+  border-radius: var(--radius-full);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+/* ─────────────────────────────────────────────────────
+   GRADIENT CARD UTILITY
+───────────────────────────────────────────────────── */
+.card-gradient {
+  background: var(--gradient-card) !important;
+  border: 1px solid var(--border);
+  position: relative;
+}
+
+.card-gradient::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--gradient-subtle);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.card-gradient > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* ─────────────────────────────────────────────────────
+   TABLE SCROLL CONTAINER (Horizontal Overflow)
+───────────────────────────────────────────────────── */
+.table-scroll-container {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+}
+
+.table-scroll-container table {
+  margin: 0;
+  border: none;
+}
+
+/* ─────────────────────────────────────────────────────
+   PROGRESS BAR UTILITY
+───────────────────────────────────────────────────── */
+.progress-bar-track {
+  width: 100%;
+  height: 6px;
+  background: var(--surface-3);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  border-radius: var(--radius-full);
+  transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  background: var(--accent);
+}
+
+.progress-bar-fill.progress-high {
+  background: var(--success);
+}
+
+.progress-bar-fill.progress-mid {
+  background: var(--warning);
+}
+
+.progress-bar-fill.progress-low {
+  background: var(--error);
 }

@@ -83,7 +83,7 @@
 }
 
 .stat-card {
-  background: var(--surface);
+  background: var(--gradient-card);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 0.65rem 0.95rem;
@@ -154,7 +154,7 @@
 
 /* ─── Contest List & Widgets ─────────────────────────── */
 .contests-section {
-  background: var(--surface);
+  background: var(--gradient-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 0.85rem 1rem;
@@ -162,7 +162,7 @@
 }
 
 .widget-card {
-  background: var(--surface);
+  background: var(--gradient-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 0.85rem 1rem;

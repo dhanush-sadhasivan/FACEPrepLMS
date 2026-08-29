@@ -1,0 +1,81 @@
+.collapsible-section {
+  margin-bottom: var(--space-3);
+}
+
+.collapsible-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  user-select: none;
+  transition: var(--transition);
+  width: 100%;
+}
+
+.collapsible-header:hover {
+  background: var(--surface-2);
+  border-color: var(--border-2);
+}
+
+.collapsible-icon {
+  font-size: 1.1rem;
+  flex-shrink: 0;
+}
+
+.collapsible-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  flex: 1;
+}
+
+.collapsible-badge {
+  background: var(--surface-3);
+  color: var(--text-primary);
+  padding: 0 var(--space-2);
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+}
+
+.collapsible-chevron {
+  transition: transform 0.25s ease;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  display: inline-block;
+}
+
+.collapsible-chevron.expanded {
+  transform: rotate(0deg);
+}
+
+.collapsible-chevron.collapsed {
+  transform: rotate(-90deg);
+}
+
+.collapsible-body {
+  overflow: hidden;
+  transition: max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.25s ease;
+}
+
+.collapsible-body.expanded {
+  opacity: 1;
+}
+
+.collapsible-body.collapsed {
+  max-height: 0 !important;
+  opacity: 0;
+}
+
+.collapsible-content {
+  padding-top: var(--space-3);
+}

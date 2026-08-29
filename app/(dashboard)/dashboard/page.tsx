@@ -14,6 +14,7 @@ import LeetCodeProgressWidget, { LeetCodePerformer } from './LeetCodeProgressWid
 import { getCachedGlobalLeaderboard, GlobalPerformer } from '@/lib/cdn-cache';
 import { getRoadmapAnalytics, extractRoadmapQuestionIds } from '@/lib/roadmap-analytics';
 import { getContestAnalytics } from '@/lib/contest-analytics';
+import { CollapsibleSection } from '@/components/CollapsibleSection';
 import './page.css';
 
 export const dynamic = 'force-dynamic';
@@ -499,6 +500,7 @@ export default async function DashboardPage() {
       />
 
       {/* Stats Grid */}
+      <CollapsibleSection id="dashboard-stats" title="Overview Stats" icon="📊" defaultExpanded={true}>
       <div className="stats-grid">
         {isAdminOrManager ? (
           <>
@@ -524,7 +526,7 @@ export default async function DashboardPage() {
               </div>
             </div>
             <div className="stat-card">
-              <div className="stat-icon" style={{ background: 'rgba(245,158,11,0.12)', color: '#f59e0b' }}>⚡</div>
+              <div className="stat-icon" style={{ background: 'rgba(245,158,11,0.12)', color: 'var(--warning)' }}>⚡</div>
               <div className="stat-info">
                 <span className="stat-value">{questionsCount} Questions</span>
                 <span className="stat-label">Bank Total</span>
@@ -562,7 +564,7 @@ export default async function DashboardPage() {
               </div>
             </div>
             <div className="stat-card">
-              <div className="stat-icon" style={{ background: 'rgba(245,158,11,0.12)', color: '#f59e0b' }}>✅</div>
+              <div className="stat-icon" style={{ background: 'rgba(245,158,11,0.12)', color: 'var(--warning)' }}>✅</div>
               <div className="stat-info">
                 <span className="stat-value">{trainerProgress.solved} Solved</span>
                 <span className="stat-label">Total Solved Problems</span>
@@ -571,10 +573,12 @@ export default async function DashboardPage() {
           </>
         )}
       </div>
+      </CollapsibleSection>
 
       {/* Main Content Layout Grid */}
       {isAdminOrManager ? (
         /* ── Admin Dashboard Layout ── */
+        <CollapsibleSection id="dashboard-admin-main" title="Contests & Analytics" icon="🏆" defaultExpanded={true}>
         <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: '0.85rem', marginBottom: '1rem' }}>
           {/* Left Column: Compact Recent Contests Summary + Real-time Contest & Roadmap Completion Analytics */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
@@ -661,8 +665,10 @@ export default async function DashboardPage() {
             <TopPerformersWidget performers={globalPerformers} currentUserId={user.id} />
           </div>
         </div>
+        </CollapsibleSection>
       ) : (
         /* ── Trainer Dashboard Layout ── */
+        <CollapsibleSection id="dashboard-trainer-main" title="My Learning & Contests" icon="📚" defaultExpanded={true}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', marginBottom: '1rem' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.85rem' }}>
             {/* Top-left: Assigned Contests */}
@@ -683,6 +689,7 @@ export default async function DashboardPage() {
           {/* Helpdesk / Support Desk Widget */}
           <HelpdeskWidget />
         </div>
+        </CollapsibleSection>
       )}
     </div>
   );

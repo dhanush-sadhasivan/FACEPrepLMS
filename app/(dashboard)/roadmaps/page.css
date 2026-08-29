@@ -132,7 +132,7 @@
 }
 
 .roadmap-catalog-card {
-  background: var(--surface);
+  background: var(--gradient-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   overflow: hidden;
@@ -339,7 +339,7 @@
 
 /* Header Card */
 .roadmap-focused-header {
-  background: var(--surface);
+  background: var(--gradient-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 1.5rem;
@@ -471,7 +471,7 @@
 
 /* Domain Module Card */
 .domain-module-card {
-  background: var(--surface);
+  background: var(--gradient-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   overflow: hidden;
@@ -573,7 +573,7 @@
 
 .btn-expand-domain {
   background: var(--accent);
-  color: #000;
+  color: var(--text-inverse);
   border: none;
   border-radius: var(--radius-sm);
   padding: 0.4rem 0.9rem;
@@ -776,7 +776,7 @@
   gap: 0.35rem;
   font-size: 0.78rem;
   font-weight: 700;
-  color: #000;
+  color: var(--text-inverse);
   background: var(--accent);
   padding: 0.3rem 0.75rem;
   border-radius: var(--radius-sm);
@@ -856,7 +856,7 @@
 
 .btn-sync-scrape-sm:hover:not(:disabled) {
   background: var(--accent);
-  color: #000;
+  color: var(--text-inverse);
 }
 
 .sync-alert-banner {
