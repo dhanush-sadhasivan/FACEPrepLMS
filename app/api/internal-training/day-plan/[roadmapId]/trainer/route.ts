@@ -6,6 +6,7 @@ import {
   formatISODate,
   attachDatesToDayPlans,
 } from '@/lib/it-calendar';
+import { isRecordSolved } from '@/lib/utils';
 
 // GET /api/internal-training/day-plan/[roadmapId]/trainer
 // Returns trainer-specific day plan with per-roadmap attendance-driven day progression
@@ -117,7 +118,7 @@ export async function GET(
   // 3. Fetch completion records for this user
   const [completionsRes, hrProgressRes] = await Promise.all([
     dbAdmin.from('it_question_completions').select('*').eq('user_id', user.id),
-    dbAdmin.from('progress').select('question_id, status, score').eq('user_id', user.id),
+    dbAdmin.from('progress').select('question_id, status, score, max_score').eq('user_id', user.id),
   ]);
 
   const completionMap = new Map<string, any>();
@@ -140,7 +141,7 @@ export async function GET(
     const hr = q.question_id ? hrProgressMap.get(q.question_id) : null;
 
     const hasClickedFromPortal = Boolean(comp?.clicked_at);
-    const isHackerRankSolved = hr?.status === 'solved';
+    const isHackerRankSolved = hr ? isRecordSolved(hr) : false;
     const isManuallyCompleted = Boolean(comp?.is_completed);
 
     // Completed = clicked from portal AND (solved on HR OR manually marked)

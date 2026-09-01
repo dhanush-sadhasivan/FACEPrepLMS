@@ -3,6 +3,8 @@ import { getAdminClient } from '@/lib/supabase/admin';
 import { redirect } from 'next/navigation';
 import ReportsHubClient from './ReportsHubClient';
 import TrainerPersonalReportView from './TrainerPersonalReportView';
+import { isRecordSolved } from '@/lib/utils';
+import { extractRoadmapQuestionIds } from '@/lib/roadmap-analytics';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -59,9 +61,9 @@ export default async function ReportsPage() {
     const todos = todosRes.data || [];
 
     const contestBreakdown = contests.map((c: any) => {
-      const cQs = questions.filter((q: any) => q.contest_id === c.id);
+      const cQs = questions.filter((q: any) => q.contest_id === c.id && q.is_enabled !== false);
       const userQs = progress.filter((p: any) => p.contest_id === c.id);
-      const solved = userQs.filter((p: any) => p.status === 'solved' && (p.max_score > 0 ? (p.score || 0) >= p.max_score : (p.score || 0) > 0)).length;
+      const solved = userQs.filter((p: any) => isRecordSolved(p)).length;
       const score = userQs.reduce((acc: number, p: any) => acc + (p.score || 0), 0);
       const maxScore = cQs.reduce((acc: number, q: any) => acc + (q.max_score || 10), 0);
 
@@ -71,7 +73,7 @@ export default async function ReportsPage() {
         hackerrankSlug: c.hackerrank_slug,
         solvedCount: solved,
         totalQuestions: cQs.length,
-        completionPct: cQs.length > 0 ? Math.round((solved / cQs.length) * 100) : 0,
+        completionPct: cQs.length > 0 ? Math.max(0, Math.min(100, Math.round((solved / cQs.length) * 100))) : 0,
         score,
         maxScore,
       };
@@ -79,23 +81,26 @@ export default async function ReportsPage() {
 
     const roadmapBreakdown = roadmaps.map((r: any) => {
       const rp = userRoadmaps.find((up: any) => up.roadmap_id === r.id);
-      const completedTopics = (rp?.completed_topic_ids || []).length;
-      const totalTopics = (r.topics || []).length;
+      const qIds = extractRoadmapQuestionIds(r.topics || []);
+      const totalQuestions = qIds.length || (r.topics || []).length;
+      const solvedCount = qIds.length > 0
+        ? qIds.filter((qid) => progress.some((p: any) => String(p.question_id) === qid && isRecordSolved(p))).length
+        : (rp?.completed_topic_ids || []).length;
 
       return {
         roadmapId: r.id,
         title: r.title,
         domain: r.domain,
         level: r.level,
-        completedTopics,
-        totalTopics,
-        completionPct: totalTopics > 0 ? Math.round((completedTopics / totalTopics) * 100) : 0,
+        completedTopics: solvedCount,
+        totalTopics: totalQuestions,
+        completionPct: totalQuestions > 0 ? Math.max(0, Math.min(100, Math.round((solvedCount / totalQuestions) * 100))) : 0,
         status: rp?.status || 'not_started',
       };
     });
 
     const totalScore = progress.reduce((acc: number, p: any) => acc + (p.score || 0), 0);
-    const totalSolved = progress.filter((p: any) => p.status === 'solved' && (p.max_score > 0 ? (p.score || 0) >= p.max_score : (p.score || 0) > 0)).length;
+    const totalSolved = progress.filter((p: any) => isRecordSolved(p)).length;
     const itDays = profile.it_days_count || 0;
     const completedRoadmaps = roadmapBreakdown.filter((r: any) => r.status === 'completed').length;
     const completedTodos = todos.filter((t: any) => t.is_completed).length;

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { getAdminClient } from '@/lib/supabase/admin';
+import { isRecordSolved } from '@/lib/utils';
 
 export async function GET() {
   const supabaseServer = await createClient();
@@ -27,10 +28,11 @@ export async function GET() {
 
   const solvedQuestionIds = new Set<string>();
   (progressData || []).forEach(p => {
-    if (p.status === 'solved' && (p.max_score > 0 ? (p.score || 0) >= p.max_score : (p.score || 0) > 0)) {
+    if (isRecordSolved(p)) {
       solvedQuestionIds.add(p.question_id);
     }
   });
+
 
   // 3. Fetch all questions grouped by domain
   const { data: allQuestions } = await supabase

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import Papa from 'papaparse';
 import * as XLSX from 'xlsx';
 import { createClient } from '@/lib/supabase/client';
@@ -17,7 +17,8 @@ interface ReportsHubClientProps {
 export default function ReportsHubClient({ initialReportType = 'contests', userRole }: ReportsHubClientProps) {
   const [activeTab, setActiveTab] = useState<ReportDomain>(initialReportType);
   const [loading, setLoading] = useState(false);
-  const [dataPayload, setDataPayload] = useState<any>({ rows: [], kpis: {}, meta: {} });
+  const [tabPayloads, setTabPayloads] = useState<Record<string, any>>({});
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   // Filter states
   const [datePreset, setDatePreset] = useState<DatePreset>('all');
@@ -36,6 +37,12 @@ export default function ReportsHubClient({ initialReportType = 'contests', userR
 
   // Fetch report data from API
   const fetchReportData = useCallback(async () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     setLoading(true);
     try {
       const params = new URLSearchParams();
@@ -58,7 +65,11 @@ export default function ReportsHubClient({ initialReportType = 'contests', userR
         params.set('startDate', start.toISOString());
       } else if (datePreset === 'custom') {
         if (customStartDate) params.set('startDate', new Date(customStartDate).toISOString());
-        if (customEndDate) params.set('endDate', new Date(customEndDate).toISOString());
+        if (customEndDate) {
+          const end = new Date(customEndDate);
+          end.setHours(23, 59, 59, 999);
+          params.set('endDate', end.toISOString());
+        }
       }
 
       const supabase = createClient();
@@ -72,6 +83,8 @@ export default function ReportsHubClient({ initialReportType = 'contests', userR
       const res = await fetch(`/api/reports?${params.toString()}`, {
         headers,
         credentials: 'same-origin',
+        cache: 'no-store',
+        signal: controller.signal,
       });
 
       if (!res.ok) {
@@ -81,17 +94,26 @@ export default function ReportsHubClient({ initialReportType = 'contests', userR
         }
         const errData = await res.json().catch(() => ({}));
         console.warn('Report fetch warning:', errData.error || res.statusText);
-        setLoading(false);
+        setTabPayloads((prev) => ({ ...prev, [activeTab]: { rows: [], kpis: {}, meta: {} } }));
         return;
       }
 
       const data = await res.json();
-      setDataPayload(data);
+      // Guard: Discard stale response if tab changed while in flight
+      if (controller.signal.aborted || (data.reportType && data.reportType !== activeTab)) {
+        return;
+      }
+
+      setTabPayloads((prev) => ({ ...prev, [activeTab]: data }));
       setCurrentPage(1);
-    } catch (err) {
+    } catch (err: any) {
+      if (err?.name === 'AbortError') return;
       console.error('Error fetching report:', err);
+      setTabPayloads((prev) => ({ ...prev, [activeTab]: { rows: [], kpis: {}, meta: {} } }));
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) {
+        setLoading(false);
+      }
     }
   }, [activeTab, datePreset, customStartDate, customEndDate, selectedTeam, selectedContest, selectedRoadmap, searchQuery]);
 
@@ -101,6 +123,9 @@ export default function ReportsHubClient({ initialReportType = 'contests', userR
 
   // Reset secondary filters when changing tabs
   const handleTabChange = (tab: ReportDomain) => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
     setActiveTab(tab);
     setSelectedContest('all');
     setSelectedRoadmap('all');
@@ -109,9 +134,10 @@ export default function ReportsHubClient({ initialReportType = 'contests', userR
     setCurrentPage(1);
   };
 
-  const rows: any[] = dataPayload?.rows || [];
-  const kpis: any = dataPayload?.kpis || {};
-  const meta: any = dataPayload?.meta || {};
+  const activePayload = tabPayloads[activeTab] || { rows: [], kpis: {}, meta: {} };
+  const rows: any[] = activePayload.rows || [];
+  const kpis: any = activePayload.kpis || {};
+  const meta: any = activePayload.meta || {};
 
   // Sort handler
   const handleSort = (field: string) => {
@@ -213,7 +239,9 @@ export default function ReportsHubClient({ initialReportType = 'contests', userR
         'Total Solved': r.totalSolved,
         'Roadmap Completion Rate (%)': `${r.completionRate ?? 0}%`,
         'IT Engagement (%)': `${r.itEngagementPct ?? 0}%`,
-        'Score Min / Median / Max': r.scoreDistribution ? `${r.scoreDistribution.min} / ${r.scoreDistribution.median} / ${r.scoreDistribution.max}` : '—',
+        'Min Score': r.scoreDistribution?.min ?? 0,
+        'Median Score': r.scoreDistribution?.median ?? 0,
+        'Max Score': r.scoreDistribution?.max ?? 0,
         'Master Trainers': r.masterTrainersCount,
         'Top Performer': r.topTrainerName,
         'Top Performer Score': r.topTrainerScore,

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { ITDayPlan, ITDayQuestion, ITRoadmapConfig } from '@/lib/types';
+import { Pagination } from '@/components/Pagination';
 import './DayPlanTab.css';
 
 interface DayPlanTabProps {
@@ -42,6 +43,13 @@ export default function DayPlanTab({ roadmapId, roadmapTitle }: DayPlanTabProps)
   const [pickerDayIndex, setPickerDayIndex] = useState<number | null>(null);
   const [pickerSearch, setPickerSearch] = useState('');
   const [pickerDomain, setPickerDomain] = useState('All');
+  const [pickerPage, setPickerPage] = useState(1);
+  const [pickerPageSize, setPickerPageSize] = useState(10);
+
+  // Reset pickerPage whenever filter, search, day index, or page size changes
+  useEffect(() => {
+    setPickerPage(1);
+  }, [pickerSearch, pickerDomain, pickerDayIndex, pickerPageSize]);
 
   const [customModalDayIndex, setCustomModalDayIndex] = useState<number | null>(null);
   const [customTitle, setCustomTitle] = useState('');
@@ -329,15 +337,25 @@ export default function DayPlanTab({ roadmapId, roadmapTitle }: DayPlanTabProps)
   }, [availableQuestions]);
 
   const filteredPickerQuestions = useMemo(() => {
+    const searchLower = (pickerSearch || '').toLowerCase().trim();
     return availableQuestions.filter((q) => {
+      const titleLower = (q.title || '').toLowerCase();
+      const contestLower = (q.contest_title || '').toLowerCase();
+      const domainLower = (q.domain || '').toLowerCase();
       const matchesSearch =
-        !pickerSearch ||
-        q.title.toLowerCase().includes(pickerSearch.toLowerCase()) ||
-        q.contest_title?.toLowerCase().includes(pickerSearch.toLowerCase());
+        !searchLower ||
+        titleLower.includes(searchLower) ||
+        contestLower.includes(searchLower) ||
+        domainLower.includes(searchLower);
       const matchesDomain = pickerDomain === 'All' || q.domain === pickerDomain;
       return matchesSearch && matchesDomain;
     });
   }, [availableQuestions, pickerSearch, pickerDomain]);
+
+  const paginatedPickerQuestions = useMemo(() => {
+    const start = (pickerPage - 1) * pickerPageSize;
+    return filteredPickerQuestions.slice(start, start + pickerPageSize);
+  }, [filteredPickerQuestions, pickerPage, pickerPageSize]);
 
   if (loading) {
     return (
@@ -720,25 +738,41 @@ export default function DayPlanTab({ roadmapId, roadmapTitle }: DayPlanTabProps)
                   No challenges found matching filters.
                 </div>
               ) : (
-                filteredPickerQuestions.map((q) => (
-                  <div
-                    key={q.id}
-                    className="question-picker-row"
-                    onClick={() => handleSelectHRQuestion(q)}
-                  >
-                    <div>
-                      <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-primary)' }}>
-                        {q.title}
+                <>
+                  {paginatedPickerQuestions.map((q) => (
+                    <div
+                      key={q.id}
+                      className="question-picker-row"
+                      onClick={() => handleSelectHRQuestion(q)}
+                    >
+                      <div>
+                        <div style={{ fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-primary)' }}>
+                          {q.title}
+                        </div>
+                        <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
+                          🏆 {q.contest_title} &bull; 🏷️ {q.domain} &bull; 📊 {q.difficulty}
+                        </div>
                       </div>
-                      <div style={{ fontSize: '0.74rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
-                        🏆 {q.contest_title} &bull; 🏷️ {q.domain} &bull; 📊 {q.difficulty}
-                      </div>
+                      <button type="button" className="btn btn-secondary btn-sm" style={{ fontSize: '0.78rem' }}>
+                        Select ➕
+                      </button>
                     </div>
-                    <button type="button" className="btn btn-secondary btn-sm" style={{ fontSize: '0.78rem' }}>
-                      Select ➕
-                    </button>
+                  ))}
+
+                  <div style={{ marginTop: '1rem' }}>
+                    <Pagination
+                      currentPage={pickerPage}
+                      totalItems={filteredPickerQuestions.length}
+                      pageSize={pickerPageSize}
+                      onPageChange={setPickerPage}
+                      onPageSizeChange={(newSize) => {
+                        setPickerPageSize(newSize);
+                        setPickerPage(1);
+                      }}
+                      pageSizeOptions={[10, 20, 50]}
+                    />
                   </div>
-                ))
+                </>
               )}
             </div>
 

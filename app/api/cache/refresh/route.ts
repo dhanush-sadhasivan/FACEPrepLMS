@@ -27,10 +27,21 @@ export async function POST(req: Request) {
 
   const result = await generateAndUploadCdnSnapshots(contestId);
 
-  // Invalidate Next.js cache tags
+  // Invalidate Next.js cache tags and paths
+  revalidatePath('/dashboard');
+  revalidatePath('/contests');
+  revalidatePath('/roadmaps');
+  revalidatePath('/reports');
+  revalidatePath('/internal-training');
+
   revalidateTag('leaderboard', 'max');
   revalidateTag('global-stats', 'max');
-  revalidatePath('/dashboard');
+  revalidateTag('contests', 'max');
+  revalidateTag('roadmaps', 'max');
+  revalidateTag('roadmap-analytics', 'max');
+  revalidateTag('internal-training', 'max');
+  revalidateTag('it-overview', 'max');
+
   if (contestId) {
     revalidateTag(`contest-${contestId}`, 'max');
     revalidatePath(`/contests/${contestId}`);

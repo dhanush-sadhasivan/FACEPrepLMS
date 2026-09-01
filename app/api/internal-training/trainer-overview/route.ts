@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server';
 import { getAdminClient } from '@/lib/supabase/admin';
+import { isRecordSolved } from '@/lib/utils';
 import { NextResponse } from 'next/server';
 import { formatISODate } from '@/lib/it-calendar';
 import { ITTrainerOverviewItem } from '@/lib/types';
@@ -130,7 +131,7 @@ export async function GET() {
     while (true) {
       const { data: pPage } = await dbAdmin
         .from('progress')
-        .select('user_id, question_id, status')
+        .select('user_id, question_id, status, score, max_score')
         .in('question_id', relevantQuestionIds)
         .eq('status', 'solved')
         .order('id', { ascending: true })
@@ -198,7 +199,9 @@ export async function GET() {
   // Map (user_id, question_id) -> solved
   const hrSolvedLookup = new Set<string>();
   hrProgress.forEach((p: any) => {
-    hrSolvedLookup.add(`${p.user_id}_${p.question_id}`);
+    if (isRecordSolved(p)) {
+      hrSolvedLookup.add(`${p.user_id}_${p.question_id}`);
+    }
   });
 
   // Build overview list

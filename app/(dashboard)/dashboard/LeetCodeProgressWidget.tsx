@@ -591,7 +591,7 @@ export default function LeetCodeProgressWidget({
                 <div style={{ width: '100%', height: 8, background: 'var(--surface-3)', borderRadius: 999, display: 'flex', overflow: 'hidden', marginBottom: '0.85rem' }}>
                   <div
                     style={{
-                      width: `${Math.round((selectedUser.solved_easy / selectedUser.solved_total) * 100)}%`,
+                      width: `${Math.max(0, Math.min(100, Math.round((selectedUser.solved_easy / selectedUser.solved_total) * 100)))}%`,
                       background: '#00b8a3',
                       transition: 'width 0.3s ease',
                     }}
@@ -599,7 +599,7 @@ export default function LeetCodeProgressWidget({
                   />
                   <div
                     style={{
-                      width: `${Math.round((selectedUser.solved_medium / selectedUser.solved_total) * 100)}%`,
+                      width: `${Math.max(0, Math.min(100, Math.round((selectedUser.solved_medium / selectedUser.solved_total) * 100)))}%`,
                       background: '#ffc01e',
                       transition: 'width 0.3s ease',
                     }}
@@ -607,7 +607,7 @@ export default function LeetCodeProgressWidget({
                   />
                   <div
                     style={{
-                      width: `${Math.round((selectedUser.solved_hard / selectedUser.solved_total) * 100)}%`,
+                      width: `${Math.max(0, Math.min(100, Math.round((selectedUser.solved_hard / selectedUser.solved_total) * 100)))}%`,
                       background: '#ff375f',
                       transition: 'width 0.3s ease',
                     }}

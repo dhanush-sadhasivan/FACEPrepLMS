@@ -76,7 +76,7 @@ export default function TopicRoadmapsWidget({ roadmaps }: TopicRoadmapsWidgetPro
               completedCount = topics.filter((t: any) => completedIds.includes(t.id) || (t.question_id && completedIds.includes(t.question_id))).length;
             }
 
-            const pct = totalQuestions > 0 ? Math.min(100, Math.round((completedCount / totalQuestions) * 100)) : 0;
+            const pct = totalQuestions > 0 ? Math.max(0, Math.min(100, Math.round((completedCount / totalQuestions) * 100))) : 0;
 
             let computedStatus = 'not_started';
             if (totalQuestions > 0 && completedCount >= totalQuestions) {
@@ -120,7 +120,7 @@ export default function TopicRoadmapsWidget({ roadmaps }: TopicRoadmapsWidgetPro
                   {/* Progress */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
                     <div style={{ flex: 1, height: '4px', background: 'var(--surface-3)', borderRadius: '999px', overflow: 'hidden' }}>
-                      <div style={{ height: '100%', width: `${pct}%`, background: `linear-gradient(90deg, ${dc.color}, var(--accent))`, borderRadius: '999px', transition: 'width 0.5s ease' }} />
+                      <div style={{ height: '100%', width: `${Math.max(0, Math.min(100, pct))}%`, background: `linear-gradient(90deg, ${dc.color}, var(--accent))`, borderRadius: '999px', transition: 'width 0.5s ease' }} />
                     </div>
                     <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 600, flexShrink: 0 }}>
                       {completedCount}/{totalQuestions}

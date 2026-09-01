@@ -14,6 +14,7 @@ import LeetCodeProgressWidget, { LeetCodePerformer } from './LeetCodeProgressWid
 import { getCachedGlobalLeaderboard, GlobalPerformer } from '@/lib/cdn-cache';
 import { getRoadmapAnalytics, extractRoadmapQuestionIds } from '@/lib/roadmap-analytics';
 import { getContestAnalytics } from '@/lib/contest-analytics';
+import { isRecordSolved } from '@/lib/utils';
 import { CollapsibleSection } from '@/components/CollapsibleSection';
 import './page.css';
 
@@ -64,6 +65,7 @@ export default async function DashboardPage() {
 
   // ── Global Live Top Performers (Cached via Supabase Storage CDN) ───
   let globalPerformers: GlobalPerformer[] = [];
+  let allProgressRows: any[] = [];
   const cachedData = await getCachedGlobalLeaderboard();
 
   if (cachedData && Array.isArray(cachedData.performers) && cachedData.performers.length > 0) {
@@ -96,7 +98,6 @@ export default async function DashboardPage() {
       });
     });
 
-    let allProgressRows: any[] = [];
     let pFrom = 0;
     const pStep = 1000;
     while (true) {
@@ -123,7 +124,7 @@ export default async function DashboardPage() {
       if (!p.user_id || !p.question_id) return;
       const key = `${p.user_id}:${p.question_id}`;
       const existing = userQuestionMap.get(key);
-      const isSolved = p.status === 'solved' && (p.max_score > 0 ? (p.score || 0) >= p.max_score : (p.score || 0) > 0);
+      const isSolved = isRecordSolved(p);
       if (!existing) {
         userQuestionMap.set(key, {
           user_id: p.user_id,
@@ -145,7 +146,7 @@ export default async function DashboardPage() {
     });
 
     globalPerformers = Array.from(globalUserMap.values())
-      .sort((a: any, b: any) => (b.score - a.score) || (b.solved - a.solved));
+      .sort((a: any, b: any) => (b.score - a.score) || (b.solved - a.solved) || (a.name || '').localeCompare(b.name || ''));
   }
 
   // ── Admin / Manager Queries ─────────────────────────────────────────
@@ -161,6 +162,7 @@ export default async function DashboardPage() {
   let contestStats: ContestCompletionStat[] = [];
   let roadmapStats: RoadmapCompletionStat[] = [];
   let topTrainersWithStats: any[] = [];
+  let totalTrainersCount = 0;
 
   let leetcodePerformers: LeetCodePerformer[] = [];
   let lcAssignedQuestionsCount = 0;
@@ -192,7 +194,7 @@ export default async function DashboardPage() {
         .from('contests')
         .select('*, questions(count), assignments:contest_assignments(count)')
         .order('created_at', { ascending: false }),
-      dbAdmin.from('questions').select('id, contest_id, max_score'),
+      dbAdmin.from('questions').select('id, contest_id, max_score, is_enabled'),
       dbAdmin.from('roadmaps').select('id, title, topics, is_it_roadmap'),
       dbAdmin.from('user_roadmap_progress').select('user_id, roadmap_id, status, completed_topic_ids'),
       dbAdmin.from('contest_assignments').select('contest_id, group_id, team'),
@@ -215,7 +217,7 @@ export default async function DashboardPage() {
       else if (now < start) upcomingContestsCount++;
     });
 
-    const totalTrainersCount = globalPerformers.length || 1;
+    totalTrainersCount = globalPerformers.length;
 
     // 1. Contest Completion Analytics (Direct Database RPC + Paginated Fallback)
     contestStats = await getContestAnalytics(dbAdmin, 50);
@@ -224,16 +226,66 @@ export default async function DashboardPage() {
     const allRoadmapsAnalytics = await getRoadmapAnalytics(dbAdmin);
     roadmapStats = allRoadmapsAnalytics.slice(0, 5);
 
-    // 3. Top Master Trainers Leaderboard
+    // Fetch progress rows if not already fetched in cache fallback
+    let allUserProgress = allProgressRows;
+    if (!allUserProgress || allUserProgress.length === 0) {
+      let pFrom = 0;
+      const pStep = 1000;
+      allUserProgress = [];
+      while (true) {
+        const { data: pageRows, error: pErr } = await dbAdmin
+          .from('progress')
+          .select('user_id, question_id, score, status, max_score, contest_id')
+          .or('score.gt.0,status.eq.solved')
+          .order('id', { ascending: true })
+          .range(pFrom, pFrom + pStep - 1);
+        if (pErr || !pageRows || pageRows.length === 0) break;
+        allUserProgress = allUserProgress.concat(pageRows);
+        if (pageRows.length < pStep) break;
+        pFrom += pStep;
+      }
+    }
+
+    // Index solved questions per user
+    const userSolvedMap = new Map<string, Set<string>>();
+    (allUserProgress || []).forEach((p: any) => {
+      if (!p.user_id || !p.question_id) return;
+      if (isRecordSolved(p)) {
+        if (!userSolvedMap.has(p.user_id)) userSolvedMap.set(p.user_id, new Set());
+        userSolvedMap.get(p.user_id)!.add(String(p.question_id));
+      }
+    });
+
+    // Map enabled questions per contest
+    const contestEnabledQuestionsMap = new Map<string, string[]>();
+    const allQuestionsData = allQsRes.data || [];
+    allQuestionsData.forEach((q: any) => {
+      if (q.contest_id && q.is_enabled !== false) {
+        if (!contestEnabledQuestionsMap.has(q.contest_id)) {
+          contestEnabledQuestionsMap.set(q.contest_id, []);
+        }
+        contestEnabledQuestionsMap.get(q.contest_id)!.push(String(q.id));
+      }
+    });
+
+    // 3. Top Master Trainers Leaderboard with dynamically computed completed contests
     const allRoadmapProgressData = allRoadmapProgressRes.data || [];
     topTrainersWithStats = globalPerformers.map((userPerf: any) => {
       const userCompletedRoadmaps = allRoadmapProgressData.filter(
         (rp: any) => rp.user_id === userPerf.id && rp.status === 'completed'
       ).length;
 
+      const solvedQSet = userSolvedMap.get(userPerf.id) || new Set<string>();
+      let userCompletedContests = 0;
+      contestEnabledQuestionsMap.forEach((qIds) => {
+        if (qIds.length > 0 && qIds.every((qId) => solvedQSet.has(qId))) {
+          userCompletedContests++;
+        }
+      });
+
       return {
         ...userPerf,
-        completedContestsCount: 0,
+        completedContestsCount: userCompletedContests,
         completedRoadmapsCount: userCompletedRoadmaps,
       };
     }).sort((a: any, b: any) => (b.solved - a.solved) || (b.score - a.score));
@@ -352,7 +404,7 @@ export default async function DashboardPage() {
       // Check all question IDs against questionProgress
       qIds.forEach((qId) => {
         const isSolvedInDb = questionProgress.some(
-          (qp: any) => String(qp.question_id) === qId && qp.status === 'solved' && (qp.max_score > 0 ? (qp.score || 0) >= qp.max_score : (qp.score || 0) > 0)
+          (qp: any) => String(qp.question_id) === qId && isRecordSolved(qp)
         );
         if (isSolvedInDb && !completedTopicIds.includes(qId)) {
           completedTopicIds.push(qId);
@@ -392,7 +444,7 @@ export default async function DashboardPage() {
     let solvedCount = 0;
     (myProgressRes.data || []).forEach((p: any) => {
       totalScore += p.score || 0;
-      if (p.status === 'solved' && (p.max_score > 0 ? (p.score || 0) >= p.max_score : (p.score || 0) > 0)) solvedCount++;
+      if (isRecordSolved(p)) solvedCount++;
     });
     trainerProgress = { score: totalScore, solved: solvedCount };
 
@@ -412,7 +464,7 @@ export default async function DashboardPage() {
 
     const [allContestsRes, allQsRes] = await Promise.all([
       supabase.from('contests').select('id, title, hackerrank_slug, platform, start_date, end_date, questions(count)').order('start_date', { ascending: false }),
-      supabase.from('questions').select('id, contest_id'),
+      supabase.from('questions').select('id, contest_id, is_enabled'),
     ]);
 
     const assignedRoadmaps = trainerRoadmaps.filter((rm: any) => allRoadmapIds.includes(rm.id));
@@ -427,10 +479,10 @@ export default async function DashboardPage() {
     completedContestsCount = 0;
 
     myContests.forEach((c: any) => {
-      const cQs = allQs.filter((q: any) => q.contest_id === c.id);
+      const cQs = allQs.filter((q: any) => q.contest_id === c.id && q.is_enabled !== false);
       if (cQs.length > 0) {
         const solvedInContest = cQs.filter((q: any) =>
-          questionProgress.some((qp: any) => qp.question_id === q.id && qp.status === 'solved' && (qp.max_score > 0 ? (qp.score || 0) >= qp.max_score : (qp.score || 0) > 0))
+          questionProgress.some((qp: any) => qp.question_id === q.id && isRecordSolved(qp))
         ).length;
         if (solvedInContest >= cQs.length) {
           completedContestsCount++;
@@ -650,7 +702,7 @@ export default async function DashboardPage() {
               contestStats={contestStats}
               roadmapStats={roadmapStats}
               topTrainers={topTrainersWithStats}
-              totalTrainersCount={globalPerformers.length || 1}
+              totalTrainersCount={totalTrainersCount}
             />
           </div>
 

@@ -180,7 +180,7 @@ export default function TrainerCompletionAnalytics({
                         👑 {c.completedTrainersCount} Finished 100%
                       </span>
                     )}
-                    <span style={{ color: 'var(--text-primary)' }}>{c.completionPercentage}% Avg</span>
+                    <span style={{ color: 'var(--text-primary)' }}>{Math.max(0, Math.min(100, Math.round(Number(c.completionPercentage) || 0)))}% Avg</span>
                   </div>
                 </div>
 
@@ -189,7 +189,7 @@ export default function TrainerCompletionAnalytics({
                   <div
                     style={{
                       height: '100%',
-                      width: `${c.completionPercentage}%`,
+                      width: `${Math.max(0, Math.min(100, Math.round(Number(c.completionPercentage) || 0)))}%`,
                       background: 'linear-gradient(90deg, var(--accent) 0%, var(--success) 100%)',
                       borderRadius: '999px',
                       transition: 'width 0.3s ease',
@@ -199,7 +199,7 @@ export default function TrainerCompletionAnalytics({
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: 'var(--text-muted)' }}>
                   <span>💡 {c.questionCount} Questions in Contest</span>
-                  <span>{c.completedTrainersCount} of {c.assignedTrainersCount} trainers completed</span>
+                  <span>{c.completedTrainersCount} of {c.assignedTrainersCount ?? 0} trainers completed</span>
                 </div>
               </div>
             ))
@@ -245,7 +245,7 @@ export default function TrainerCompletionAnalytics({
                         👑 {r.completedTrainersCount} Finished 100%
                       </span>
                     )}
-                    <span style={{ color: 'var(--text-primary)' }}>{r.completionPercentage}% Avg</span>
+                    <span style={{ color: 'var(--text-primary)' }}>{Math.max(0, Math.min(100, Math.round(Number(r.completionPercentage) || 0)))}% Avg</span>
                   </div>
                 </div>
 
@@ -254,7 +254,7 @@ export default function TrainerCompletionAnalytics({
                   <div
                     style={{
                       height: '100%',
-                      width: `${r.completionPercentage}%`,
+                      width: `${Math.max(0, Math.min(100, Math.round(Number(r.completionPercentage) || 0)))}%`,
                       background: 'linear-gradient(90deg, var(--indigo) 0%, var(--success) 100%)',
                       borderRadius: '999px',
                       transition: 'width 0.3s ease',
@@ -264,7 +264,7 @@ export default function TrainerCompletionAnalytics({
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: 'var(--text-muted)' }}>
                   <span>💡 {r.totalTopics} Questions in Roadmap</span>
-                  <span>{r.completedTrainersCount} of {r.assignedTrainersCount} trainers completed</span>
+                  <span>{r.completedTrainersCount} of {r.assignedTrainersCount ?? 0} trainers completed</span>
                 </div>
               </div>
             ))

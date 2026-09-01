@@ -145,7 +145,7 @@ export default function TrainerTopicAnalytics({
                       </span>
                     )}
                     <span style={{ color: 'var(--text-primary)' }}>
-                      {t.completionPercentage}% Complete
+                      {Math.max(0, Math.min(100, Math.round(Number(t.completionPercentage) || 0)))}% Complete
                     </span>
                   </div>
                 </div>
@@ -155,7 +155,7 @@ export default function TrainerTopicAnalytics({
                   <div
                     style={{
                       height: '100%',
-                      width: `${t.completionPercentage}%`,
+                      width: `${Math.max(0, Math.min(100, Math.round(Number(t.completionPercentage) || 0)))}%`,
                       background: 'linear-gradient(90deg, var(--accent) 0%, var(--success) 100%)',
                       borderRadius: '999px',
                       transition: 'width 0.3s ease',
@@ -165,7 +165,7 @@ export default function TrainerTopicAnalytics({
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: 'var(--text-muted)' }}>
                   <span>{t.solvedQuestions} / {t.totalQuestions} questions solved globally</span>
-                  <span>{t.completedTrainersCount} of {totalTrainersCount} trainers finished</span>
+                  <span>{t.completedTrainersCount} of {totalTrainersCount ?? 0} trainers finished</span>
                 </div>
               </div>
             ))

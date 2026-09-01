@@ -28,7 +28,7 @@ export async function recordITAttendance(
   const today = formatISODate(new Date());
 
   // 1. Fetch the specific progress row for this user + roadmap
-  const { data: progress } = await supabase
+  let { data: progress } = await supabase
     .from('it_trainer_progress')
     .select('*')
     .eq('user_id', userId)
@@ -36,7 +36,36 @@ export async function recordITAttendance(
     .maybeSingle();
 
   if (!progress) {
-    throw new Error(`No IT progress record found for user ${userId} on roadmap ${roadmapId}`);
+    // Auto-create initial it_trainer_progress record if missing (self-healing robustness)
+    const { data: newProg, error: insertErr } = await supabase
+      .from('it_trainer_progress')
+      .insert({
+        user_id: userId,
+        roadmap_id: roadmapId,
+        started_at: today,
+        current_day: 0,
+        it_days_logged: 0,
+        last_check_in_date: null,
+        extended_days: 0,
+        extension_count: 0,
+        updated_at: new Date().toISOString(),
+      })
+      .select()
+      .maybeSingle();
+
+    if (insertErr) {
+      console.warn('[recordITAttendance] Progress record auto-creation notice:', insertErr);
+    }
+    progress = newProg || {
+      user_id: userId,
+      roadmap_id: roadmapId,
+      started_at: today,
+      current_day: 0,
+      it_days_logged: 0,
+      last_check_in_date: null,
+      extended_days: 0,
+      extension_count: 0,
+    };
   }
 
   const lastCheckIn = progress.last_check_in_date || null;

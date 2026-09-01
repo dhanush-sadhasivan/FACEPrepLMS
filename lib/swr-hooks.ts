@@ -1,6 +1,6 @@
 'use client';
 
-import useSWR, { SWRConfiguration } from 'swr';
+import useSWR, { SWRConfiguration, mutate } from 'swr';
 
 /**
  * Universal JSON fetcher for SWR
@@ -20,13 +20,25 @@ export const fetcher = async (url: string) => {
 };
 
 /**
+ * Invalidate all trainer-related cached SWR data simultaneously
+ */
+export async function mutateAllTrainerData(): Promise<void> {
+  await Promise.all([
+    mutate('/api/trainer/roadmaps'),
+    mutate('/api/trainer/skills'),
+    mutate('/api/trainer/courses'),
+    mutate('/api/users/me'),
+  ]);
+}
+
+/**
  * Default cache options for static / rarely changing datasets (Courses, Roadmaps, Profile)
  */
 const staticDataOptions: SWRConfiguration = {
   revalidateOnFocus: false,        // Don't re-fetch on window/tab focus
   revalidateOnReconnect: false,    // Don't spam on reconnect
-  dedupingInterval: 1000 * 60 * 15, // 15 minutes client-side deduping cache
-  focusThrottleInterval: 1000 * 60 * 5,
+  dedupingInterval: 1000 * 60,     // 1 minute client-side deduping cache
+  focusThrottleInterval: 1000 * 30,
 };
 
 /**
@@ -35,7 +47,7 @@ const staticDataOptions: SWRConfiguration = {
 const mediumDataOptions: SWRConfiguration = {
   revalidateOnFocus: false,
   revalidateOnReconnect: true,
-  dedupingInterval: 1000 * 60 * 5, // 5 minutes client-side deduping cache
+  dedupingInterval: 1000 * 30,     // 30 seconds client-side deduping cache
 };
 
 /**

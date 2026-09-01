@@ -1,4 +1,5 @@
 import { getAdminClient } from '@/lib/supabase/admin';
+import { isRecordSolved } from '@/lib/utils';
 
 export interface GlobalPerformer {
   id: string;
@@ -29,9 +30,10 @@ const BUCKET_NAME = 'api-cache';
 /**
  * Returns the public CDN URL for a file stored in the 'api-cache' bucket.
  */
-export function getCdnStorageUrl(fileName: string): string {
+export function getCdnStorageUrl(fileName: string, bustCache: boolean = true): string {
   const baseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').replace(/\/$/, '');
-  return `${baseUrl}/storage/v1/object/public/${BUCKET_NAME}/${fileName}`;
+  const url = `${baseUrl}/storage/v1/object/public/${BUCKET_NAME}/${fileName}`;
+  return bustCache ? `${url}?t=${Date.now()}` : url;
 }
 
 /**
@@ -207,7 +209,7 @@ export async function generateAndUploadCdnSnapshots(contestId?: string): Promise
       if (!p.user_id || !p.question_id) return;
       const key = `${p.user_id}:${p.question_id}`;
       const existing = userQuestionMap.get(key);
-      const isSolved = p.status === 'solved' && (p.max_score > 0 ? (p.score || 0) >= p.max_score : (p.score || 0) > 0);
+      const isSolved = isRecordSolved(p);
       if (!existing) {
         userQuestionMap.set(key, {
           user_id: p.user_id,
@@ -229,7 +231,7 @@ export async function generateAndUploadCdnSnapshots(contestId?: string): Promise
     });
 
     const globalPerformers = Array.from(globalUserMap.values())
-      .sort((a, b) => (b.score - a.score) || (b.solved - a.solved));
+      .sort((a, b) => (b.score - a.score) || (b.solved - a.solved) || (a.name || '').localeCompare(b.name || ''));
 
     const leaderboardPayload: CachedLeaderboardPayload = {
       updated_at: new Date().toISOString(),
@@ -241,7 +243,7 @@ export async function generateAndUploadCdnSnapshots(contestId?: string): Promise
       .from(BUCKET_NAME)
       .upload('leaderboard.json', Buffer.from(JSON.stringify(leaderboardPayload)), {
         contentType: 'application/json',
-        cacheControl: '180',
+        cacheControl: '0',
         upsert: true,
       });
 
@@ -333,25 +335,51 @@ export async function generateAndUploadCdnSnapshots(contestId?: string): Promise
           cpFrom += pStep;
         }
 
+        // Deduplicate progress rows by user_id:question_id (highest score, strict solve check)
+        const contestUserQuestionMap = new Map<string, any>();
         contestProgressRows.forEach((p: any) => {
-          if (!enabledQuestionIds.has(p.question_id)) return;
-          const u = contestLeaderMap.get(p.user_id);
-          if (u) {
-            const score = p.score || 0;
-            const maxScore = p.max_score || 10;
-            const isSolved = p.status === 'solved' && maxScore > 0 && score >= maxScore;
-            if (isSolved) u.solved++;
-            u.score += score;
-            const isActive = isSolved || p.status === 'attempted' || score > 0;
-            const subTime = p.last_submission_at || (isActive ? p.updated_at : null);
-            if (subTime && (!u.lastActive || new Date(subTime) > new Date(u.lastActive))) {
-              u.lastActive = subTime;
-            }
-            u.progress.push({
+          if (!p.user_id || !p.question_id || !enabledQuestionIds.has(p.question_id)) return;
+          const key = `${p.user_id}:${p.question_id}`;
+          const isSolved = isRecordSolved(p);
+          const score = Number(p.score) || 0;
+          const maxScore = Number(p.max_score) || 10;
+          const isActive = isSolved || p.status === 'attempted' || score > 0;
+          const subTime = p.last_submission_at || (isActive ? p.updated_at : null);
+
+          const existing = contestUserQuestionMap.get(key);
+          if (!existing) {
+            contestUserQuestionMap.set(key, {
               ...p,
-              status: isSolved ? 'solved' : (score > 0 || p.status === 'attempted' ? 'attempted' : (p.status || 'unattempted')),
               score,
               max_score: maxScore,
+              isSolved,
+              isActive,
+              subTime,
+            });
+          } else {
+            existing.score = Math.max(existing.score, score);
+            if (isSolved) existing.isSolved = true;
+            if (isActive) existing.isActive = true;
+            if (subTime && (!existing.subTime || new Date(subTime) > new Date(existing.subTime))) {
+              existing.subTime = subTime;
+            }
+          }
+        });
+
+        contestUserQuestionMap.forEach((p: any) => {
+          const u = contestLeaderMap.get(p.user_id);
+          if (u) {
+            if (p.isSolved) u.solved++;
+            u.score += p.score;
+            if (p.subTime && (!u.lastActive || new Date(p.subTime) > new Date(u.lastActive))) {
+              u.lastActive = p.subTime;
+            }
+            u.progress.push({
+              question_id: p.question_id,
+              status: p.isSolved ? 'solved' : (p.score > 0 || p.status === 'attempted' ? 'attempted' : (p.status || 'unattempted')),
+              score: p.score,
+              max_score: p.max_score,
+              last_submission_at: p.last_submission_at,
             });
           }
         });
@@ -362,14 +390,16 @@ export async function generateAndUploadCdnSnapshots(contestId?: string): Promise
           questions: allQuestions,
           enabled_question_count: enabledQuestions.length,
           total_max_score: totalMaxScore,
-          leaderboard: Array.from(contestLeaderMap.values()).sort((a, b) => b.score - a.score),
+          leaderboard: Array.from(contestLeaderMap.values()).sort(
+            (a, b) => (b.score - a.score) || (b.solved - a.solved) || (a.name || '').localeCompare(b.name || '')
+          ),
         };
 
         await dbAdmin.storage
           .from(BUCKET_NAME)
           .upload(`contest_${contestId}.json`, Buffer.from(JSON.stringify(contestPayload)), {
             contentType: 'application/json',
-            cacheControl: '180',
+            cacheControl: '0',
             upsert: true,
           });
       }

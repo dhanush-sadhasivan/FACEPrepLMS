@@ -52,9 +52,11 @@ export async function POST(request: Request) {
     targetCount = Math.max(0, currentCount - 1);
   } else if (typeof newCount === 'number') {
     targetCount = Math.max(0, newCount);
+  } else if (action === 'set' && newCount !== undefined && newCount !== null) {
+    targetCount = Math.max(0, Number(newCount) || 0);
   }
 
-  // 2. Update per-roadmap it_trainer_progress
+  // 2. Update or insert per-roadmap it_trainer_progress
   if (progress) {
     await dbAdmin
       .from('it_trainer_progress')
@@ -66,19 +68,33 @@ export async function POST(request: Request) {
       })
       .eq('user_id', userId)
       .eq('roadmap_id', roadmapId);
+  } else {
+    await dbAdmin
+      .from('it_trainer_progress')
+      .insert({
+        user_id: userId,
+        roadmap_id: roadmapId,
+        started_at: today,
+        current_day: targetCount,
+        it_days_logged: targetCount,
+        last_check_in_date: today,
+        extended_days: 0,
+        extension_count: 0,
+        updated_at: new Date().toISOString(),
+      });
   }
 
-  // 3. Recalculate global IT days for this user
-  //    Global = unique calendar dates checked in across any roadmap
-  const { data: profile } = await dbAdmin
-    .from('users')
-    .select('it_days_count, last_it_check_date')
-    .eq('id', userId)
-    .single();
+  // 3. Recalculate global IT days for this user across all assigned roadmaps
+  const { data: allUserItProgress } = await dbAdmin
+    .from('it_trainer_progress')
+    .select('it_days_logged')
+    .eq('user_id', userId);
 
-  const globalLastDate = profile?.last_it_check_date || null;
-  const globalCount = profile?.it_days_count || 0;
-  const newGlobalCount = globalLastDate === today ? globalCount : globalCount + 1;
+  const newGlobalCount = Math.max(
+    ...((allUserItProgress || []).map((p: any) => p.it_days_logged || 0)),
+    targetCount,
+    0
+  );
 
   await dbAdmin
     .from('users')

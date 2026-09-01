@@ -98,3 +98,30 @@ export function sanitizeField(val?: string | null): string | null {
   }
   return trimmed;
 }
+
+/**
+ * Canonical check for whether a submission/progress record is solved.
+ * Satisfies Interface Contract 1 from PROJECT.md:
+ * Returns true if and only if p.status === 'solved' AND
+ * (if max_score > 0, score >= max_score; otherwise score > 0).
+ */
+export function isRecordSolved(
+  p:
+    | {
+        status?: string | null;
+        score?: number | string | null;
+        max_score?: number | string | null;
+      }
+    | null
+    | undefined
+): boolean {
+  if (!p) return false;
+  if (p.status !== 'solved') return false;
+  const score = p.score != null ? Number(p.score) : 0;
+  const maxScore = p.max_score != null ? Number(p.max_score) : 0;
+  if (Number.isFinite(maxScore) && maxScore > 0) {
+    return Number.isFinite(score) && score >= maxScore;
+  }
+  return Number.isFinite(score) && score > 0;
+}
+

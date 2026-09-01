@@ -304,46 +304,62 @@ export default function LeaderboardTable({ contestId, data = [], lastScraped, qu
   }, [data, searchTerm, selectedTeam]);
 
   const sortedData = useMemo(() => {
-    if (!sortField || !sortDirection) return filteredData;
+    const canonicalTieBreak = (a: any, b: any) =>
+      (b.score || 0) - (a.score || 0) ||
+      (b.solved || 0) - (a.solved || 0) ||
+      (a.name || '').localeCompare(b.name || '');
+
+    if (!sortField || !sortDirection) {
+      return [...filteredData].sort(canonicalTieBreak);
+    }
 
     return [...filteredData].sort((a: any, b: any) => {
-      let valA: any = 0;
-      let valB: any = 0;
+      if (sortField === 'score') {
+        const scoreDiff = sortDirection === 'asc' ? (a.score || 0) - (b.score || 0) : (b.score || 0) - (a.score || 0);
+        if (scoreDiff !== 0) return scoreDiff;
+        const solvedDiff = sortDirection === 'asc' ? (a.solved || 0) - (b.solved || 0) : (b.solved || 0) - (a.solved || 0);
+        if (solvedDiff !== 0) return solvedDiff;
+        return (a.name || '').localeCompare(b.name || '');
+      }
+
+      if (sortField === 'solved') {
+        const solvedDiff = sortDirection === 'asc' ? (a.solved || 0) - (b.solved || 0) : (b.solved || 0) - (a.solved || 0);
+        if (solvedDiff !== 0) return solvedDiff;
+        const scoreDiff = sortDirection === 'asc' ? (a.score || 0) - (b.score || 0) : (b.score || 0) - (a.score || 0);
+        if (scoreDiff !== 0) return scoreDiff;
+        return (a.name || '').localeCompare(b.name || '');
+      }
+
+      if (sortField === 'rank') {
+        const rankA = data.findIndex((d: any) => d.user_id === a.user_id);
+        const rankB = data.findIndex((d: any) => d.user_id === b.user_id);
+        const rankDiff = sortDirection === 'asc' ? rankA - rankB : rankB - rankA;
+        return rankDiff !== 0 ? rankDiff : canonicalTieBreak(a, b);
+      }
 
       if (sortField === 'name') {
-        valA = (a.name || '').toLowerCase();
-        valB = (b.name || '').toLowerCase();
-        return sortDirection === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
-      }
-      if (sortField === 'emp_id') {
-        valA = (a.emp_id || '').toLowerCase();
-        valB = (b.emp_id || '').toLowerCase();
-        return sortDirection === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
-      }
-      if (sortField === 'team') {
-        valA = (a.team || '').toLowerCase();
-        valB = (b.team || '').toLowerCase();
-        return sortDirection === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
-      }
-      if (sortField === 'rank') {
-        valA = data.findIndex((d: any) => d.user_id === a.user_id);
-        valB = data.findIndex((d: any) => d.user_id === b.user_id);
-      }
-      if (sortField === 'solved') {
-        valA = a.solved || 0;
-        valB = b.solved || 0;
-      }
-      if (sortField === 'score') {
-        valA = a.score || 0;
-        valB = b.score || 0;
-      }
-      if (sortField === 'lastActive') {
-        valA = a.lastActive ? new Date(a.lastActive).getTime() : 0;
-        valB = b.lastActive ? new Date(b.lastActive).getTime() : 0;
+        const res = (a.name || '').toLowerCase().localeCompare((b.name || '').toLowerCase());
+        return res !== 0 ? (sortDirection === 'asc' ? res : -res) : canonicalTieBreak(a, b);
       }
 
-      if (sortDirection === 'asc') return valA > valB ? 1 : valA < valB ? -1 : 0;
-      return valA < valB ? 1 : valA > valB ? -1 : 0;
+      if (sortField === 'emp_id') {
+        const res = (a.emp_id || '').toLowerCase().localeCompare((b.emp_id || '').toLowerCase());
+        return res !== 0 ? (sortDirection === 'asc' ? res : -res) : canonicalTieBreak(a, b);
+      }
+
+      if (sortField === 'team') {
+        const res = (a.team || '').toLowerCase().localeCompare((b.team || '').toLowerCase());
+        return res !== 0 ? (sortDirection === 'asc' ? res : -res) : canonicalTieBreak(a, b);
+      }
+
+      if (sortField === 'lastActive') {
+        const valA = a.lastActive ? new Date(a.lastActive).getTime() : 0;
+        const valB = b.lastActive ? new Date(b.lastActive).getTime() : 0;
+        const diff = sortDirection === 'asc' ? valA - valB : valB - valA;
+        return diff !== 0 ? diff : canonicalTieBreak(a, b);
+      }
+
+      return canonicalTieBreak(a, b);
     });
   }, [filteredData, sortField, sortDirection, data]);
 

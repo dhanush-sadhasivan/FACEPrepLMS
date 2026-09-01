@@ -1,5 +1,6 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import { ContestCompletionStat } from '@/app/(dashboard)/dashboard/TrainerCompletionAnalytics';
+import { isRecordSolved } from '@/lib/utils';
 
 export interface DatabaseContestAnalyticsItem {
   contest_id: string;
@@ -27,7 +28,7 @@ export async function getContestAnalytics(supabase: SupabaseClient, limit = 50):
         questionCount: Number(row.question_count || 0),
         assignedTrainersCount: Number(row.assigned_trainers_count || 0),
         completedTrainersCount: Number(row.completed_trainers_count || 0),
-        completionPercentage: Number(row.completion_percentage || 0),
+        completionPercentage: Math.max(0, Math.min(100, Math.round(Number(row.completion_percentage || 0)))),
       }));
     }
   } catch (err) {
@@ -108,8 +109,7 @@ export async function getContestAnalytics(supabase: SupabaseClient, limit = 50):
           p.contest_id === c.id &&
           p.user_id === uid &&
           p.question_id === q.id &&
-          p.status === 'solved' &&
-          (p.max_score > 0 ? (p.score || 0) >= p.max_score : (p.score || 0) > 0)
+          isRecordSolved(p)
         )
       ).length;
 
@@ -121,7 +121,7 @@ export async function getContestAnalytics(supabase: SupabaseClient, limit = 50):
 
     const maxPossible = qCount * assignedCount;
     const pct = (maxPossible > 0 && assignedCount > 0)
-      ? Math.min(100, Math.round((totalSolvedSum / maxPossible) * 100))
+      ? Math.max(0, Math.min(100, Math.round((totalSolvedSum / maxPossible) * 100)))
       : 0;
 
     return {

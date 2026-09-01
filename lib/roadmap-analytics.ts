@@ -1,5 +1,6 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 import { RoadmapCompletionStat } from '@/app/(dashboard)/dashboard/TrainerCompletionAnalytics';
+import { isRecordSolved } from '@/lib/utils';
 
 export interface DatabaseRoadmapAnalyticsItem {
   roadmap_id: string;
@@ -59,7 +60,7 @@ export async function getRoadmapAnalytics(supabase: SupabaseClient): Promise<Roa
         totalTopics: Number(row.total_questions || 0),
         assignedTrainersCount: Number(row.assigned_trainers_count || 0),
         completedTrainersCount: Number(row.completed_trainers_count || 0),
-        completionPercentage: Number(row.completion_percentage || 0),
+        completionPercentage: Math.max(0, Math.min(100, Math.round(Number(row.completion_percentage || 0)))),
       }));
     }
   } catch (err) {
@@ -110,8 +111,7 @@ export async function getRoadmapAnalytics(supabase: SupabaseClient): Promise<Roa
         progressRows.some((p: any) =>
           p.user_id === uid &&
           String(p.question_id) === qid &&
-          p.status === 'solved' &&
-          (p.max_score > 0 ? (p.score || 0) >= p.max_score : (p.score || 0) > 0)
+          isRecordSolved(p)
         )
       ).length;
 
@@ -123,7 +123,7 @@ export async function getRoadmapAnalytics(supabase: SupabaseClient): Promise<Roa
 
     const maxPossible = totalQuestions * assignedCount;
     const pct = (maxPossible > 0 && assignedCount > 0)
-      ? Math.min(100, Math.round((totalSolvedSum / maxPossible) * 100))
+      ? Math.max(0, Math.min(100, Math.round((totalSolvedSum / maxPossible) * 100)))
       : 0;
 
     return {

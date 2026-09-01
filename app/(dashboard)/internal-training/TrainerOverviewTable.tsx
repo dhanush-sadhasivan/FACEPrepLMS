@@ -3,14 +3,16 @@
 import { useState, useEffect, useMemo } from 'react';
 import { ITTrainerOverviewItem } from '@/lib/types';
 import { useGlobalPresence } from '@/components/PresenceProvider';
+import { Pagination } from '@/components/Pagination';
 
 interface TrainerOverviewTableProps {
   onlineUserIds?: Set<string>;
 }
 
 function getInitials(name?: string | null): string {
-  if (!name) return 'TR';
-  const parts = name.trim().split(/\s+/);
+  if (!name || typeof name !== 'string') return 'TR';
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return 'TR';
   if (parts.length >= 2) {
     return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
   }
@@ -18,7 +20,7 @@ function getInitials(name?: string | null): string {
 }
 
 // Generate deterministic avatar gradient from string
-function getAvatarGradient(name: string): string {
+function getAvatarGradient(name?: string | null): string {
   const gradients = [
     'linear-gradient(135deg, #6366f1, #8b5cf6)',
     'linear-gradient(135deg, #3b82f6, #06b6d4)',
@@ -27,6 +29,7 @@ function getAvatarGradient(name: string): string {
     'linear-gradient(135deg, #ec4899, #8b5cf6)',
     'linear-gradient(135deg, #8b5cf6, #ec4899)',
   ];
+  if (!name || typeof name !== 'string') return gradients[0];
   let hash = 0;
   for (let i = 0; i < name.length; i++) {
     hash = name.charCodeAt(i) + ((hash << 5) - hash);
@@ -215,21 +218,23 @@ export default function TrainerOverviewTable({ onlineUserIds: propOnlineUserIds 
 
   const filteredTrainers = useMemo(() => {
     return enrichedTrainers.filter((t) => {
-      const q = search.toLowerCase().trim();
+      const q = (search || '').toLowerCase().trim();
       const matchesSearch =
         !q ||
-        t.full_name.toLowerCase().includes(q) ||
-        t.emp_id.toLowerCase().includes(q) ||
-        t.team.toLowerCase().includes(q) ||
-        t.roadmap_title.toLowerCase().includes(q) ||
-        (t.email && t.email.toLowerCase().includes(q));
+        (t.full_name || '').toLowerCase().includes(q) ||
+        (t.emp_id || '').toLowerCase().includes(q) ||
+        (t.team || '').toLowerCase().includes(q) ||
+        (t.roadmap_title || '').toLowerCase().includes(q) ||
+        (t.email || '').toLowerCase().includes(q) ||
+        (t.location?.type || '').toLowerCase().includes(q) ||
+        (t.location?.detail || '').toLowerCase().includes(q);
 
       const matchesRoadmap = roadmapFilter === 'All' || t.roadmap_title === roadmapFilter;
 
       let matchesStatus = true;
       if (statusFilter === 'online') matchesStatus = t.is_online;
-      if (statusFilter === 'pending') matchesStatus = t.pending_questions_count > 0;
-      if (statusFilter === 'ontrack') matchesStatus = t.pending_questions_count === 0;
+      if (statusFilter === 'pending') matchesStatus = (t.pending_questions_count || 0) > 0;
+      if (statusFilter === 'ontrack') matchesStatus = (t.pending_questions_count || 0) === 0;
 
       return matchesSearch && matchesRoadmap && matchesStatus;
     });
@@ -262,8 +267,8 @@ export default function TrainerOverviewTable({ onlineUserIds: propOnlineUserIds 
         valB = b.current_day || 0;
       }
       if (sortField === 'solved_progress') {
-        valA = a.total_questions_count > 0 ? a.completed_questions_count / a.total_questions_count : 0;
-        valB = b.total_questions_count > 0 ? b.completed_questions_count / b.total_questions_count : 0;
+        valA = (a.total_questions_count && a.total_questions_count > 0) ? (a.completed_questions_count || 0) / a.total_questions_count : 0;
+        valB = (b.total_questions_count && b.total_questions_count > 0) ? (b.completed_questions_count || 0) / b.total_questions_count : 0;
       }
       if (sortField === 'pending_questions_count') {
         valA = a.pending_questions_count || 0;
@@ -291,9 +296,7 @@ export default function TrainerOverviewTable({ onlineUserIds: propOnlineUserIds 
     setCurrentPage(1);
   }, [search, roadmapFilter, statusFilter, sortField, sortDirection, itemsPerPage]);
 
-  const totalPages = Math.max(1, Math.ceil(sortedTrainers.length / (itemsPerPage === -1 ? sortedTrainers.length || 1 : itemsPerPage)));
   const paginatedTrainers = useMemo(() => {
-    if (itemsPerPage === -1) return sortedTrainers;
     const start = (currentPage - 1) * itemsPerPage;
     return sortedTrainers.slice(start, start + itemsPerPage);
   }, [sortedTrainers, currentPage, itemsPerPage]);
@@ -851,61 +854,19 @@ export default function TrainerOverviewTable({ onlineUserIds: propOnlineUserIds 
             </table>
           </div>
 
-          {/* Pagination Bar */}
+          {/* Pagination Component */}
           {sortedTrainers.length > 0 && (
-            <div className="it-pagination-bar">
-              <div className="it-pagination-info">
-                Showing{' '}
-                <strong>
-                  {itemsPerPage === -1
-                    ? `1–${sortedTrainers.length}`
-                    : `${Math.min((currentPage - 1) * itemsPerPage + 1, sortedTrainers.length)}–${Math.min(currentPage * itemsPerPage, sortedTrainers.length)}`}
-                </strong>{' '}
-                of <strong>{sortedTrainers.length}</strong> trainers
-              </div>
-
-              <div className="it-pagination-actions">
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginRight: '0.75rem' }}>
-                  <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Per page:</span>
-                  <select
-                    className="it-page-select"
-                    value={itemsPerPage}
-                    onChange={(e) => setItemsPerPage(Number(e.target.value))}
-                  >
-                    <option value={10}>10</option>
-                    <option value={25}>25</option>
-                    <option value={50}>50</option>
-                    <option value={-1}>All ({sortedTrainers.length})</option>
-                  </select>
-                </div>
-
-                {itemsPerPage !== -1 && (
-                  <>
-                    <button
-                      type="button"
-                      className="it-page-btn"
-                      onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                      disabled={currentPage <= 1}
-                    >
-                      ← Prev
-                    </button>
-
-                    <span style={{ fontWeight: 700, fontSize: '0.82rem', padding: '0 0.35rem' }}>
-                      Page {currentPage} of {totalPages}
-                    </span>
-
-                    <button
-                      type="button"
-                      className="it-page-btn"
-                      onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                      disabled={currentPage >= totalPages}
-                    >
-                      Next →
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
+            <Pagination
+              currentPage={currentPage}
+              totalItems={sortedTrainers.length}
+              pageSize={itemsPerPage}
+              onPageChange={setCurrentPage}
+              onPageSizeChange={(newSize) => {
+                setItemsPerPage(newSize);
+                setCurrentPage(1);
+              }}
+              pageSizeOptions={[10, 25, 50, 100]}
+            />
           )}
         </>
       )}

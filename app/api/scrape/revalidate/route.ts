@@ -37,16 +37,24 @@ export async function POST(req: Request) {
     // 2. Bust Next.js data cache so even cached page renders get fresh data
     revalidatePath('/dashboard');
     revalidatePath('/contests');
+    revalidatePath('/roadmaps');
+    revalidatePath('/reports');
+    revalidatePath('/internal-training');
+
     revalidateTag('leaderboard', 'max');
     revalidateTag('global-stats', 'max');
     revalidateTag('contests', 'max');
+    revalidateTag('roadmaps', 'max');
+    revalidateTag('roadmap-analytics', 'max');
+    revalidateTag('internal-training', 'max');
+    revalidateTag('it-overview', 'max');
 
     if (contestId) {
       revalidatePath(`/contests/${contestId}`);
       revalidateTag(`contest-${contestId}`, 'max');
     }
 
-    console.log(`[scrape/revalidate] Revalidated paths & tags for /dashboard, /contests, contestId=${contestId || 'all'}`);
+    console.log(`[scrape/revalidate] Revalidated paths & tags for /dashboard, /contests, /roadmaps, /reports, /internal-training, contestId=${contestId || 'all'}`);
     return NextResponse.json({ ok: true, revalidated: true, cdnRefreshed: true, timestamp: new Date().toISOString() });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });

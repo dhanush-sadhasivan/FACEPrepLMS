@@ -183,7 +183,7 @@ export default function AssignedCoursesWidget() {
               <div
                 style={{
                   height: '100%',
-                  width: `${nextMilestone.pct}%`,
+                  width: `${Math.max(0, Math.min(100, Number(nextMilestone.pct) || 0))}%`,
                   background: 'linear-gradient(90deg, var(--accent), #10b981)',
                   borderRadius: '999px',
                 }}
@@ -349,7 +349,7 @@ export default function AssignedCoursesWidget() {
                             gap: '0.2rem',
                           }}
                         >
-                          <span>⚡</span> {b.solved}/{b.total} ({b.pct}%)
+                          <span>⚡</span> {b.solved}/{b.total} ({Math.max(0, Math.min(100, Number(b.pct) || 0))}%)
                         </span>
                       )}
                     </div>

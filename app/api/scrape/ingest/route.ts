@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
-import { revalidatePath } from 'next/cache';
+import { revalidatePath, revalidateTag } from 'next/cache';
 import { getAdminClient } from '@/lib/supabase/admin';
+import { generateAndUploadCdnSnapshots } from '@/lib/cdn-cache';
 
 function normalizeStatus(status?: string): 'solved' | 'attempted' | 'unattempted' {
   if (!status) return 'unattempted';
@@ -202,7 +203,7 @@ export async function POST(request: Request) {
       }
     }
 
-    // 5. Update contest last_scraped_at timestamp & invalidate Next.js caches
+    // 5. Update contest last_scraped_at timestamp & invalidate Next.js caches & CDN snapshots
     const nowIso = scrapedAt || new Date().toISOString();
     await supabase
       .from('contests')
@@ -210,11 +211,24 @@ export async function POST(request: Request) {
       .eq('id', contestId);
 
     try {
+      await generateAndUploadCdnSnapshots(contestId);
       revalidatePath(`/contests/${contestId}`);
       revalidatePath('/contests');
       revalidatePath('/dashboard');
+      revalidatePath('/roadmaps');
+      revalidatePath('/reports');
+      revalidatePath('/internal-training');
+
+      revalidateTag('leaderboard', 'max');
+      revalidateTag('global-stats', 'max');
+      revalidateTag('contests', 'max');
+      revalidateTag(`contest-${contestId}`, 'max');
+      revalidateTag('roadmaps', 'max');
+      revalidateTag('roadmap-analytics', 'max');
+      revalidateTag('internal-training', 'max');
+      revalidateTag('it-overview', 'max');
     } catch (revErr) {
-      console.warn(`[scrape/ingest] Cache revalidation warning:`, revErr);
+      console.warn(`[scrape/ingest] Cache revalidation / CDN snapshot warning:`, revErr);
     }
 
     if (errors.length > 0) {

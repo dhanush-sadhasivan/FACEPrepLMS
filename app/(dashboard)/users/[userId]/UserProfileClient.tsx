@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
@@ -27,6 +27,13 @@ function StatusBadge({ status }: { status: string }) {
   return <span className="up-status-badge unattempted">○ Unattempted</span>;
 }
 
+const istHeatmapFormatter = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Kolkata',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+
 function ActivityHeatmap({
   heatmap,
   batchStart,
@@ -41,26 +48,36 @@ function ActivityHeatmap({
   }, [heatmap]);
 
   const columns = useMemo(() => {
-    const start = new Date(batchStart);
-    const today = new Date();
-    const dayOfWeek = start.getDay();
+    const todayStr = istHeatmapFormatter.format(new Date());
+    const startStr = istHeatmapFormatter.format(new Date(batchStart));
+
+    const [sY, sM, sD] = startStr.split('-').map(Number);
+    const [tY, tM, tD] = todayStr.split('-').map(Number);
+
+    const cur = new Date(Date.UTC(sY, sM - 1, sD, 12, 0, 0));
+    const todayUtc = new Date(Date.UTC(tY, tM - 1, tD, 12, 0, 0));
+
+    const dayOfWeek = cur.getUTCDay();
     const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-    start.setDate(start.getDate() + diff);
-    const weeks: Date[][] = [];
-    const cur = new Date(start);
-    while (cur <= today) {
-      const week: Date[] = [];
+    cur.setUTCDate(cur.getUTCDate() + diff);
+
+    const weeks: Array<Array<{ key: string }>> = [];
+    while (cur <= todayUtc) {
+      const week: Array<{ key: string }> = [];
       for (let d = 0; d < 7; d++) {
-        const cell = new Date(cur);
-        if (cell <= today) week.push(cell);
-        cur.setDate(cur.getDate() + 1);
+        if (cur <= todayUtc) {
+          const y = cur.getUTCFullYear();
+          const m = String(cur.getUTCMonth() + 1).padStart(2, '0');
+          const day = String(cur.getUTCDate()).padStart(2, '0');
+          const key = `${y}-${monthKey(m)}-${day}`;
+          week.push({ key });
+        }
+        cur.setUTCDate(cur.getUTCDate() + 1);
       }
       if (week.length) weeks.push(week);
     }
     return weeks;
   }, [batchStart]);
-
-  const toKey = (d: Date) => d.toISOString().slice(0, 10);
 
   const cellColor = (count: number) => {
     if (count === 0) return 'var(--surface-3)';
@@ -92,15 +109,14 @@ function ActivityHeatmap({
         <div className="up-heatmap-grid">
           {columns.map((week, wi) => (
             <div key={wi} className="up-heatmap-col">
-              {week.map((day) => {
-                const k = toKey(day);
-                const count = dataMap.get(k) || 0;
+              {week.map(({ key }) => {
+                const count = dataMap.get(key) || 0;
                 return (
                   <div
-                    key={k}
+                    key={key}
                     className="up-heatmap-cell"
                     style={{ background: cellColor(count) }}
-                    title={`${k}: ${count} solve${count !== 1 ? 's' : ''}`}
+                    title={`${key}: ${count} solve${count !== 1 ? 's' : ''}`}
                   />
                 );
               })}
@@ -110,6 +126,10 @@ function ActivityHeatmap({
       </div>
     </div>
   );
+}
+
+function monthKey(m: string) {
+  return m;
 }
 
 export default function UserProfileClient({

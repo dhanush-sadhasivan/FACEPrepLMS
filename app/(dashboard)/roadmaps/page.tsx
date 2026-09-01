@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { Roadmap, UserRoadmapProgress, RoadmapTopic, RoadmapQuestion } from '@/lib/types';
-import { useRoadmaps, useCurrentUser } from '@/lib/swr-hooks';
+import { useRoadmaps, useCurrentUser, mutateAllTrainerData } from '@/lib/swr-hooks';
 import './page.css';
 
 interface RoadmapWithProgress extends Roadmap {
@@ -78,6 +78,24 @@ export default function RoadmapsPage() {
         const data = await res.json();
         if (res.ok) {
           setSyncMessage(`✅ ${data.message || 'HackerRank scrape started! Submission data is syncing.'}`);
+          // If a background job ID is returned, poll for completion
+          if (data.jobId) {
+            let attempts = 0;
+            const maxAttempts = 15;
+            while (attempts < maxAttempts) {
+              await new Promise((r) => setTimeout(r, 2000));
+              try {
+                const statusRes = await fetch(`/api/scrape/status?jobId=${data.jobId}`);
+                if (statusRes.ok) {
+                  const statusData = await statusRes.json();
+                  if (statusData.status === 'completed' || statusData.status === 'failed') {
+                    break;
+                  }
+                }
+              } catch {}
+              attempts++;
+            }
+          }
         } else {
           setSyncMessage(`⚡ Scrape sync initiated! Checking HackerRank updates... (${data.error || 'Triggered'})`);
         }
@@ -85,9 +103,11 @@ export default function RoadmapsPage() {
         await new Promise(r => setTimeout(r, 1000));
         setSyncMessage(`✅ HackerRank submission scraper triggered! Syncing question completions across roadmaps.`);
       }
+      await mutateAllTrainerData();
       await mutateRoadmaps();
     } catch (err: any) {
       setSyncMessage(`❌ Scrape sync failed: ${err?.message || 'Network error. Please check your connection and try again.'}`);
+      await mutateAllTrainerData();
       await mutateRoadmaps();
     } finally {
       setIsSyncing(false);

@@ -1,13 +1,9 @@
 import { createClient } from '@/lib/supabase/server';
 import { NextResponse } from 'next/server';
+import { isRecordSolved } from '@/lib/utils';
 
-function isQuestionSolved(p: any): boolean {
-  if (!p) return false;
-  if (p.status === 'solved') return true;
-  const score = typeof p.score === 'number' ? p.score : parseFloat(p.score) || 0;
-  const maxScore = typeof p.max_score === 'number' ? p.max_score : parseFloat(p.max_score) || 10;
-  return maxScore > 0 && score >= maxScore;
-}
+const isQuestionSolved = isRecordSolved;
+
 
 // GET /api/trainer/roadmaps — Fetch roadmaps assigned to the logged-in user with auto-synced progress & date analytics
 export async function GET() {
@@ -65,10 +61,13 @@ export async function GET() {
     const existing = existingProgress.find((p: any) => p.roadmap_id === rm.id);
 
     const topics = rm.topics || [];
-    const completedTopicIds: string[] = [];
+    const completedTopicIdsSet = new Set<string>();
+    const solvedQuestionIdsSet = new Set<string>();
     const topicCompletionDates: Record<string, string> = {};
     let earliestAttemptedDate: string | null = null;
     let latestCompletedDate: string | null = null;
+
+    let totalQuestionsCount = 0;
 
     // Check each topic and its nested questions for completion via scraped progress or manual state
     topics.forEach((topic: any) => {
@@ -77,17 +76,24 @@ export async function GET() {
 
       // Handle topic with nested questions (e.g. Topic: "LinkedList", Questions: [q1, q2])
       if (topic.questions && Array.isArray(topic.questions) && topic.questions.length > 0) {
+        totalQuestionsCount += topic.questions.length;
         let allQuestionsSolved = true;
         topic.questions.forEach((q: any) => {
           const qId = q.question_id || q.id;
           const qp = questionProgress.find((p: any) => p.question_id === qId);
-          const qSolved = isQuestionSolved(qp) || existing?.completed_topic_ids?.includes(q.id) || existing?.completed_topic_ids?.includes(qId);
+          const qSolved = isRecordSolved(qp) || existing?.completed_topic_ids?.includes(q.id) || (qId && existing?.completed_topic_ids?.includes(qId));
           
           if (qSolved) {
-            completedTopicIds.push(q.id);
-            if (qId) completedTopicIds.push(qId);
+            if (q.id) {
+              completedTopicIdsSet.add(String(q.id));
+              solvedQuestionIdsSet.add(String(q.id));
+            }
+            if (qId) {
+              completedTopicIdsSet.add(String(qId));
+              solvedQuestionIdsSet.add(String(qId));
+            }
             const ts = qp?.updated_at || qp?.last_submission_at || existing?.topic_completion_dates?.[q.id] || new Date().toISOString();
-            topicCompletionDates[q.id] = ts;
+            if (q.id) topicCompletionDates[q.id] = ts;
             if (qId) topicCompletionDates[qId] = ts;
             if (ts && (!earliestAttemptedDate || new Date(ts) < new Date(earliestAttemptedDate))) earliestAttemptedDate = ts;
             if (ts && (!latestCompletedDate || new Date(ts) > new Date(latestCompletedDate))) latestCompletedDate = ts;
@@ -100,15 +106,18 @@ export async function GET() {
         }
       } else if (topic.question_id || topic.id) {
         // Handle single question topic
+        totalQuestionsCount += 1;
         const qId = topic.question_id || topic.id;
         const qp = questionProgress.find((p: any) => p.question_id === qId);
-        if (isQuestionSolved(qp)) {
+        if (isRecordSolved(qp)) {
           isTopicSolved = true;
           solvedTimestamp = qp.updated_at || qp.last_submission_at || new Date().toISOString();
           if (solvedTimestamp && (!earliestAttemptedDate || new Date(solvedTimestamp) < new Date(earliestAttemptedDate))) {
             earliestAttemptedDate = solvedTimestamp;
           }
         }
+      } else {
+        totalQuestionsCount += 1;
       }
 
       // Fallback to manual check-off in user_roadmap_progress if recorded
@@ -118,7 +127,7 @@ export async function GET() {
       }
 
       if (isTopicSolved) {
-        completedTopicIds.push(topic.id);
+        completedTopicIdsSet.add(String(topic.id));
         if (solvedTimestamp) {
           topicCompletionDates[topic.id] = solvedTimestamp;
           if (!latestCompletedDate || new Date(solvedTimestamp) > new Date(latestCompletedDate)) {
@@ -128,12 +137,12 @@ export async function GET() {
       }
     });
 
-    const totalTopics = topics.length;
-    const completedCount = completedTopicIds.length;
+    const totalTarget = totalQuestionsCount || topics.length;
+    const completedCount = solvedQuestionIdsSet.size > 0 ? solvedQuestionIdsSet.size : (completedTopicIdsSet.size);
     const computedStatus =
       completedCount === 0
         ? 'not_started'
-        : completedCount >= totalTopics
+        : completedCount >= totalTarget
         ? 'completed'
         : 'in_progress';
 
@@ -147,7 +156,7 @@ export async function GET() {
         id: existing?.id || '',
         user_id: user.id,
         roadmap_id: rm.id,
-        completed_topic_ids: completedTopicIds,
+        completed_topic_ids: Array.from(completedTopicIdsSet),
         topic_completion_dates: topicCompletionDates,
         status: computedStatus,
         started_at: startedAt,

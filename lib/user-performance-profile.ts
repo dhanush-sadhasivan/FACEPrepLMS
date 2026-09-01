@@ -1,4 +1,5 @@
-﻿import { getAdminClient } from '@/lib/supabase/admin';
+import { getAdminClient } from '@/lib/supabase/admin';
+import { isRecordSolved } from '@/lib/utils';
 
 export interface UserPerformanceProfileData {
   user: {
@@ -181,7 +182,7 @@ export async function getUserPerformanceProfile(
         let status = 'unattempted';
 
         if (p) {
-          if (p.status === 'solved' && score >= maxScore && maxScore > 0) {
+          if (isRecordSolved(p)) {
             status = 'solved';
           } else if (p.status === 'attempted' || score > 0) {
             status = 'attempted';
@@ -220,16 +221,35 @@ export async function getUserPerformanceProfile(
       };
     });
 
-    // Summary aggregation
+    // Summary aggregation (Deduplicated MAX score and solve state per distinct question)
+    const dedupProgress = new Map<string, { maxScore: number; isSolved: boolean; isAttempted: boolean }>();
     progressRows.forEach((p: any) => {
-      totalScore += p.score || 0;
-      if (p.contest_id) participatedContests.add(p.contest_id);
-      if (p.status === 'solved' && p.score > 0) {
-        totalSolved++;
+      if (p.contest_id && (p.status === 'solved' || p.status === 'attempted' || (p.score || 0) > 0)) {
+        participatedContests.add(p.contest_id);
       }
-      if (p.status === 'solved' || p.status === 'attempted' || p.score > 0) {
-        problemsAttempted++;
+      const qId = p.question_id;
+      if (!qId) return;
+      const score = Number(p.score) || 0;
+      const solved = isRecordSolved(p);
+      const attempted = p.status === 'solved' || p.status === 'attempted' || score > 0;
+      const existing = dedupProgress.get(qId);
+      if (!existing) {
+        dedupProgress.set(qId, {
+          maxScore: score,
+          isSolved: solved,
+          isAttempted: attempted,
+        });
+      } else {
+        existing.maxScore = Math.max(existing.maxScore, score);
+        existing.isSolved = existing.isSolved || solved;
+        existing.isAttempted = existing.isAttempted || attempted;
       }
+    });
+
+    dedupProgress.forEach((item) => {
+      totalScore += item.maxScore;
+      if (item.isSolved) totalSolved++;
+      if (item.isAttempted) problemsAttempted++;
     });
 
     // Batch start calculation
@@ -241,24 +261,33 @@ export async function getUserPerformanceProfile(
       }
     }
 
-    // Heatmap aggregation
-    const solveCountByDay = new Map<string, number>();
+    // Heatmap aggregation (Asia/Kolkata IST timezone, strict solves only, distinct questions per day)
+    const istDateFormatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+
+    const solveQuestionsByDay = new Map<string, Set<string>>();
     progressRows.forEach((p: any) => {
-      if (p.last_submission_at && (p.status === 'solved' || p.score > 0)) {
+      if (p.last_submission_at && isRecordSolved(p)) {
         const subDate = new Date(p.last_submission_at);
         if (subDate >= new Date(batchStart)) {
-          // Format as YYYY-MM-DD
-          const year = subDate.getFullYear();
-          const month = String(subDate.getMonth() + 1).padStart(2, '0');
-          const day = String(subDate.getDate()).padStart(2, '0');
-          const dayKey = `${year}-${month}-${day}`;
-          solveCountByDay.set(dayKey, (solveCountByDay.get(dayKey) || 0) + 1);
+          const dayKey = istDateFormatter.format(subDate);
+          if (!solveQuestionsByDay.has(dayKey)) {
+            solveQuestionsByDay.set(dayKey, new Set<string>());
+          }
+          if (p.question_id) {
+            solveQuestionsByDay.get(dayKey)!.add(p.question_id);
+          }
         }
       }
     });
 
-    const heatmap = Array.from(solveCountByDay.entries())
-      .map(([day, solve_count]) => ({ day, solve_count }))
+    const heatmap = Array.from(solveQuestionsByDay.entries())
+      .filter(([_, questions]) => questions.size > 0)
+      .map(([day, questions]) => ({ day, solve_count: questions.size }))
       .sort((a, b) => a.day.localeCompare(b.day));
 
     return {

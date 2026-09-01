@@ -140,7 +140,8 @@ export default async function ContestDetailPage({ params }: { params: Promise<{ 
             };
           }
           return row;
-        });
+        })
+        .sort((a: any, b: any) => (b.score - a.score) || (b.solved - a.solved) || (a.name || '').localeCompare(b.name || ''));
     } else {
       // ── Fallback to direct DB query if cache snapshot not yet available ────
       const { data: assignedUserProfiles } = await dbAdmin
@@ -212,7 +213,9 @@ export default async function ContestDetailPage({ params }: { params: Promise<{ 
         }
       });
 
-      leaderboard = Array.from(userMap.values()).sort((a, b) => b.score - a.score);
+      leaderboard = Array.from(userMap.values()).sort(
+        (a: any, b: any) => (b.score - a.score) || (b.solved - a.solved) || (a.name || '').localeCompare(b.name || '')
+      );
     }
   } else {
     // No explicit assignments — show all non-admin users who have progress data
@@ -275,7 +278,9 @@ export default async function ContestDetailPage({ params }: { params: Promise<{ 
         }
       });
 
-      leaderboard = Array.from(userMap.values()).sort((a, b) => b.score - a.score);
+      leaderboard = Array.from(userMap.values()).sort(
+        (a: any, b: any) => (b.score - a.score) || (b.solved - a.solved) || (a.name || '').localeCompare(b.name || '')
+      );
     }
   }
   const totalTopicsCount = Array.from(new Set(enabledQuestionsList.map((q: any) => q.domain || 'General'))).length;

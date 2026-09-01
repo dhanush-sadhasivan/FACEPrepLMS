@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
+import { revalidatePath, revalidateTag } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { getAdminClient } from '@/lib/supabase/admin';
+import { generateAndUploadCdnSnapshots } from '@/lib/cdn-cache';
 
 type Params = Promise<{ id: string }>;
 
@@ -41,6 +43,21 @@ export async function PATCH(request: Request, { params }: { params: Params }) {
     }
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+
+  if (question?.contest_id) {
+    try {
+      await generateAndUploadCdnSnapshots(question.contest_id);
+    } catch (cdnErr) {
+      console.warn(`[PATCH /api/questions/${id}] CDN snapshot error:`, cdnErr);
+    }
+    revalidatePath(`/contests/${question.contest_id}`);
+    revalidateTag(`contest-${question.contest_id}`, 'max');
+  }
+  revalidatePath('/contests');
+  revalidatePath('/dashboard');
+  revalidateTag('contests', 'max');
+  revalidateTag('leaderboard', 'max');
+  revalidateTag('global-stats', 'max');
 
   console.log(`[PATCH /api/questions/${id}] Updated is_enabled=${is_enabled}`);
   return NextResponse.json({ success: true, question });
