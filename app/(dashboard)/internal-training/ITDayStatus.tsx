@@ -6,6 +6,7 @@ import ITAttendanceToggle from './ITAttendanceToggle';
 
 interface ITDayStatusProps {
   itDaysCount: number;
+  globalItDays?: number;
   isITCountedToday: boolean;
   totalPlannedDays: number;
   currentDay: number;
@@ -19,6 +20,7 @@ interface ITDayStatusProps {
 
 export default function ITDayStatus({
   itDaysCount,
+  globalItDays,
   isITCountedToday,
   totalPlannedDays,
   currentDay,
@@ -52,7 +54,7 @@ export default function ITDayStatus({
         disabled={isActionInProgress}
       />
 
-      {/* Stats Cards Grid */}
+      {/* Stats Cards Grid (Two-Tier Display: Per-Roadmap and Global) */}
       <div className="it-stats-grid">
         {/* IT Days Card (Per-Roadmap) */}
         <div className="it-stat-card">
@@ -63,7 +65,20 @@ export default function ITDayStatus({
             <div className="it-stat-value" style={{ color: '#10b981' }}>
               {count}
             </div>
-            <div className="it-stat-label">IT Days Logged (This Roadmap)</div>
+            <div className="it-stat-label">Roadmap IT Days</div>
+          </div>
+        </div>
+
+        {/* Global IT Days Card (All Roadmaps Combined) */}
+        <div className="it-stat-card">
+          <div className="it-stat-icon-wrap" style={{ background: 'rgba(14, 165, 233, 0.15)', color: '#0ea5e9' }}>
+            🌐
+          </div>
+          <div>
+            <div className="it-stat-value" style={{ color: '#0ea5e9' }}>
+              {Math.max(globalItDays ?? 0, count)}
+            </div>
+            <div className="it-stat-label">Total Global IT Days</div>
           </div>
         </div>
 

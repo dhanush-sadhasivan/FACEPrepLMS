@@ -84,17 +84,29 @@ export async function POST(request: Request) {
       });
   }
 
-  // 3. Recalculate global IT days for this user across all assigned roadmaps
+  // 3. Recalculate global IT days for this user across all assigned roadmaps (two-tier contract)
   const { data: allUserItProgress } = await dbAdmin
     .from('it_trainer_progress')
     .select('it_days_logged')
     .eq('user_id', userId);
 
-  const newGlobalCount = Math.max(
+  const maxRoadmapDays = Math.max(
     ...((allUserItProgress || []).map((p: any) => p.it_days_logged || 0)),
     targetCount,
     0
   );
+
+  const { data: userProfile } = await dbAdmin
+    .from('users')
+    .select('it_days_count, last_it_check_date')
+    .eq('id', userId)
+    .single();
+
+  const currentGlobal = userProfile?.it_days_count || 0;
+  let newGlobalCount = Math.max(currentGlobal, maxRoadmapDays);
+  if (action === 'decrement') {
+    newGlobalCount = Math.max(0, maxRoadmapDays);
+  }
 
   await dbAdmin
     .from('users')
@@ -113,6 +125,7 @@ export async function POST(request: Request) {
         ...metadata,
         it_days_count: newGlobalCount,
         last_it_check_date: today,
+        last_it_attendance_date: today,
       },
     });
   } catch (authErr) {

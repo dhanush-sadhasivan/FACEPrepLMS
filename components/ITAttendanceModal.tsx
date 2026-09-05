@@ -1,19 +1,103 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
+import { formatISODate } from '@/lib/it-calendar';
 
-export default function ITAttendanceModal() {
+interface ITAttendanceModalProps {
+  currentUser?: {
+    id: string;
+    role?: string;
+  } | null;
+}
+
+function getDailyGuardKey(userId: string | null | undefined, dateStr: string) {
+  return userId ? `it_check_guard_${userId}_${dateStr}` : `it_check_guard_device_${dateStr}`;
+}
+
+function hasAnsweredOrDismissedToday(userId: string | null | undefined, dateStr: string): boolean {
+  if (typeof window === 'undefined' || !dateStr) return false;
+  try {
+    if (userId) {
+      const userKey = `it_check_guard_${userId}_${dateStr}`;
+      const userVal = localStorage.getItem(userKey) || sessionStorage.getItem(userKey);
+      if (userVal === 'true') return true;
+    }
+    const deviceKey = `it_check_guard_device_${dateStr}`;
+    const deviceVal = localStorage.getItem(deviceKey) || sessionStorage.getItem(deviceKey);
+    return deviceVal === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function markAnsweredOrDismissedToday(userId: string | null | undefined, dateStr: string): void {
+  if (typeof window === 'undefined' || !dateStr) return;
+  // If userId is known, isolate the guard strictly to that user so another user on a shared device is not suppressed
+  const keys = userId
+    ? [`it_check_guard_${userId}_${dateStr}`]
+    : [`it_check_guard_device_${dateStr}`];
+  for (const key of keys) {
+    try {
+      localStorage.setItem(key, 'true');
+    } catch {
+      // localStorage may throw SecurityError or QuotaExceededError in restricted sandboxes
+    }
+    try {
+      sessionStorage.setItem(key, 'true');
+    } catch {
+      // sessionStorage fallback
+    }
+  }
+}
+
+export default function ITAttendanceModal({ currentUser }: ITAttendanceModalProps) {
+  const router = useRouter();
   const [showModal, setShowModal] = useState(false);
   const [loading, setLoading] = useState(false);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const [activeUserId, setActiveUserId] = useState<string | null>(currentUser?.id || null);
+  const [activeDate, setActiveDate] = useState<string>(formatISODate(new Date()));
 
   useEffect(() => {
+    // Non-trainers should not see the IT attendance modal
+    if (currentUser?.role && currentUser.role !== 'trainer') {
+      return;
+    }
+
+    const localToday = formatISODate(new Date());
+
+    // Pre-flight check with current user ID if available
+    if (hasAnsweredOrDismissedToday(currentUser?.id, localToday)) {
+      return;
+    }
+
+    let isMounted = true;
+
     async function checkITStatus() {
       try {
         const res = await fetch('/api/trainer/it-check');
-        if (res.ok) {
+        if (res.ok && isMounted) {
           const data = await res.json();
-          if (data.needsCheck) {
+          const effectiveUserId = data.userId || currentUser?.id;
+          const effectiveDate = data.today || localToday;
+
+          if (effectiveUserId) {
+            setActiveUserId(effectiveUserId);
+          }
+          if (effectiveDate) {
+            setActiveDate(effectiveDate);
+          }
+
+          // Check if already answered or dismissed on this client device today
+          if (hasAnsweredOrDismissedToday(effectiveUserId, effectiveDate)) {
+            return;
+          }
+
+          if (!data.needsCheck) {
+            // Already checked on server; persist client guard to avoid redundant fetches on route change
+            markAnsweredOrDismissedToday(effectiveUserId, effectiveDate);
+          } else {
             setShowModal(true);
           }
         }
@@ -21,11 +105,28 @@ export default function ITAttendanceModal() {
         // silent fail
       }
     }
+
     checkITStatus();
-  }, []);
+
+    return () => {
+      isMounted = false;
+    };
+  }, [currentUser]);
+
+  const handleDismiss = useCallback(() => {
+    const uid = activeUserId || currentUser?.id;
+    const d = activeDate || formatISODate(new Date());
+    markAnsweredOrDismissedToday(uid, d);
+    setShowModal(false);
+  }, [activeUserId, activeDate, currentUser]);
 
   const handleResponse = async (didIT: boolean) => {
+    const uid = activeUserId || currentUser?.id;
+    const d = activeDate || formatISODate(new Date());
+    markAnsweredOrDismissedToday(uid, d);
+    setShowModal(false);
     setLoading(true);
+
     try {
       const res = await fetch('/api/trainer/it-check', {
         method: 'POST',
@@ -39,12 +140,17 @@ export default function ITAttendanceModal() {
           setToastMsg(`🎉 Internal Training Day Counted! Total IT Days: ${data.newCount}`);
           setTimeout(() => setToastMsg(null), 4000);
         }
+        // Broadcast custom event so other components on page re-sync immediately
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('it-attendance-updated', { detail: data }));
+        }
+        // Refresh Server Component tree on current route to update dashboard header badge
+        router.refresh();
       }
     } catch {
       // silent fail
     } finally {
       setLoading(false);
-      setShowModal(false);
     }
   };
 
@@ -66,8 +172,31 @@ export default function ITAttendanceModal() {
 
       {/* IT Attendance Modal Prompt */}
       {showModal && (
-        <div className="modal-overlay" style={{ zIndex: 99998, background: 'rgba(0, 0, 0, 0.7)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' }}>
-          <div className="modal" style={{ maxWidth: 460, padding: '2rem', borderRadius: 'var(--radius-xl)', textAlign: 'center', border: '1px solid var(--border)', background: 'var(--gradient-card)', boxShadow: 'var(--shadow-lg)' }}>
+        <div
+          className="modal-overlay"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              handleDismiss();
+            }
+          }}
+          style={{ zIndex: 99998, background: 'rgba(0, 0, 0, 0.7)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' }}
+        >
+          <div className="modal" style={{ maxWidth: 460, padding: '2rem', borderRadius: 'var(--radius-xl)', textAlign: 'center', border: '1px solid var(--border)', background: 'var(--gradient-card)', boxShadow: 'var(--shadow-lg)', position: 'relative' }}>
+            <button
+              onClick={handleDismiss}
+              aria-label="Dismiss IT Check for Today"
+              title="Dismiss for today"
+              style={{
+                position: 'absolute', top: 16, right: 16,
+                background: 'none', border: 'none',
+                color: 'var(--text-muted)', fontSize: '1.25rem',
+                cursor: 'pointer', padding: '0.35rem',
+                lineHeight: 1, borderRadius: '6px',
+              }}
+            >
+              ✕
+            </button>
+
             <div style={{
               width: 64, height: 64, borderRadius: '50%', background: 'var(--indigo-muted)',
               color: 'var(--indigo)', display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -114,6 +243,19 @@ export default function ITAttendanceModal() {
                 }}
               >
                 <span>❌</span> No, not today
+              </button>
+
+              <button
+                onClick={handleDismiss}
+                type="button"
+                style={{
+                  background: 'none', border: 'none',
+                  color: 'var(--text-muted)', fontSize: '0.8rem',
+                  fontWeight: 600, cursor: 'pointer',
+                  padding: '0.35rem', textDecoration: 'underline',
+                }}
+              >
+                Remind me tomorrow (Dismiss)
               </button>
             </div>
           </div>

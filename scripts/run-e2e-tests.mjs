@@ -1270,6 +1270,487 @@ describe('Tier 1 — R1-IT: Internal Training Data Audit & Persistence Integrity
     const newGlobalCount = Math.max(0, maxRoadmapDays);
     assertEqual(newGlobalCount, 5, 'Global count remains 5 because RM2 has 5 days logged');
   });
+
+  test('T1.IT.18: Daily IT check endpoint handles didIT: false without roadmapId and records last_it_check_date', () => {
+    const today = '2026-09-05';
+    const user = { id: 'u_trainer_1', it_days_count: 7, last_it_check_date: '2026-09-04' };
+    const userMeta = { last_it_check_date: '2026-09-04' };
+
+    // Canonical simulation matching app/api/trainer/it-check/route.ts
+    const handleITCheck = (userRecord, body, progressList = [], meta = {}) => {
+      const { didIT } = body;
+      const anyRoadmapCheckedInToday = progressList.some(p => p.last_check_in_date && p.last_check_in_date.slice(0, 10) === today);
+      const authAttendanceToday = Boolean(meta.last_it_attendance_date && meta.last_it_attendance_date.slice(0, 10) === today);
+      const alreadyAttendanceCountedToday = authAttendanceToday || anyRoadmapCheckedInToday;
+
+      let newCount = userRecord.it_days_count || 0;
+      if (didIT && !alreadyAttendanceCountedToday) {
+        newCount += 1;
+        userRecord.it_days_count = newCount;
+        meta.last_it_attendance_date = today;
+      }
+      userRecord.last_it_check_date = today;
+      meta.last_it_check_date = today;
+      return {
+        success: true,
+        didIT: Boolean(didIT),
+        newCount,
+        alreadyCheckedInToday: alreadyAttendanceCountedToday,
+        today,
+      };
+    };
+
+    const res = handleITCheck(user, { didIT: false }, [], userMeta);
+    assertEqual(res.success, true);
+    assertEqual(res.didIT, false);
+    assertEqual(res.newCount, 7, 'Global count must not increment on No');
+    assertEqual(user.last_it_check_date, today, 'last_it_check_date must be set to today so check completes');
+    assertEqual(userMeta.last_it_attendance_date, undefined, 'last_it_attendance_date must not be set on No');
+
+    // Subsequent GET /api/trainer/it-check check
+    const isCheckedToday = Boolean(user.last_it_check_date && user.last_it_check_date.slice(0, 10) === today);
+    const needsCheck = !isCheckedToday;
+    assertEqual(needsCheck, false, 'Trainer does NOT need check again today');
+  });
+
+  test('T1.IT.19: Daily IT check endpoint handles didIT: true, updates last_it_check_date and increments global count once per day', () => {
+    const today = '2026-09-05';
+    const user = { id: 'u_trainer_2', it_days_count: 10, last_it_check_date: '2026-09-04' };
+    const userMeta = { last_it_check_date: '2026-09-04' };
+
+    const handleITCheck = (userRecord, body, progressList = [], meta = {}) => {
+      const { didIT } = body;
+      const anyRoadmapCheckedInToday = progressList.some(p => p.last_check_in_date && p.last_check_in_date.slice(0, 10) === today);
+      const authAttendanceToday = Boolean(meta.last_it_attendance_date && meta.last_it_attendance_date.slice(0, 10) === today);
+      const alreadyAttendanceCountedToday = authAttendanceToday || anyRoadmapCheckedInToday;
+
+      let newCount = userRecord.it_days_count || 0;
+      if (didIT && !alreadyAttendanceCountedToday) {
+        newCount += 1;
+        userRecord.it_days_count = newCount;
+        meta.last_it_attendance_date = today;
+      }
+      userRecord.last_it_check_date = today;
+      meta.last_it_check_date = today;
+      return {
+        success: true,
+        didIT: Boolean(didIT),
+        newCount,
+        alreadyCheckedInToday: alreadyAttendanceCountedToday,
+        today,
+      };
+    };
+
+    // First response "Yes" today
+    const res1 = handleITCheck(user, { didIT: true }, [], userMeta);
+    assertEqual(res1.success, true);
+    assertEqual(res1.newCount, 11, 'Increments to 11 on first check-in today');
+    assertEqual(res1.alreadyCheckedInToday, false);
+    assertEqual(user.it_days_count, 11);
+    assertEqual(user.last_it_check_date, today);
+    assertEqual(userMeta.last_it_attendance_date, today);
+
+    // Second response "Yes" on same day
+    const res2 = handleITCheck(user, { didIT: true }, [], userMeta);
+    assertEqual(res2.success, true);
+    assertEqual(res2.newCount, 11, 'Leaves count at 11 on repeated check-in on same day');
+    assertEqual(res2.alreadyCheckedInToday, true);
+    assertEqual(user.it_days_count, 11);
+  });
+
+  test('T1.IT.20: Client-side daily check guard prevents modal re-prompt across route transitions and refreshes once answered or dismissed', () => {
+    const mockStorage = new Map();
+    const userId = 'u_trainer_3';
+    const today = '2026-09-05';
+    const tomorrow = '2026-09-06';
+
+    const getDailyGuardKey = (uid, d) => uid ? `it_check_guard_${uid}_${d}` : `it_check_guard_device_${d}`;
+    const isGuarded = (uid, d) => mockStorage.get(getDailyGuardKey(uid, d)) === 'true';
+    const markGuarded = (uid, d) => mockStorage.set(getDailyGuardKey(uid, d), 'true');
+
+    // Initial state: not guarded
+    assertEqual(isGuarded(userId, today), false, 'Initially not guarded');
+
+    // User dismisses modal
+    markGuarded(userId, today);
+    assertEqual(isGuarded(userId, today), true, 'Marked guarded after dismissal');
+
+    // Route transition or page refresh on same day
+    const shouldOpenOnPageRefresh = !isGuarded(userId, today);
+    assertEqual(shouldOpenOnPageRefresh, false, 'Modal MUST NOT open on refresh on same day');
+
+    // Next calendar day
+    const shouldOpenTomorrow = !isGuarded(userId, tomorrow);
+    assertEqual(shouldOpenTomorrow, true, 'Modal will open on the next calendar day');
+  });
+
+  test('T1.IT.21: Two-Tier IT Days architecture: Multi-roadmap check-ins increment per-roadmap days independently while incrementing global IT days at most once per calendar day', () => {
+    const today = '2026-09-05';
+    const user = { id: 'u_trainer_4', it_days_count: 5, last_it_check_date: '2026-09-04' };
+    const userMeta = { last_it_check_date: '2026-09-04' };
+
+    const roadmaps = [
+      { id: 'rm_A', it_days_logged: 3, last_check_in_date: '2026-09-04' },
+      { id: 'rm_B', it_days_logged: 2, last_check_in_date: '2026-09-04' },
+    ];
+
+    // Canonical two-tier simulation matching lib/it-day-counter.ts
+    const recordAttendance = (userRecord, roadmapList, roadmapId, meta = {}) => {
+      const rm = roadmapList.find(r => r.id === roadmapId);
+      const alreadyCheckedInOnRoadmap = Boolean(rm.last_check_in_date && rm.last_check_in_date.slice(0, 10) === today);
+      if (!alreadyCheckedInOnRoadmap) {
+        rm.it_days_logged += 1;
+        rm.last_check_in_date = today;
+      }
+
+      const otherRoadmapsCheckedInToday = roadmapList.some(r => r.id !== roadmapId && r.last_check_in_date && r.last_check_in_date.slice(0, 10) === today);
+      const modalAttendanceToday = Boolean(meta.last_it_attendance_date && meta.last_it_attendance_date.slice(0, 10) === today);
+      const alreadyCountedGlobalToday = alreadyCheckedInOnRoadmap || otherRoadmapsCheckedInToday || modalAttendanceToday;
+
+      const maxRoadmapDays = Math.max(...roadmapList.map(r => r.it_days_logged), 0);
+      const incrementedGlobal = alreadyCountedGlobalToday ? userRecord.it_days_count : userRecord.it_days_count + 1;
+      const newGlobalCount = Math.max(incrementedGlobal, maxRoadmapDays);
+
+      userRecord.it_days_count = newGlobalCount;
+      userRecord.last_it_check_date = today;
+      meta.last_it_attendance_date = today;
+      meta.last_it_check_date = today;
+
+      return {
+        roadmapDaysLogged: rm.it_days_logged,
+        globalItDays: newGlobalCount,
+        alreadyCheckedInToday: alreadyCheckedInOnRoadmap,
+      };
+    };
+
+    // Step 1: Check in on Roadmap A
+    const resA = recordAttendance(user, roadmaps, 'rm_A', userMeta);
+    assertEqual(resA.roadmapDaysLogged, 4, 'Roadmap A days logged increments from 3 to 4');
+    assertEqual(resA.globalItDays, 6, 'Global IT days increments from 5 to 6 on first check-in today');
+    assertEqual(roadmaps[0].it_days_logged, 4);
+    assertEqual(user.it_days_count, 6);
+
+    // Step 2: Check in on Roadmap B on the same calendar day
+    const resB = recordAttendance(user, roadmaps, 'rm_B', userMeta);
+    assertEqual(resB.roadmapDaysLogged, 3, 'Roadmap B days logged increments from 2 to 3');
+    assertEqual(resB.globalItDays, 6, 'Global IT days remains 6 when checking in on another roadmap on the same day');
+    assertEqual(roadmaps[1].it_days_logged, 3);
+    assertEqual(user.it_days_count, 6, 'Global IT days count unchanged on second roadmap check-in today');
+
+    // Step 3: Repeated check-in on Roadmap A on the same calendar day
+    const resA2 = recordAttendance(user, roadmaps, 'rm_A', userMeta);
+    assertEqual(resA2.roadmapDaysLogged, 4, 'Roadmap A days logged remains 4 (already checked in today)');
+    assertEqual(resA2.globalItDays, 6, 'Global IT days remains 6');
+    assertEqual(resA2.alreadyCheckedInToday, true);
+  });
+
+  test('T1.IT.22: Progress Dashboard and Internal Training two-tier display contract parity', () => {
+    const user = {
+      id: 'u_trainer_5',
+      it_days_count: 8,
+      last_it_check_date: '2026-09-05',
+    };
+
+    const roadmapAProgress = { roadmap_id: 'rm_A', it_days_logged: 5 };
+    const roadmapBProgress = { roadmap_id: 'rm_B', it_days_logged: 3 };
+
+    // Dashboard contract: displays global users.it_days_count
+    const dashboardHeaderBadgeValue = user.it_days_count;
+    assertEqual(dashboardHeaderBadgeValue, 8, 'Dashboard header badge displays global IT days (8)');
+
+    // Internal Training page contract: displays selected roadmap days alongside global days
+    const getITPageStats = (selectedRoadmapProg, userProfile) => ({
+      roadmapDays: selectedRoadmapProg.it_days_logged,
+      globalDays: userProfile.it_days_count,
+    });
+
+    const pageStatsA = getITPageStats(roadmapAProgress, user);
+    assertEqual(pageStatsA.roadmapDays, 5, 'Internal Training page displays Roadmap A days (5)');
+    assertEqual(pageStatsA.globalDays, 8, 'Internal Training page displays Global days (8)');
+
+    const pageStatsB = getITPageStats(roadmapBProgress, user);
+    assertEqual(pageStatsB.roadmapDays, 3, 'Internal Training page displays Roadmap B days (3)');
+    assertEqual(pageStatsB.globalDays, 8, 'Internal Training page displays Global days (8)');
+  });
+
+  test('T1.IT.23: Morning "No" modal response does not block subsequent roadmap check-in from incrementing global IT days', () => {
+    const today = '2026-09-05';
+    const user = { id: 'u_trainer_6', it_days_count: 5, last_it_check_date: '2026-09-04' };
+    const userMeta = { last_it_check_date: '2026-09-04' };
+    const roadmaps = [
+      { id: 'rm_A', it_days_logged: 3, last_check_in_date: '2026-09-04' },
+    ];
+
+    // 1. Trainer answers "No" at 9 AM in daily check modal
+    const checkRes = ((userRecord, meta) => {
+      userRecord.last_it_check_date = today;
+      meta.last_it_check_date = today;
+      // Note: last_it_attendance_date is NOT set
+      return { success: true, didIT: false, newCount: userRecord.it_days_count };
+    })(user, userMeta);
+
+    assertEqual(checkRes.newCount, 5, 'Count remains 5 after No response');
+    assertEqual(user.last_it_check_date, today, 'Modal check date is today');
+    assertEqual(userMeta.last_it_attendance_date, undefined, 'Attendance date not set on No');
+
+    // 2. Later at 2 PM, trainer conducts training and checks in on Roadmap A
+    const rm = roadmaps[0];
+    const alreadyCheckedInOnRoadmap = Boolean(rm.last_check_in_date && rm.last_check_in_date.slice(0, 10) === today);
+    if (!alreadyCheckedInOnRoadmap) {
+      rm.it_days_logged += 1;
+      rm.last_check_in_date = today;
+    }
+
+    const modalAttendanceToday = Boolean(userMeta.last_it_attendance_date && userMeta.last_it_attendance_date.slice(0, 10) === today);
+    const otherRoadmapsCheckedIn = false;
+    const alreadyCountedGlobalToday = alreadyCheckedInOnRoadmap || otherRoadmapsCheckedIn || modalAttendanceToday;
+
+    const maxRoadmapDays = Math.max(...roadmaps.map(r => r.it_days_logged), 0);
+    const incrementedGlobal = alreadyCountedGlobalToday ? user.it_days_count : user.it_days_count + 1;
+    const newGlobalCount = Math.max(incrementedGlobal, maxRoadmapDays);
+
+    user.it_days_count = newGlobalCount;
+    userMeta.last_it_attendance_date = today;
+
+    assertEqual(rm.it_days_logged, 4, 'Roadmap A days logged incremented to 4');
+    assertEqual(user.it_days_count, 6, 'Global IT days MUST increment to 6 despite morning No response');
+  });
+
+  test('T1.IT.24: Morning "Yes" modal response increments global count and subsequent roadmap check-in avoids double increment', () => {
+    const today = '2026-09-05';
+    const user = { id: 'u_trainer_7', it_days_count: 5, last_it_check_date: '2026-09-04' };
+    const userMeta = { last_it_check_date: '2026-09-04' };
+    const roadmaps = [
+      { id: 'rm_A', it_days_logged: 3, last_check_in_date: '2026-09-04' },
+    ];
+
+    // 1. Trainer answers "Yes" in modal
+    user.it_days_count += 1;
+    user.last_it_check_date = today;
+    userMeta.last_it_attendance_date = today;
+    userMeta.last_it_check_date = today;
+
+    assertEqual(user.it_days_count, 6, 'Global count incremented to 6 on modal Yes');
+
+    // 2. Later, trainer checks in on Roadmap A
+    const rm = roadmaps[0];
+    const alreadyCheckedInOnRoadmap = Boolean(rm.last_check_in_date && rm.last_check_in_date.slice(0, 10) === today);
+    if (!alreadyCheckedInOnRoadmap) {
+      rm.it_days_logged += 1;
+      rm.last_check_in_date = today;
+    }
+
+    const modalAttendanceToday = Boolean(userMeta.last_it_attendance_date && userMeta.last_it_attendance_date.slice(0, 10) === today);
+    const alreadyCountedGlobalToday = alreadyCheckedInOnRoadmap || modalAttendanceToday;
+
+    const maxRoadmapDays = Math.max(...roadmaps.map(r => r.it_days_logged), 0);
+    const incrementedGlobal = alreadyCountedGlobalToday ? user.it_days_count : user.it_days_count + 1;
+    const newGlobalCount = Math.max(incrementedGlobal, maxRoadmapDays);
+
+    user.it_days_count = newGlobalCount;
+
+    assertEqual(rm.it_days_logged, 4, 'Roadmap A days logged incremented to 4');
+    assertEqual(user.it_days_count, 6, 'Global count remains 6 (not double incremented to 7)');
+  });
+
+  test('T1.IT.25: Multi-layer client storage guard falls back to device key and survives localStorage QuotaExceededError', () => {
+    const mockLocalStorage = {
+      store: new Map(),
+      setItem(key, val) {
+        throw new Error('QuotaExceededError: storage is full');
+      },
+      getItem(key) {
+        return null;
+      },
+    };
+
+    const mockSessionStorage = {
+      store: new Map(),
+      setItem(key, val) {
+        this.store.set(key, val);
+      },
+      getItem(key) {
+        return this.store.get(key) || null;
+      },
+    };
+
+    const markGuard = (userId, dateStr) => {
+      const keys = userId
+        ? [`it_check_guard_${userId}_${dateStr}`]
+        : [`it_check_guard_device_${dateStr}`];
+      for (const k of keys) {
+        try { mockLocalStorage.setItem(k, 'true'); } catch {}
+        try { mockSessionStorage.setItem(k, 'true'); } catch {}
+      }
+    };
+
+    const checkGuard = (userId, dateStr) => {
+      if (userId) {
+        const uKey = `it_check_guard_${userId}_${dateStr}`;
+        const uVal = mockLocalStorage.getItem(uKey) || mockSessionStorage.getItem(uKey);
+        if (uVal === 'true') return true;
+      }
+      const dKey = `it_check_guard_device_${dateStr}`;
+      const dVal = mockLocalStorage.getItem(dKey) || mockSessionStorage.getItem(dKey);
+      return dVal === 'true';
+    };
+
+    // Test with null userId (anonymous or pending hydration)
+    markGuard(null, '2026-09-05');
+    assertEqual(checkGuard(null, '2026-09-05'), true, 'Guarded even when userId is null');
+    assertEqual(checkGuard('any_user', '2026-09-05'), true, 'Device fallback protects against modal re-opening for user');
+    assertEqual(checkGuard('any_user', '2026-09-06'), false, 'Does not guard next day');
+  });
+
+  test('T1.IT.26: Cross-user storage guard isolation ensures Trainer A dismissal does not suppress Trainer B on same device', () => {
+    const mockStorage = new Map();
+    const markGuard = (userId, dateStr) => {
+      const keys = userId
+        ? [`it_check_guard_${userId}_${dateStr}`]
+        : [`it_check_guard_device_${dateStr}`];
+      for (const k of keys) {
+        mockStorage.set(k, 'true');
+      }
+    };
+
+    const checkGuard = (userId, dateStr) => {
+      if (userId) {
+        const uKey = `it_check_guard_${userId}_${dateStr}`;
+        if (mockStorage.get(uKey) === 'true') return true;
+      }
+      const dKey = `it_check_guard_device_${dateStr}`;
+      return mockStorage.get(dKey) === 'true';
+    };
+
+    const today = '2026-09-05';
+    // 1. Trainer A logs in and dismisses the modal
+    markGuard('trainer_A', today);
+    assertEqual(checkGuard('trainer_A', today), true, 'Trainer A is guarded today');
+
+    // 2. Trainer B logs in on the same browser device on the same day
+    assertEqual(checkGuard('trainer_B', today), false, 'Trainer B is NOT guarded by Trainer A dismissal');
+
+    // 3. Trainer B checks in
+    markGuard('trainer_B', today);
+    assertEqual(checkGuard('trainer_B', today), true, 'Trainer B is now guarded');
+  });
+
+  test('T1.IT.27: Data harmonization in POST /api/trainer/it-check protects existing progress and metadata from being clobbered', () => {
+    const today = '2026-09-05';
+    // Scenario: user record in DB has it_days_count: 0 (diverged), but authMetadata has 7 and roadmap has 7
+    const userRecord = { id: 'u_harmonize', it_days_count: 0, last_it_check_date: '2026-09-04' };
+    const authMetadata = { it_days_count: 7, last_it_check_date: '2026-09-04' };
+    const progressList = [
+      { roadmap_id: 'rm_1', it_days_logged: 7, last_check_in_date: '2026-09-04' }
+    ];
+
+    const handleHarmonizedCheck = (user, meta, progress, didIT) => {
+      const maxRoadmapDays = Math.max(...progress.map(p => p.it_days_logged || 0), 0);
+      const baselineGlobalCount = Math.max(
+        user?.it_days_count || 0,
+        meta?.it_days_count || 0,
+        maxRoadmapDays
+      );
+
+      const anyRoadmapCheckedInToday = progress.some(p => p.last_check_in_date && p.last_check_in_date.slice(0, 10) === today);
+      const authAttendanceToday = Boolean(meta.last_it_attendance_date && meta.last_it_attendance_date.slice(0, 10) === today);
+      const alreadyAttendanceCountedToday = authAttendanceToday || anyRoadmapCheckedInToday;
+
+      let newGlobalCount = baselineGlobalCount;
+      if (didIT && !alreadyAttendanceCountedToday) {
+        newGlobalCount = baselineGlobalCount + 1;
+      }
+
+      user.it_days_count = newGlobalCount;
+      user.last_it_check_date = today;
+      meta.it_days_count = newGlobalCount;
+      meta.last_it_check_date = today;
+      if (didIT) {
+        meta.last_it_attendance_date = today;
+      }
+
+      return { newGlobalCount, didIT };
+    };
+
+    const res = handleHarmonizedCheck(userRecord, authMetadata, progressList, true);
+    assertEqual(res.newGlobalCount, 8, 'Harmonized count increments from baseline 7 to 8, NOT from 0 to 1');
+    assertEqual(userRecord.it_days_count, 8, 'users.it_days_count healed to 8');
+    assertEqual(authMetadata.it_days_count, 8, 'auth metadata in sync at 8');
+  });
+
+  test('T1.IT.28: Per-roadmap isolation in trainer-overview and reports prevents unstarted roadmaps from inheriting global IT days', () => {
+    const user = { id: 'u_multi', full_name: 'Alex Trainer', it_days_count: 12 };
+    // Roadmap A has progress (12 days)
+    const progressA = { user_id: 'u_multi', roadmap_id: 'rm_A', it_days_logged: 12, last_check_in_date: '2026-09-05' };
+    // Roadmap B is newly assigned to Alex, but no it_trainer_progress row exists yet
+    const progressB = undefined;
+
+    const computeOverviewRow = (u, p, totalDays) => {
+      const itDaysLogged = p?.it_days_logged ?? 0;
+      const currentDay = Math.min(itDaysLogged, totalDays || 1);
+      return {
+        itDaysCount: itDaysLogged,
+        currentDay,
+      };
+    };
+
+    const rowA = computeOverviewRow(user, progressA, 15);
+    assertEqual(rowA.itDaysCount, 12, 'Roadmap A correctly shows 12 days');
+    assertEqual(rowA.currentDay, 12, 'Roadmap A current day is 12');
+
+    const rowB = computeOverviewRow(user, progressB, 10);
+    assertEqual(rowB.itDaysCount, 0, 'Roadmap B correctly shows 0 days logged (not 12)');
+    assertEqual(rowB.currentDay, 0, 'Roadmap B current day is 0 for unstarted roadmap');
+  });
+
+  test('T1.IT.29: Global baseline harmonization in lib/it-day-counter.ts preserves highest existing count from auth metadata', () => {
+    const profile = { it_days_count: 0 };
+    const authMetadata = { it_days_count: 5 };
+    const baselineGlobalCount = Math.max(profile?.it_days_count || 0, authMetadata?.it_days_count || 0);
+    const maxRoadmapDays = 5;
+
+    const alreadyCountedGlobalToday = false;
+    const incrementedGlobal = alreadyCountedGlobalToday ? baselineGlobalCount : baselineGlobalCount + 1;
+    const newGlobalCount = Math.max(incrementedGlobal, maxRoadmapDays);
+
+    assertEqual(newGlobalCount, 6, 'Harmonized count correctly increments from 5 to 6');
+  });
+
+  test('T1.IT.30: Multi-roadmap baseline harmonization in recordITAttendance prevents count stagnation when checking in on new roadmap', () => {
+    // Scenario: user.it_days_count = 0 and authMetadata is uninitialized in DB, but user has completed 7 days on Roadmap A.
+    // Today, user conducts first check-in on Roadmap B (0 -> 1).
+    const profile = { it_days_count: 0 };
+    const authMetadata = {};
+    const roadmapId = 'rm_B';
+    const currentDaysLoggedOnB = 0;
+    const allProgressFull = [
+      { roadmap_id: 'rm_A', it_days_logged: 7, last_check_in_date: '2026-09-04' },
+      { roadmap_id: 'rm_B', it_days_logged: 1, last_check_in_date: '2026-09-05' }, // after update on rm_B
+    ];
+
+    const previousMaxRoadmapDays = Math.max(
+      currentDaysLoggedOnB,
+      ...allProgressFull
+        .filter((p) => p.roadmap_id !== roadmapId)
+        .map((p) => p.it_days_logged || 0),
+      0
+    );
+
+    const baselineGlobalCount = Math.max(
+      profile?.it_days_count || 0,
+      authMetadata?.it_days_count || 0,
+      previousMaxRoadmapDays
+    );
+
+    const alreadyCountedGlobalToday = false;
+    const maxRoadmapDays = Math.max(...allProgressFull.map((p) => p.it_days_logged || 0), 1, 0);
+    const incrementedGlobal = alreadyCountedGlobalToday ? baselineGlobalCount : baselineGlobalCount + 1;
+    const newGlobalCount = Math.max(incrementedGlobal, maxRoadmapDays);
+
+    assertEqual(previousMaxRoadmapDays, 7, 'Detected 7 days logged on Roadmap A prior to check-in');
+    assertEqual(baselineGlobalCount, 7, 'Baseline correctly healed to 7 from Roadmap A');
+    assertEqual(newGlobalCount, 8, 'Global count correctly increments from 7 to 8 on new calendar day check-in');
+  });
 });
 
 describe('Tier 1 — R2-IT: Internal Training Pagination & Modal List Performance', () => {

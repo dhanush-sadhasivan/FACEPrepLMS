@@ -105,15 +105,15 @@ export async function GET(
   // ── Per-Roadmap Attendance-Driven Day Calculation ───────────
   const itDaysLogged = progress?.it_days_logged || 0;
   const lastCheckInDate = progress?.last_check_in_date || null;
-  const isCheckedInToday = lastCheckInDate === today;
+  const isCheckedInToday = Boolean(lastCheckInDate && lastCheckInDate.slice(0, 10) === today);
   const needsCheckInToday = !isCheckedInToday;
 
   // currentDay = number of IT days logged for THIS roadmap
   const currentDay = Math.min(itDaysLogged, totalPlannedDays || 1);
   const nextDayToUnlock = Math.min(itDaysLogged + 1, totalPlannedDays || 1);
 
-  // Global IT days (for display in header badge)
-  const globalItDays = Math.max(profile?.it_days_count || 0);
+  // Global IT days (for display in header badge and KPI card)
+  const globalItDays = Math.max(profile?.it_days_count || 0, user?.user_metadata?.it_days_count || 0);
 
   // 3. Fetch completion records for this user
   const [completionsRes, hrProgressRes] = await Promise.all([

@@ -631,9 +631,9 @@ async function handleITAttendanceReport(
         if (!u || u.role === 'admin') return;
 
         const p = progressMap.get(`${uid}_${rmId}`);
-        const itDaysLogged = p?.it_days_logged ?? u.it_days_count ?? 0;
+        const itDaysLogged = p?.it_days_logged ?? 0;
         const currentDay = Math.min(itDaysLogged, totalDays || 1);
-        const lastCheckIn = p?.last_check_in_date || u.last_it_check_date || null;
+        const lastCheckIn = p?.last_check_in_date || (p?.updated_at ? p.updated_at.slice(0, 10) : null);
 
         let completedCount = 0;
         let pendingCount = 0;
@@ -760,7 +760,7 @@ async function handleITAttendanceReport(
     }
 
     const startedAt = p?.started_at || row.started_at || null;
-    const lastCheckInDate = p?.last_check_in_date || row.last_it_check_date || u?.last_it_check_date || (p?.updated_at ? p.updated_at.slice(0, 10) : null);
+    const lastCheckInDate = p?.last_check_in_date || row.last_it_check_date || (p?.updated_at ? p.updated_at.slice(0, 10) : null);
 
     if (filters.startDate) {
       if (!lastCheckInDate) return;

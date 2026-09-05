@@ -70,7 +70,7 @@ export async function recordITAttendance(
 
   const lastCheckIn = progress.last_check_in_date || null;
   const currentDaysLogged = progress.it_days_logged || 0;
-  const alreadyCheckedInToday = lastCheckIn === today;
+  const alreadyCheckedInToday = Boolean(lastCheckIn && lastCheckIn.slice(0, 10) === today);
 
   let newDaysLogged = currentDaysLogged;
   if (!alreadyCheckedInToday) {
@@ -111,29 +111,59 @@ export async function recordITAttendance(
     console.error('[recordITAttendance] Error updating it_trainer_progress:', updateErr);
   }
 
+  // 3. Recalculate global IT days count (Two-tier attendance invariant):
+  // Global IT days (users.it_days_count) increments by 1 on the first check-in of the calendar day across ANY roadmap.
+  // If a trainer checks in on multiple roadmaps on the same calendar day, each roadmap gets its check-in recorded,
+  // but global IT days increments only once for that day.
+  const [allProgressRes, profileRes, authUserRes] = await Promise.all([
+    supabase
+      .from('it_trainer_progress')
+      .select('roadmap_id, it_days_logged, last_check_in_date')
+      .eq('user_id', userId),
+    supabase
+      .from('users')
+      .select('it_days_count, last_it_check_date')
+      .eq('id', userId)
+      .single(),
+    supabase.auth.admin.getUserById(userId).catch(() => ({ data: { user: null } })),
+  ]);
 
-  // 3. Recalculate global IT days count:
-  // Ensure users.it_days_count is synchronized with per-roadmap it_days_logged
-  const { data: allProgressFull } = await supabase
-    .from('it_trainer_progress')
-    .select('it_days_logged')
-    .eq('user_id', userId);
-
+  const allProgressFull = allProgressRes.data || [];
   const maxRoadmapDays = Math.max(
-    ...((allProgressFull || []).map((p: any) => p.it_days_logged || 0)),
+    ...allProgressFull.map((p: any) => p.it_days_logged || 0),
     newDaysLogged,
     0
   );
 
-  const { data: profile } = await supabase
-    .from('users')
-    .select('it_days_count, last_it_check_date')
-    .eq('id', userId)
-    .single();
+  const profile = profileRes.data;
+  const authMetadata = authUserRes?.data?.user?.user_metadata || {};
+  const previousMaxRoadmapDays = Math.max(
+    currentDaysLogged,
+    ...allProgressFull
+      .filter((p: any) => p.roadmap_id !== roadmapId)
+      .map((p: any) => p.it_days_logged || 0),
+    0
+  );
+  const baselineGlobalCount = Math.max(
+    profile?.it_days_count || 0,
+    authMetadata?.it_days_count || 0,
+    previousMaxRoadmapDays
+  );
 
-  const globalCount = profile?.it_days_count || 0;
-  const globalLastDate = profile?.last_it_check_date || null;
-  const incrementedGlobal = globalLastDate === today ? globalCount : globalCount + 1;
+  // Check whether global IT attendance was ALREADY counted today:
+  // 1. Was this roadmap already checked in today prior to this call? (alreadyCheckedInToday)
+  // 2. Was ANY OTHER roadmap checked in today?
+  const otherRoadmapsCheckedInToday = allProgressFull.some(
+    (p: any) => p.roadmap_id !== roadmapId && p.last_check_in_date && p.last_check_in_date.slice(0, 10) === today
+  );
+  // 3. Did user check in via modal "Yes" today?
+  const modalAttendanceToday = Boolean(
+    authMetadata.last_it_attendance_date && authMetadata.last_it_attendance_date.slice(0, 10) === today
+  );
+
+  const alreadyCountedGlobalToday = alreadyCheckedInToday || otherRoadmapsCheckedInToday || modalAttendanceToday;
+
+  const incrementedGlobal = alreadyCountedGlobalToday ? baselineGlobalCount : baselineGlobalCount + 1;
   const newGlobalCount = Math.max(incrementedGlobal, maxRoadmapDays);
 
   // Update global user record
@@ -147,13 +177,12 @@ export async function recordITAttendance(
 
   // Update auth metadata
   try {
-    const { data: authUserData } = await supabase.auth.admin.getUserById(userId);
-    const metadata = authUserData?.user?.user_metadata || {};
     await supabase.auth.admin.updateUserById(userId, {
       user_metadata: {
-        ...metadata,
+        ...authMetadata,
         it_days_count: newGlobalCount,
         last_it_check_date: today,
+        last_it_attendance_date: today,
       },
     });
   } catch (err) {

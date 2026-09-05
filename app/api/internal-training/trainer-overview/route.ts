@@ -236,11 +236,11 @@ export async function GET() {
       if (!u) return;
 
       const p = progressMap.get(`${uid}_${rmId}`);
-      // Per-roadmap attendance-driven day: use it_days_logged from progress row
-      const itDaysLogged = p?.it_days_logged ?? u.it_days_count ?? 0;
+      // Per-roadmap attendance-driven day: use it_days_logged from progress row (0 if unstarted)
+      const itDaysLogged = p?.it_days_logged ?? 0;
       const currentDay = Math.min(itDaysLogged, totalDays || 1);
-      const lastCheckIn = p?.last_check_in_date || u.last_it_check_date || null;
-      const isCountedToday = Boolean(lastCheckIn && lastCheckIn.slice(0, 10) === today);
+      const roadmapLastCheckIn = p?.last_check_in_date || null;
+      const isCountedToday = Boolean(roadmapLastCheckIn && roadmapLastCheckIn.slice(0, 10) === today);
 
       // Count completions for this trainer
       // Portal-click gating: question is complete only if clicked_at exists AND (HR solved OR manually completed)
@@ -279,12 +279,12 @@ export async function GET() {
         completed_questions_count: completedCount,
         total_questions_count: totalQuestionsCount,
         pending_questions_count: pendingCount,
-        it_days_count: itDaysLogged ?? u.it_days_count ?? 0,
+        it_days_count: itDaysLogged,
         extended_days: p?.extended_days || 0,
         extension_count: p?.extension_count || 0,
         location: p?.location || null,
         is_online: false, // populated on client via Realtime Presence
-        last_it_check_date: lastCheckIn,
+        last_it_check_date: roadmapLastCheckIn || (p?.updated_at ? p.updated_at.slice(0, 10) : null),
         is_it_counted_today: isCountedToday,
       });
     });

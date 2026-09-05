@@ -101,7 +101,7 @@ export default function DashboardLayoutClient({ role, currentUser, children }: D
           <GlobalFloatingTodo />
 
           {/* Daily Internal Training (IT) Check Modal for Trainers */}
-          <ITAttendanceModal />
+          <ITAttendanceModal currentUser={currentUser} />
 
           {/* Global Helpdesk & Support Ticket Request Modal */}
           <GlobalSupportModal

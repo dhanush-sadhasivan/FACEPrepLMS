@@ -73,6 +73,16 @@ export default function InternalTrainingClient({
     } else {
       setLoadingPlan(false);
     }
+
+    const handleAttendanceUpdate = () => {
+      if (selectedRoadmapId) {
+        loadTrainerPlan(selectedRoadmapId);
+      }
+    };
+    window.addEventListener('it-attendance-updated', handleAttendanceUpdate);
+    return () => {
+      window.removeEventListener('it-attendance-updated', handleAttendanceUpdate);
+    };
   }, [selectedRoadmapId, loadTrainerPlan]);
 
   // Handle explicit per-roadmap IT check-in with location to unlock today's curriculum
@@ -238,9 +248,10 @@ export default function InternalTrainingClient({
       {/* Personal Trainer Daily Plan Section (Only shown if this user is allocated with an IT roadmap) */}
       {hasAssignedRoadmaps && (
         <>
-          {/* IT Day Stats & Interactive Toggle Widget */}
+          {/* IT Day Stats & Interactive Toggle Widget (Two-Tier Display) */}
           <ITDayStatus
             itDaysCount={trainerData?.itDaysLogged ?? 0}
+            globalItDays={trainerData?.globalItDays ?? currentUser.it_days_count ?? 0}
             isITCountedToday={trainerData?.isCheckedInToday ?? false}
             totalPlannedDays={trainerData?.progress?.total_days ?? 0}
             currentDay={trainerData?.progress?.current_day ?? 0}
