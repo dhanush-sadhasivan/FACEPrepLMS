@@ -61,20 +61,36 @@ export async function GET() {
       const rmMap = new Map((roadmapsRes.data || []).map((r: any) => [r.id, r]));
       const resMap = new Map((resolversRes.data || []).map((r: any) => [r.id, r]));
 
+      const sanitizeDispute = (d: any) => {
+        if (!isAdminOrManager) {
+          const { admin_notes, resolved_by, resolver, ...rest } = d;
+          return rest;
+        }
+        return d;
+      };
+
       const enriched = (rawDisputes || []).map((d: any) => ({
         ...d,
         requester: userMap.get(d.user_id) || null,
         roadmap: rmMap.get(d.roadmap_id) || null,
         resolver: resMap.get(d.resolved_by) || null,
-      }));
+      })).map(sanitizeDispute);
 
       return NextResponse.json(enriched);
     }
 
-    return NextResponse.json(disputes || []);
+    const sanitizedDisputes = (disputes || []).map((d: any) => {
+      if (!isAdminOrManager) {
+        const { admin_notes, resolved_by, resolver, ...rest } = d;
+        return rest;
+      }
+      return d;
+    });
+
+    return NextResponse.json(sanitizedDisputes);
   } catch (err: any) {
     console.error('[GET /api/internal-training/attendance/dispute] Catch error:', err);
-    return NextResponse.json([]);
+    return NextResponse.json({ error: 'Failed to fetch disputes' }, { status: 500 });
   }
 }
 
@@ -131,7 +147,7 @@ export async function POST(req: Request) {
 
     if (insertErr) {
       console.error('[POST /api/internal-training/attendance/dispute] Insert error:', insertErr.message);
-      return NextResponse.json({ error: insertErr.message }, { status: 500 });
+      return NextResponse.json({ error: 'Failed to submit IT attendance dispute' }, { status: 500 });
     }
 
     // 3. Notify all Admins and Managers
@@ -158,6 +174,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, dispute }, { status: 201 });
   } catch (err: any) {
     console.error('[POST /api/internal-training/attendance/dispute] Handler error:', err);
-    return NextResponse.json({ error: err.message || 'Failed to submit IT attendance dispute' }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to submit IT attendance dispute' }, { status: 500 });
   }
 }

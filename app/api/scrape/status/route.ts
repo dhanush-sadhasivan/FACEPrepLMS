@@ -34,8 +34,9 @@ export async function GET(request: Request) {
 
     if (!res.ok) {
       const errorText = await res.text();
+      console.error(`[scrape/status] Scraper returned ${res.status}: ${errorText}`);
       return NextResponse.json(
-        { error: `Scraper status check failed (HTTP ${res.status}): ${errorText}` },
+        { error: 'Scraper status check failed' },
         { status: res.status }
       );
     }
@@ -44,8 +45,9 @@ export async function GET(request: Request) {
     return NextResponse.json(data);
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`[scrape/status] Exception: ${message}`);
     return NextResponse.json(
-      { error: `Failed to check scrape status: ${message}` },
+      { error: 'Failed to check scrape status' },
       { status: 500 }
     );
   }

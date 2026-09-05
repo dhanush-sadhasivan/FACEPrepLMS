@@ -55,7 +55,9 @@ export async function PATCH(req: Request, { params }: { params: Params }) {
       if (progress) {
         const currentDaysLogged = progress.it_days_logged || 0;
         const newDaysLogged = Math.max(0, currentDaysLogged - 1);
-        const shouldClearCheckInDate = progress.last_check_in_date === dispute.check_in_date;
+        const shouldClearCheckInDate =
+          progress.last_check_in_date === dispute.check_in_date ||
+          Boolean(progress.last_check_in_date && dispute.check_in_date && progress.last_check_in_date.slice(0, 10) === dispute.check_in_date.slice(0, 10));
 
         await dbAdmin
           .from('it_trainer_progress')
@@ -76,8 +78,23 @@ export async function PATCH(req: Request, { params }: { params: Params }) {
         .eq('id', targetUserId)
         .single();
 
-      if (userProfile && userProfile.last_it_check_date === dispute.check_in_date) {
-        const newGlobalCount = Math.max(0, (userProfile.it_days_count || 0) - 1);
+      const isUserCheckInMatching =
+        userProfile &&
+        (userProfile.last_it_check_date === dispute.check_in_date ||
+          Boolean(userProfile.last_it_check_date && dispute.check_in_date && userProfile.last_it_check_date.slice(0, 10) === dispute.check_in_date.slice(0, 10)));
+
+      if (isUserCheckInMatching) {
+        const { data: allUserItProgress } = await dbAdmin
+          .from('it_trainer_progress')
+          .select('it_days_logged')
+          .eq('user_id', targetUserId);
+
+        const maxRoadmapDays = Math.max(
+          ...((allUserItProgress || []).map((p: any) => p.it_days_logged || 0)),
+          0
+        );
+
+        const newGlobalCount = Math.max(0, maxRoadmapDays);
         await dbAdmin
           .from('users')
           .update({
@@ -117,7 +134,7 @@ export async function PATCH(req: Request, { params }: { params: Params }) {
 
       if (updateErr) {
         console.error('[attendance/dispute/resolve] Error updating dispute status:', updateErr);
-        return NextResponse.json({ error: updateErr.message }, { status: 500 });
+        return NextResponse.json({ error: 'Failed to update dispute status' }, { status: 500 });
       }
 
       // 5. Notify trainer
@@ -155,7 +172,8 @@ export async function PATCH(req: Request, { params }: { params: Params }) {
         .single();
 
       if (updateErr) {
-        return NextResponse.json({ error: updateErr.message }, { status: 500 });
+        console.error('[attendance/dispute/resolve] Error updating dispute status:', updateErr);
+        return NextResponse.json({ error: 'Failed to update dispute status' }, { status: 500 });
       }
 
       // Notify trainer
@@ -180,6 +198,6 @@ export async function PATCH(req: Request, { params }: { params: Params }) {
     }
   } catch (err: any) {
     console.error('[PATCH /api/internal-training/attendance/dispute/[id]] Catch error:', err);
-    return NextResponse.json({ error: err.message || 'Error resolving IT dispute' }, { status: 500 });
+    return NextResponse.json({ error: 'Error resolving IT dispute' }, { status: 500 });
   }
 }

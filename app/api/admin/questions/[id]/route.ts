@@ -38,7 +38,8 @@ export async function PATCH(
     .single();
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 400 });
+    console.error('[PATCH /api/admin/questions/[id]] DB error:', error.message);
+    return NextResponse.json({ error: 'Failed to update question' }, { status: 400 });
   }
 
   return NextResponse.json(data);

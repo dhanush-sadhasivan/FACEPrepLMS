@@ -40,7 +40,7 @@ export async function GET() {
 
   if (error) {
     console.error('[auto-config GET] DB error:', error.message);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to fetch auto-scrape config' }, { status: 500 });
   }
 
   return NextResponse.json({ allowed_days: data?.allowed_days ?? [1, 2, 3, 4, 5] });
@@ -95,7 +95,7 @@ export async function PATCH(request: Request) {
 
   if (result.error) {
     console.error('[auto-config PATCH] DB error:', result.error.message);
-    return NextResponse.json({ error: result.error.message }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to update auto-scrape config' }, { status: 500 });
   }
 
   const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];

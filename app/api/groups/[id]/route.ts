@@ -14,7 +14,10 @@ export async function PATCH(req: Request, { params }: { params: Params }) {
   const { id } = await params;
   const { name } = await req.json();
   const { data, error } = await supabase.from('groups').update({ name }).eq('id', id).select().single();
-  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+  if (error) {
+    console.error(`[PATCH /api/groups/${id}] DB error:`, error.message);
+    return NextResponse.json({ error: 'Failed to update group' }, { status: 400 });
+  }
   return NextResponse.json(data);
 }
 
@@ -28,6 +31,9 @@ export async function DELETE(req: Request, { params }: { params: Params }) {
   }
   const { id } = await params;
   const { error } = await supabase.from('groups').delete().eq('id', id);
-  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+  if (error) {
+    console.error(`[DELETE /api/groups/${id}] DB error:`, error.message);
+    return NextResponse.json({ error: 'Failed to delete group' }, { status: 400 });
+  }
   return NextResponse.json({ success: true });
 }

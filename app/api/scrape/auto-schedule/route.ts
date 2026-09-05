@@ -49,7 +49,7 @@ export async function GET() {
 
   if (error) {
     console.error('[auto-schedule GET] DB error:', error.message);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to fetch auto-schedule' }, { status: 500 });
   }
 
   return NextResponse.json({ date: todayIST, schedules: data || [] });
@@ -102,7 +102,7 @@ export async function POST(request: Request) {
 
   if (error) {
     console.error('[auto-schedule POST] DB error:', error.message);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to add contest to auto-schedule' }, { status: 500 });
   }
 
   console.log(`[auto-schedule] Added contest "${contest.title}" to ${todayIST} schedule`);
@@ -136,7 +136,7 @@ export async function DELETE(request: Request) {
 
   if (error) {
     console.error('[auto-schedule DELETE] DB error:', error.message);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to remove contest from auto-schedule' }, { status: 500 });
   }
 
   console.log(`[auto-schedule] Removed contestId=${contestId} from ${todayIST} schedule`);

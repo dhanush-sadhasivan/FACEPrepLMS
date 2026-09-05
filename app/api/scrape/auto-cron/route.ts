@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getAdminClient } from '@/lib/supabase/admin';
 import { syncLeetCodeContest } from '@/lib/leetcode-sync';
+import { safeTimingCompare } from '@/lib/security';
 
 /**
  * POST /api/scrape/auto-cron
@@ -18,14 +19,14 @@ import { syncLeetCodeContest } from '@/lib/leetcode-sync';
  */
 export async function POST(request: Request) {
   // ── 1. Auth ─────────────────────────────────────────────────────────────────
-  const providedKey = request.headers.get('x-api-key');
+  const providedKey = request.headers.get('x-api-key') || '';
   const expectedKey = process.env.RAILWAY_API_KEY || process.env.SCRAPER_INGEST_API_KEY;
 
   if (!expectedKey) {
     console.error('[auto-cron] RAILWAY_API_KEY is not set — rejecting request');
     return NextResponse.json({ error: 'Server misconfiguration: API key not set' }, { status: 500 });
   }
-  if (providedKey !== expectedKey) {
+  if (!providedKey || !safeTimingCompare(providedKey, expectedKey)) {
     console.error('[auto-cron] Unauthorized: invalid x-api-key');
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
@@ -92,18 +93,20 @@ export async function POST(request: Request) {
     const contest = (schedule as any).contests;
     const contestTitle = contest?.title || schedule.contest_id;
 
-    // Skip if another cron tick is already processing this contest
-    if (schedule.is_running) {
-      console.log(`[auto-cron]   ⏭  [${contestTitle}] already running (jobId: ${schedule.active_job_id}). Skipping.`);
+    // ── Atomic Lock Acquisition ───────────────────────────────────────────
+    // Atomically acquire lock by setting is_running = true ONLY if is_running is currently false / not running.
+    const { data: lockedRows, error: lockErr } = await supabase
+      .from('auto_scrape_schedules')
+      .update({ is_running: true, active_job_id: null })
+      .eq('id', schedule.id)
+      .or('is_running.eq.false,is_running.is.null')
+      .select('id');
+
+    if (lockErr || !lockedRows || lockedRows.length === 0) {
+      console.log(`[auto-cron]   ⏭  [${contestTitle}] already running or lock acquired by another worker. Skipping.`);
       results.push({ contestId: schedule.contest_id, title: contestTitle, status: 'skipped_running' });
       continue;
     }
-
-    // Set is_running lock
-    await supabase
-      .from('auto_scrape_schedules')
-      .update({ is_running: true, active_job_id: null })
-      .eq('id', schedule.id);
 
     try {
       if (contest?.platform === 'leetcode') {

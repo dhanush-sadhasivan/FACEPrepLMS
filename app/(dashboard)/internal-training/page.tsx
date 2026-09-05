@@ -38,15 +38,22 @@ export default async function InternalTrainingPage() {
 
   const userGroupIds = (memberships || []).map((m: any) => m.group_id);
 
-  // Fetch assignments
-  const { data: assignments } = await dbAdmin
-    .from('roadmap_assignments')
-    .select('roadmap_id, user_id, group_id');
+  // Fetch assignments and trainer progress
+  const [assignmentsRes, progressRes] = await Promise.all([
+    dbAdmin.from('roadmap_assignments').select('roadmap_id, user_id, group_id'),
+    dbAdmin.from('it_trainer_progress').select('roadmap_id').eq('user_id', user.id),
+  ]);
+
+  const assignments = assignmentsRes.data || [];
+  const progressRows = progressRes.data || [];
 
   const assignedRoadmapIds = new Set<string>();
-  (assignments || []).forEach((a: any) => {
+  assignments.forEach((a: any) => {
     if (a.user_id === user.id) assignedRoadmapIds.add(a.roadmap_id);
     if (a.group_id && userGroupIds.includes(a.group_id)) assignedRoadmapIds.add(a.roadmap_id);
+  });
+  progressRows.forEach((p: any) => {
+    if (p.roadmap_id) assignedRoadmapIds.add(p.roadmap_id);
   });
 
   let itRoadmaps: any[] = [];

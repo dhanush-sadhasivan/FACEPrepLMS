@@ -49,18 +49,25 @@ export default function TrainerDetailModal({ trainer, questions, onClose }: any)
           <div>
             <h2 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0 }}>{trainer.name}</h2>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginTop: '0.25rem' }}>
-              Emp ID: <code>{trainer.emp_id}</code> &bull; Team: {trainer.team} &bull; Score: <strong style={{ color: 'var(--accent)' }}>{trainer.score} pts</strong> ({trainer.solved}/{trainer.total} solved)
+              {trainer.emp_id && trainer.emp_id !== '—' && (
+                <>
+                  Emp ID: <code>{trainer.emp_id}</code> &bull;{' '}
+                </>
+              )}
+              Team: {trainer.team || 'N/A'} &bull; Score: <strong style={{ color: 'var(--accent)' }}>{trainer.score} pts</strong> ({trainer.solved}/{trainer.total} solved)
             </p>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <Link
-              href={`/users/${trainer.user_id}`}
-              className="btn btn-secondary btn-sm"
-              style={{ fontSize: '0.75rem', whiteSpace: 'nowrap' }}
-              onClick={onClose}
-            >
-              View Full Profile →
-            </Link>
+            {trainer.user_id && (
+              <Link
+                href={`/users/${trainer.user_id}`}
+                className="btn btn-secondary btn-sm"
+                style={{ fontSize: '0.75rem', whiteSpace: 'nowrap' }}
+                onClick={onClose}
+              >
+                View Full Profile →
+              </Link>
+            )}
             <button className="btn btn-ghost btn-sm" onClick={onClose} style={{ fontSize: '1.25rem' }}>&times;</button>
           </div>
         </div>

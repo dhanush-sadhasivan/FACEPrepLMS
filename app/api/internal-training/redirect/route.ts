@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server';
 import { getAdminClient } from '@/lib/supabase/admin';
+import { isSafeRedirectUrl } from '@/lib/security';
 import { NextResponse } from 'next/server';
 
 // GET /api/internal-training/redirect?dqId=<uuid>&url=<encoded_url>
@@ -7,12 +8,36 @@ import { NextResponse } from 'next/server';
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const dqId = searchParams.get('dqId');
-  const targetUrl = searchParams.get('url');
+  const rawTargetUrl = searchParams.get('url');
 
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
-  if (user && dqId) {
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized: Authentication required.' }, { status: 401 });
+  }
+
+  let validatedDestination: string | null = null;
+
+  if (rawTargetUrl) {
+    let decoded = rawTargetUrl;
+    try {
+      decoded = decodeURIComponent(rawTargetUrl);
+    } catch {
+      decoded = rawTargetUrl;
+    }
+
+    if (!isSafeRedirectUrl(decoded)) {
+      return NextResponse.json(
+        { error: 'Invalid or prohibited redirect URL: URL violates SSRF / security allowlist policies.' },
+        { status: 400 }
+      );
+    }
+
+    validatedDestination = decoded;
+  }
+
+  if (dqId) {
     const dbAdmin = getAdminClient();
     try {
       // 1. Record clicked_at
@@ -47,12 +72,11 @@ export async function GET(request: Request) {
     }
   }
 
-  if (targetUrl) {
+  if (validatedDestination) {
     try {
-      const decoded = decodeURIComponent(targetUrl);
-      return NextResponse.redirect(new URL(decoded, request.url));
+      return NextResponse.redirect(new URL(validatedDestination, request.url));
     } catch {
-      return NextResponse.redirect(new URL(targetUrl, request.url));
+      return NextResponse.redirect(new URL('/internal-training', request.url));
     }
   }
 

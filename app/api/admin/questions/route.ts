@@ -33,7 +33,8 @@ export async function GET(request: Request) {
 
   const { data, error } = await query;
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error('[GET /api/admin/questions] DB error:', error.message);
+    return NextResponse.json({ error: 'Failed to fetch questions' }, { status: 500 });
   }
 
   const formatted = (data || []).map((q: any) => ({

@@ -113,41 +113,17 @@ export async function recordITAttendance(
 
 
   // 3. Recalculate global IT days count:
-  //    Count unique last_check_in_date values across ALL of this user's roadmaps
-  const { data: allProgress } = await supabase
-    .from('it_trainer_progress')
-    .select('last_check_in_date')
-    .eq('user_id', userId)
-    .not('last_check_in_date', 'is', null);
-
-  const uniqueDates = new Set<string>();
-  (allProgress || []).forEach((p: any) => {
-    if (p.last_check_in_date) uniqueDates.add(p.last_check_in_date);
-  });
-
-  // If multiple roadmaps checked in on the same day, it still counts as 1 global IT day
-  // For a proper count we need historical data. For now, use the sum of it_days_logged
-  // across all roadmaps, but capped by: we only count today once globally.
+  // Ensure users.it_days_count is synchronized with per-roadmap it_days_logged
   const { data: allProgressFull } = await supabase
     .from('it_trainer_progress')
     .select('it_days_logged')
     .eq('user_id', userId);
 
-  // Global IT days = sum of per-roadmap days (each roadmap tracks independently)
-  // But since user wanted "unique calendar dates", we use the max across roadmaps
-  // plus whether today was checked in on multiple. For simplicity and correctness:
-  // global = sum of it_days_logged (since check-in dates don't overlap per roadmap anyway)
-  // The user said: "if trainer logs to multiple roadmaps on same day, global should NOT increase"
-  // This means we need to track check-in dates historically, not just last_check_in_date.
-  // For now, we set global = max(it_days_logged) across roadmaps as a conservative estimate,
-  // and use last_it_check_date = today for the global flag.
-  
-  // Actually the simplest correct approach: global it_days = number of distinct dates
-  // the user checked in on ANY roadmap. Since we only store last_check_in_date (not history),
-  // we use: global = sum of all it_days_logged, minus overlapping days.
-  // Without history, the best we can do is just set global = today was an IT day.
-  // Let's just track: was today an IT day? yes. Set last_it_check_date = today.
-  // And it_days_count: if last_it_check_date was NOT today before this call, increment by 1.
+  const maxRoadmapDays = Math.max(
+    ...((allProgressFull || []).map((p: any) => p.it_days_logged || 0)),
+    newDaysLogged,
+    0
+  );
 
   const { data: profile } = await supabase
     .from('users')
@@ -157,7 +133,8 @@ export async function recordITAttendance(
 
   const globalCount = profile?.it_days_count || 0;
   const globalLastDate = profile?.last_it_check_date || null;
-  const newGlobalCount = globalLastDate === today ? globalCount : globalCount + 1;
+  const incrementedGlobal = globalLastDate === today ? globalCount : globalCount + 1;
+  const newGlobalCount = Math.max(incrementedGlobal, maxRoadmapDays);
 
   // Update global user record
   await supabase

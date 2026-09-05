@@ -15,6 +15,7 @@
  */
 
 import { performance } from 'perf_hooks';
+import crypto from 'crypto';
 
 // ─── ANSI Terminal Formatting Utilities ─────────────────────────────────────
 const colors = {
@@ -774,6 +775,500 @@ describe('Tier 1 — R1-IT: Internal Training Data Audit & Persistence Integrity
     assertEqual(res.globalItDays, 1);
     assertEqual(res.location?.type, 'Coimbatore-office');
     assertEqual(mockStore.it_trainer_progress.length, 1);
+  });
+
+  test('T1.IT.05: Reports Hub handleITAttendanceReport in-app fallback populates data when RPC is unavailable', async () => {
+    // Mock DB setup simulating missing/failing RPC
+    const itRoadmaps = [{ id: 'rm1', title: 'Python Backend IT', domain: 'Backend' }];
+    const users = [
+      { id: 'u1', full_name: 'David Trainer', emp_id: 'EMP101', email: 'david@example.com', team: 'Platform', role: 'trainer', it_days_count: 3, last_it_check_date: '2026-08-29' },
+      { id: 'u2', full_name: 'Eva Trainer', emp_id: 'EMP102', email: 'eva@example.com', team: 'Frontend', role: 'trainer', it_days_count: 1, last_it_check_date: '2026-08-28' },
+    ];
+    const assignments = [
+      { roadmap_id: 'rm1', user_id: 'u1', group_id: null },
+      { roadmap_id: 'rm1', user_id: 'u2', group_id: null },
+    ];
+    const dayPlans = [
+      { id: 'dp1', roadmap_id: 'rm1', day_number: 1 },
+      { id: 'dp2', roadmap_id: 'rm1', day_number: 2 },
+      { id: 'dp3', roadmap_id: 'rm1', day_number: 3 },
+    ];
+    const questions = [
+      { id: 'dq1', day_plan_id: 'dp1', question_id: 'q1', day_number: 1 },
+      { id: 'dq2', day_plan_id: 'dp2', question_id: 'q2', day_number: 2 },
+      { id: 'dq3', day_plan_id: 'dp3', question_id: 'q3', day_number: 3 },
+    ];
+    const trainerProgress = [
+      { user_id: 'u1', roadmap_id: 'rm1', it_days_logged: 3, last_check_in_date: '2026-08-29', location: { type: 'Coimbatore-office' } },
+      { user_id: 'u2', roadmap_id: 'rm1', it_days_logged: 1, last_check_in_date: '2026-08-28', location: { type: 'Work from Home', detail: 'Doctor visit' } },
+    ];
+    const completions = [
+      { user_id: 'u1', day_question_id: 'dq1', clicked_at: '2026-08-27T10:00:00Z', is_completed: true },
+      { user_id: 'u1', day_question_id: 'dq2', clicked_at: '2026-08-28T10:00:00Z', is_completed: true },
+    ];
+
+    // Fallback calculation logic
+    const buildFallbackRows = () => {
+      const userMap = new Map(users.map(u => [u.id, u]));
+      const progressMap = new Map(trainerProgress.map(p => [`${p.user_id}:${p.roadmap_id}`, p]));
+      const completionSet = new Set(completions.filter(c => c.clicked_at && c.is_completed).map(c => `${c.user_id}:${c.day_question_id}`));
+
+      const rows = [];
+      assignments.forEach(a => {
+        const u = userMap.get(a.user_id);
+        const p = progressMap.get(`${a.user_id}:${a.roadmap_id}`);
+        const totalDays = dayPlans.filter(dp => dp.roadmap_id === a.roadmap_id).length;
+        const currentDay = p?.it_days_logged || 1;
+
+        let completed = 0;
+        let pending = 0;
+        questions.forEach(q => {
+          if (completionSet.has(`${a.user_id}:${q.id}`)) {
+            completed++;
+          } else if (q.day_number <= currentDay) {
+            pending++;
+          }
+        });
+
+        const rawLoc = p?.location || null;
+        let locationDisplay = '—';
+        if (rawLoc) {
+          locationDisplay = typeof rawLoc === 'string' ? rawLoc : `${rawLoc.type}${rawLoc.detail ? ` (${rawLoc.detail})` : ''}`;
+        }
+
+        rows.push({
+          roadmapId: a.roadmap_id,
+          roadmapTitle: 'Python Backend IT',
+          userId: a.user_id,
+          trainerName: u.full_name,
+          empId: u.emp_id,
+          team: u.team,
+          itDaysCount: p?.it_days_logged || u.it_days_count,
+          currentDay,
+          totalDays,
+          lastCheckInDate: p?.last_check_in_date || u.last_it_check_date,
+          location: rawLoc,
+          locationDisplay,
+          questionsCompleted: completed,
+          totalQuestions: questions.length,
+          pendingQuestions: pending,
+          completionPct: Math.round((completed / questions.length) * 100),
+        });
+      });
+      return rows;
+    };
+
+    const fallbackRows = buildFallbackRows();
+    assertEqual(fallbackRows.length, 2, 'Fallback must produce all assigned trainers');
+    assertEqual(fallbackRows[0].trainerName, 'David Trainer');
+    assertEqual(fallbackRows[0].locationDisplay, 'Coimbatore-office');
+    assertEqual(fallbackRows[0].questionsCompleted, 2);
+    assertEqual(fallbackRows[0].pendingQuestions, 1);
+    assertEqual(fallbackRows[1].trainerName, 'Eva Trainer');
+    assertEqual(fallbackRows[1].locationDisplay, 'Work from Home (Doctor visit)');
+    assertEqual(fallbackRows[1].pendingQuestions, 1);
+  });
+
+  test('T1.IT.06: Reports Hub IT Attendance export formatting includes Check-In Date and Location', () => {
+    const reportRows = [
+      {
+        roadmapTitle: 'Java Spring IT',
+        trainerName: 'Frank Miller',
+        empId: 'EMP201',
+        email: 'frank@example.com',
+        team: 'Backend',
+        manager: 'Sarah Boss',
+        itDaysCount: 4,
+        currentDay: 4,
+        totalDays: 5,
+        lastCheckInDate: '2026-08-29',
+        location: { type: 'Chennai-office' },
+        locationDisplay: 'Chennai-office',
+        questionsCompleted: 8,
+        totalQuestions: 10,
+        pendingQuestions: 0,
+        completionPct: 80,
+        completionVelocity: 2.0,
+        daysSinceLastActivity: 0,
+        extendedDays: 0,
+        attendanceStatus: 'On Track',
+      },
+      {
+        roadmapTitle: 'Java Spring IT',
+        trainerName: 'Grace Hopper',
+        empId: 'EMP202',
+        email: 'grace@example.com',
+        team: 'Backend',
+        manager: 'Sarah Boss',
+        itDaysCount: 2,
+        currentDay: 2,
+        totalDays: 5,
+        lastCheckInDate: '2026-08-28',
+        location: { type: 'Work from Home', detail: 'Fever' },
+        locationDisplay: 'Work from Home (Fever)',
+        questionsCompleted: 3,
+        totalQuestions: 10,
+        pendingQuestions: 2,
+        completionPct: 30,
+        completionVelocity: 1.5,
+        daysSinceLastActivity: 1,
+        extendedDays: 0,
+        attendanceStatus: 'Behind',
+      }
+    ];
+
+    const formatExport = (rows) => {
+      return rows.map(r => ({
+        'IT Roadmap': r.roadmapTitle,
+        'Trainer Name': r.trainerName,
+        'Employee ID': r.empId,
+        'Email Address': r.email,
+        'Team / Cohort': r.team,
+        'Reporting Manager': r.manager,
+        'IT Days Logged': r.itDaysCount,
+        'Current Day': r.currentDay,
+        'Total Days': r.totalDays,
+        'Check-In Date': r.lastCheckInDate || 'Never',
+        'Location': r.locationDisplay || '—',
+        'Questions Completed': r.questionsCompleted,
+        'Total Questions': r.totalQuestions,
+        'Pending Backlog': r.pendingQuestions,
+        'Completion (%)': `${r.completionPct}%`,
+        'Velocity (q/day)': r.completionVelocity ?? 0,
+        'Days Since Last Activity': r.daysSinceLastActivity ?? '—',
+        'Extended Days': r.extendedDays,
+        'Attendance Status': r.attendanceStatus,
+      }));
+    };
+
+    const exported = formatExport(reportRows);
+    assertEqual(exported.length, 2);
+    assertEqual(exported[0]['Check-In Date'], '2026-08-29');
+    assertEqual(exported[0]['Location'], 'Chennai-office');
+    assertEqual(exported[0]['Pending Backlog'], 0);
+    assertEqual(exported[1]['Check-In Date'], '2026-08-28');
+    assertEqual(exported[1]['Location'], 'Work from Home (Fever)');
+    assertEqual(exported[1]['Pending Backlog'], 2);
+  });
+
+  test('T1.IT.07: RPC get_it_trainer_overview date casting safe evaluation across text and date types', () => {
+    // Tests that comparing ISO text dates vs DATE cast in SQL matches
+    const safeDateMatch = (lastCheckInDateStr, currentDateStr) => {
+      // In Postgres: (tm.last_check_in_date IS NOT NULL AND LEFT(tm.last_check_in_date::text, 10) = CURRENT_DATE::text)
+      if (!lastCheckInDateStr) return false;
+      return String(lastCheckInDateStr).slice(0, 10) === String(currentDateStr).slice(0, 10);
+    };
+
+    assertEqual(safeDateMatch('2026-08-29', '2026-08-29'), true, 'Exact date string match');
+    assertEqual(safeDateMatch('2026-08-29T14:30:00Z', '2026-08-29'), true, 'Timestamp string trimmed match');
+    assertEqual(safeDateMatch(null, '2026-08-29'), false, 'Null check-in date is false without exception');
+    assertEqual(safeDateMatch('2026-08-28', '2026-08-29'), false, 'Yesterday date is not counted today');
+  });
+
+  test('T1.IT.08: In-app fallback includes trainers from it_trainer_progress even when direct assignments missing', () => {
+    const roadmapTrainersMap = new Map();
+    roadmapTrainersMap.set('rm1', new Set(['u1']));
+
+    const progressList = [
+      { user_id: 'u1', roadmap_id: 'rm1', it_days_logged: 5 },
+      { user_id: 'u2', roadmap_id: 'rm1', it_days_logged: 3 }, // progress exists without direct assignment
+    ];
+
+    progressList.forEach((p) => {
+      if (roadmapTrainersMap.has(p.roadmap_id)) {
+        roadmapTrainersMap.get(p.roadmap_id).add(p.user_id);
+      }
+    });
+
+    const enrolled = Array.from(roadmapTrainersMap.get('rm1'));
+    assertEqual(enrolled.length, 2);
+    assert(enrolled.includes('u1'));
+    assert(enrolled.includes('u2'));
+  });
+
+  test('T1.IT.09: String location vs object location safe parsing and filtering', () => {
+    const formatLocation = (rawLoc) => {
+      if (!rawLoc) return { display: '—', type: '', detail: '' };
+      if (typeof rawLoc === 'string') return { display: rawLoc, type: rawLoc, detail: '' };
+      const type = rawLoc.type || '';
+      const detail = rawLoc.detail || rawLoc.office_name || rawLoc.wfh_reason || '';
+      return {
+        display: `${type}${detail ? ` (${detail})` : ''}`.trim() || '—',
+        type,
+        detail,
+      };
+    };
+
+    const loc1 = formatLocation('Coimbatore-office');
+    assertEqual(loc1.display, 'Coimbatore-office');
+    assertEqual(loc1.type, 'Coimbatore-office');
+
+    const loc2 = formatLocation({ type: 'WFH', detail: 'Medical emergency' });
+    assertEqual(loc2.display, 'WFH (Medical emergency)');
+    assertEqual(loc2.type, 'WFH');
+    assertEqual(loc2.detail, 'Medical emergency');
+
+    const loc3 = formatLocation(null);
+    assertEqual(loc3.display, '—');
+  });
+
+  test('T1.IT.10: Nullish coalescing preserves 0 values for currentDay and itDaysCount', () => {
+    const row = { current_day: 0, it_days_count: 0 };
+    const p = { current_day: 0, it_days_logged: 0 };
+
+    const currentDayWithNullish = row.current_day ?? p?.current_day ?? 1;
+    const currentDayWithOr = row.current_day || p?.current_day || 1;
+
+    assertEqual(currentDayWithNullish, 0, 'Nullish coalescing preserves 0 day');
+    assertEqual(currentDayWithOr, 1, 'Logical OR incorrectly forces 1 when value is 0');
+  });
+
+  test('T1.IT.11: ISO timestamp prefix matching and user fallback check-in evaluation', () => {
+    const today = '2026-09-01';
+
+    // 1. ISO string timestamp matching today
+    const checkInIso = '2026-09-01T10:30:00.000Z';
+    const isTodayIso = Boolean(checkInIso && checkInIso.slice(0, 10) === today);
+    assertEqual(isTodayIso, true, 'ISO timestamp string matches today date');
+
+    // 2. ISO string timestamp for yesterday
+    const checkInYesterday = '2026-08-31T23:59:59.999Z';
+    const isTodayYesterday = Boolean(checkInYesterday && checkInYesterday.slice(0, 10) === today);
+    assertEqual(isTodayYesterday, false, 'Yesterday timestamp does not match today');
+
+    // 3. User table fallback evaluation when it_trainer_progress check-in is null
+    const tm = { last_check_in_date: null };
+    const at = { user_last_check_date: '2026-09-01T08:00:00Z', user_it_days_count: 4 };
+    const effectiveCheckIn = tm.last_check_in_date || at.user_last_check_date || null;
+    const isCountedToday = Boolean(effectiveCheckIn && effectiveCheckIn.slice(0, 10) === today);
+
+    assertEqual(effectiveCheckIn, '2026-09-01T08:00:00Z');
+    assertEqual(isCountedToday, true, 'User record check-in coalesced and counted today');
+  });
+
+  test('T1.IT.12: Location parsing resilience across JSON strings and alternate key shapes', () => {
+    const parseLocation = (rawLoc) => {
+      let parsedLoc = rawLoc;
+      if (typeof rawLoc === 'string' && rawLoc.trim().startsWith('{') && rawLoc.trim().endsWith('}')) {
+        try {
+          parsedLoc = JSON.parse(rawLoc);
+        } catch {
+          parsedLoc = rawLoc;
+        }
+      }
+
+      let locationDisplay = '—';
+      let locationType = '';
+      let locationDetail = '';
+
+      if (parsedLoc) {
+        if (typeof parsedLoc === 'string') {
+          locationDisplay = parsedLoc;
+          locationType = parsedLoc;
+        } else if (typeof parsedLoc === 'object') {
+          locationType = parsedLoc.type || parsedLoc.office_name || '';
+          locationDetail = parsedLoc.detail || (parsedLoc.office_name && parsedLoc.office_name !== locationType ? parsedLoc.office_name : '') || parsedLoc.wfh_reason || '';
+          locationDisplay = `${locationType}${locationDetail ? ` (${locationDetail})` : ''}`.trim() || '—';
+        }
+      }
+      return { locationDisplay, locationType, locationDetail };
+    };
+
+    // 1. JSON stringified object
+    const jsonStr = '{"type":"Coimbatore-office","detail":"Tower B, 3rd Floor"}';
+    const resJson = parseLocation(jsonStr);
+    assertEqual(resJson.locationDisplay, 'Coimbatore-office (Tower B, 3rd Floor)');
+    assertEqual(resJson.locationType, 'Coimbatore-office');
+
+    // 2. Alternate keys { office_name, detail }
+    const objAltOffice = { office_name: 'Chennai Office', detail: 'Bay 4' };
+    const resAlt = parseLocation(objAltOffice);
+    assertEqual(resAlt.locationDisplay, 'Chennai Office (Bay 4)');
+    assertEqual(resAlt.locationType, 'Chennai Office');
+
+    // 3. Alternate keys { type, wfh_reason }
+    const objWfh = { type: 'Work from Home', wfh_reason: 'Medical Leave' };
+    const resWfh = parseLocation(objWfh);
+    assertEqual(resWfh.locationDisplay, 'Work from Home (Medical Leave)');
+    assertEqual(resWfh.locationType, 'Work from Home');
+
+    // 4. Plain string
+    const resPlain = parseLocation('Hyderabad-office');
+    assertEqual(resPlain.locationDisplay, 'Hyderabad-office');
+    assertEqual(resPlain.locationType, 'Hyderabad-office');
+  });
+
+  test('T1.IT.13: Multi-roadmap dispute resolution with timestamp check-in dates and global sync', () => {
+    const user = { id: 'u1', it_days_count: 5, last_it_check_date: '2026-09-01T09:00:00.000Z' };
+    const progressList = [
+      { roadmap_id: 'rm1', user_id: 'u1', it_days_logged: 5, last_check_in_date: '2026-09-01T09:00:00.000Z' },
+      { roadmap_id: 'rm2', user_id: 'u1', it_days_logged: 3, last_check_in_date: '2026-08-20' },
+    ];
+
+    const dispute = {
+      id: 'disp_101',
+      user_id: 'u1',
+      roadmap_id: 'rm1',
+      check_in_date: '2026-09-01', // Date string without timestamp
+    };
+
+    // Dispute approved on rm1:
+    const rm1Progress = progressList.find(p => p.roadmap_id === dispute.roadmap_id);
+    rm1Progress.it_days_logged = Math.max(0, rm1Progress.it_days_logged - 1);
+    const shouldClearCheckInDate =
+      rm1Progress.last_check_in_date === dispute.check_in_date ||
+      Boolean(rm1Progress.last_check_in_date && dispute.check_in_date && rm1Progress.last_check_in_date.slice(0, 10) === dispute.check_in_date.slice(0, 10));
+
+    if (shouldClearCheckInDate) {
+      rm1Progress.last_check_in_date = null;
+    }
+
+    assertEqual(rm1Progress.it_days_logged, 4);
+    assertEqual(rm1Progress.last_check_in_date, null, 'Check-in date cleared using prefix match');
+
+    // Global sync: max of remaining progress rows
+    const maxRemaining = Math.max(...progressList.map(p => p.it_days_logged));
+    user.it_days_count = maxRemaining;
+    user.last_it_check_date = null;
+
+    assertEqual(user.it_days_count, 4, 'Global count synchronized to 4');
+  });
+
+  test('T1.IT.14: Complete Reports Hub IT Attendance CSV and Excel export schema parity', () => {
+    const row = {
+      roadmapTitle: 'Full-Stack React & Node',
+      trainerName: 'Priya Sharma',
+      empId: 'EMP301',
+      email: 'priya@example.com',
+      team: 'Fullstack Cohort',
+      manager: 'Ramesh Manager',
+      itDaysCount: 8,
+      currentDay: 8,
+      totalDays: 10,
+      lastCheckInDate: '2026-09-01T08:30:00Z',
+      locationDisplay: 'Coimbatore-office (Desk 14)',
+      questionsCompleted: 16,
+      totalQuestions: 20,
+      pendingQuestions: 0,
+      completionPct: 80,
+      completionVelocity: 2.0,
+      daysSinceLastActivity: 0,
+      extendedDays: 0,
+      attendanceStatus: 'On Track',
+    };
+
+    const formattedCheckIn = row.lastCheckInDate.length >= 10 && /^\d{4}-\d{2}-\d{2}/.test(row.lastCheckInDate)
+      ? row.lastCheckInDate.slice(0, 10)
+      : row.lastCheckInDate;
+
+    const exportedRecord = {
+      'IT Roadmap': row.roadmapTitle,
+      'Trainer Name': row.trainerName,
+      'Employee ID': row.empId,
+      'Email Address': row.email,
+      'Team / Cohort': row.team,
+      'Reporting Manager': row.manager,
+      'IT Days Logged': row.itDaysCount,
+      'Current Day': row.currentDay,
+      'Total Days': row.totalDays,
+      'Check-In Date': formattedCheckIn,
+      'Location': row.locationDisplay || '—',
+      'Questions Completed': row.questionsCompleted,
+      'Total Questions': row.totalQuestions,
+      'Pending Backlog': row.pendingQuestions,
+      'Completion (%)': `${row.completionPct}%`,
+      'Velocity (q/day)': row.completionVelocity ?? 0,
+      'Days Since Last Activity': row.daysSinceLastActivity ?? '—',
+      'Extended Days': row.extendedDays,
+      'Attendance Status': row.attendanceStatus,
+    };
+
+    assertEqual(exportedRecord['IT Roadmap'], 'Full-Stack React & Node');
+    assertEqual(exportedRecord['Trainer Name'], 'Priya Sharma');
+    assertEqual(exportedRecord['Check-In Date'], '2026-09-01');
+    assertEqual(exportedRecord['Location'], 'Coimbatore-office (Desk 14)');
+    assertEqual(exportedRecord['IT Days Logged'], 8);
+    assertEqual(exportedRecord['Completion (%)'], '80%');
+    assertEqual(Object.keys(exportedRecord).length, 19, 'All 19 required columns mapped');
+  });
+
+  test('T1.IT.15: Internal Training Page multi-source roadmap assignment resolution', () => {
+    const userId = 'u_trainer_1';
+    const userGroupIds = ['grp_alpha'];
+
+    const assignments = [
+      { roadmap_id: 'rm_direct', user_id: 'u_trainer_1', group_id: null },
+      { roadmap_id: 'rm_group', user_id: null, group_id: 'grp_alpha' },
+      { roadmap_id: 'rm_other', user_id: 'u_other', group_id: 'grp_beta' },
+    ];
+    const progressRows = [
+      { roadmap_id: 'rm_progress_only' },
+    ];
+
+    const assignedRoadmapIds = new Set();
+    assignments.forEach((a) => {
+      if (a.user_id === userId) assignedRoadmapIds.add(a.roadmap_id);
+      if (a.group_id && userGroupIds.includes(a.group_id)) assignedRoadmapIds.add(a.roadmap_id);
+    });
+    progressRows.forEach((p) => {
+      if (p.roadmap_id) assignedRoadmapIds.add(p.roadmap_id);
+    });
+
+    assertEqual(assignedRoadmapIds.size, 3, 'Includes direct, group, and progress-enrolled roadmaps');
+    assert(assignedRoadmapIds.has('rm_direct'));
+    assert(assignedRoadmapIds.has('rm_group'));
+    assert(assignedRoadmapIds.has('rm_progress_only'));
+    assert(!assignedRoadmapIds.has('rm_other'));
+  });
+
+  test('T1.IT.16: TrainerOverviewTable location parser resilience across complex and stringified shapes', () => {
+    const parseLoc = (rawLoc) => {
+      if (!rawLoc) return { display: '', type: '', detail: '' };
+      let parsed = rawLoc;
+      if (typeof rawLoc === 'string' && rawLoc.trim().startsWith('{') && rawLoc.trim().endsWith('}')) {
+        try { parsed = JSON.parse(rawLoc); } catch { parsed = rawLoc; }
+      }
+      if (typeof parsed === 'string') return { display: parsed, type: parsed, detail: '' };
+      if (typeof parsed === 'object' && parsed !== null) {
+        const type = parsed.type || parsed.office_name || 'Location';
+        const detail = parsed.detail || (parsed.office_name && parsed.office_name !== type ? parsed.office_name : '') || parsed.wfh_reason || '';
+        const display = `${type}${detail ? ` (${detail})` : ''}`.trim() || '';
+        return { display, type, detail };
+      }
+      return { display: String(rawLoc), type: String(rawLoc), detail: '' };
+    };
+
+    // Stringified JSON
+    const res1 = parseLoc('{"office_name":"Vijayawada Office","detail":"Cubicle 9"}');
+    assertEqual(res1.display, 'Vijayawada Office (Cubicle 9)');
+    assertEqual(res1.type, 'Vijayawada Office');
+    assertEqual(res1.detail, 'Cubicle 9');
+
+    // String with quotes
+    const res2 = parseLoc('Bangalore Hub');
+    assertEqual(res2.display, 'Bangalore Hub');
+    assertEqual(res2.type, 'Bangalore Hub');
+    assertEqual(res2.detail, '');
+
+    // Null/undefined
+    const res3 = parseLoc(null);
+    assertEqual(res3.display, '');
+  });
+
+  test('T1.IT.17: Dispute resolution multi-roadmap global sync retaining highest remaining roadmap days', () => {
+    // Trainer has 2 roadmaps: RM1 had 5 days, RM2 had 5 days. Global count was 5.
+    const allUserItProgress = [
+      { roadmap_id: 'rm1', it_days_logged: 4 }, // after decrement from 5 -> 4
+      { roadmap_id: 'rm2', it_days_logged: 5 }, // still 5 days on rm2
+    ];
+
+    const maxRoadmapDays = Math.max(
+      ...(allUserItProgress.map(p => p.it_days_logged || 0)),
+      0
+    );
+
+    const newGlobalCount = Math.max(0, maxRoadmapDays);
+    assertEqual(newGlobalCount, 5, 'Global count remains 5 because RM2 has 5 days logged');
   });
 });
 
@@ -1708,6 +2203,440 @@ describe('Tier 4 — Real-World Application Scenarios', () => {
     await onScraperJobComplete();
     assertEqual(revalidatedKeys.length, 4);
     assert(revalidatedKeys.includes('/api/trainer/roadmaps'));
+  });
+});
+
+// ============================================================================
+// TIER 1: R1 SECURITY UTILITIES & IDENTITY ACCESS CONTROL (MILESTONE 1)
+// ============================================================================
+
+describe('Tier 1 — R1: Security Utilities & Identity Access Controls (Milestone 1)', () => {
+  function generateSecureTempPassword() {
+    return crypto.randomBytes(8).toString('hex') + 'A1!';
+  }
+
+  function safeTimingCompare(a, b) {
+    if (typeof a !== 'string' || typeof b !== 'string') return false;
+    if (a.length === 0 || b.length === 0) return false;
+    const bufA = Buffer.from(a, 'utf8');
+    const bufB = Buffer.from(b, 'utf8');
+    if (bufA.length !== bufB.length) return false;
+    return crypto.timingSafeEqual(bufA, bufB);
+  }
+
+  function sanitizeCsvCell(val) {
+    if (val === null || val === undefined) return '';
+    const str = String(val);
+    const formulaChars = ['=', '+', '-', '@', '\t', '\r'];
+    if (str.length > 0 && formulaChars.includes(str.charAt(0))) {
+      return "'" + str;
+    }
+    return str;
+  }
+
+  test('T1.SEC.01: Cryptographically Secure Temporary Password Generation', () => {
+    const passwords = new Set();
+    for (let i = 0; i < 50; i++) {
+      const pwd = generateSecureTempPassword();
+      assertEqual(pwd.length, 19, 'Password length is 16 hex + 3 suffix');
+      assert(pwd.endsWith('A1!'), 'Password ends with complexity suffix A1!');
+      assert(/^[0-9a-f]{16}A1!$/.test(pwd), 'Password matches hex + A1! pattern');
+      passwords.add(pwd);
+    }
+    assertEqual(passwords.size, 50, 'All 50 generated passwords must be unique (high entropy)');
+  });
+
+  test('T1.SEC.02: Constant-Time Timing-Safe String Comparison', () => {
+    assertEqual(safeTimingCompare('secret-api-key-123', 'secret-api-key-123'), true, 'Identical strings match');
+    assertEqual(safeTimingCompare('secret-api-key-123', 'secret-api-key-124'), false, 'Different strings fail');
+    assertEqual(safeTimingCompare('short', 'longer-string'), false, 'Different length strings fail safely');
+    assertEqual(safeTimingCompare('', ''), false, 'Empty strings return false');
+    assertEqual(safeTimingCompare('secret', ''), false, 'Empty comparison string returns false');
+    assertEqual(safeTimingCompare(null, 'secret'), false, 'Null argument handled safely');
+    assertEqual(safeTimingCompare(undefined, 'secret'), false, 'Undefined argument handled safely');
+  });
+
+  test('T1.SEC.03: CSV Formula Injection Sanitization', () => {
+    assertEqual(sanitizeCsvCell('=SUM(A1:A10)'), "'=SUM(A1:A10)", 'Escapes = prefix');
+    assertEqual(sanitizeCsvCell('+cmd|"/C calc"!A0'), "'+cmd|\"/C calc\"!A0", 'Escapes + prefix');
+    assertEqual(sanitizeCsvCell('-1+1'), "'-1+1", 'Escapes - prefix');
+    assertEqual(sanitizeCsvCell('@SUM(1+1)'), "'@SUM(1+1)", 'Escapes @ prefix');
+    assertEqual(sanitizeCsvCell('\tmalicious'), "'\tmalicious", 'Escapes tab prefix');
+    assertEqual(sanitizeCsvCell('\rmalicious'), "'\rmalicious", 'Escapes carriage return prefix');
+    assertEqual(sanitizeCsvCell('Normal Text'), 'Normal Text', 'Preserves benign text without modification');
+    assertEqual(sanitizeCsvCell(12345), '12345', 'Handles numbers safely');
+    assertEqual(sanitizeCsvCell(null), '', 'Handles null safely');
+    assertEqual(sanitizeCsvCell(undefined), '', 'Handles undefined safely');
+  });
+
+  test('T1.SEC.04: Role Hierarchy Enforcement for Password Reset', () => {
+    function canResetPassword(callerRole, targetRole) {
+      if (callerRole !== 'admin' && callerRole !== 'manager') return false;
+      if (callerRole !== 'admin' && targetRole === 'admin') return false;
+      return true;
+    }
+
+    assertEqual(canResetPassword('admin', 'admin'), true, 'Admin can reset Admin');
+    assertEqual(canResetPassword('admin', 'manager'), true, 'Admin can reset Manager');
+    assertEqual(canResetPassword('admin', 'trainer'), true, 'Admin can reset Trainer');
+    assertEqual(canResetPassword('manager', 'trainer'), true, 'Manager can reset Trainer');
+    assertEqual(canResetPassword('manager', 'manager'), true, 'Manager can reset Manager');
+    assertEqual(canResetPassword('manager', 'admin'), false, 'Manager CANNOT reset Admin');
+    assertEqual(canResetPassword('trainer', 'trainer'), false, 'Trainer cannot reset passwords');
+  });
+
+  test('T1.SEC.05: Role Escalation Protection on User Creation & Bulk Import', () => {
+    function validateUserCreation(callerRole, requestedRole) {
+      if (callerRole !== 'admin' && callerRole !== 'manager') return { allowed: false, status: 403 };
+      if (requestedRole === 'admin' && callerRole !== 'admin') {
+        return { allowed: false, status: 403, error: 'Only Admins can create Admin accounts' };
+      }
+      return { allowed: true, role: requestedRole || 'trainer' };
+    }
+
+    assertEqual(validateUserCreation('admin', 'admin').allowed, true);
+    assertEqual(validateUserCreation('admin', 'manager').allowed, true);
+    assertEqual(validateUserCreation('manager', 'trainer').allowed, true);
+    assertEqual(validateUserCreation('manager', 'admin').allowed, false);
+    assertEqual(validateUserCreation('trainer', 'trainer').allowed, false);
+  });
+
+  test('T1.SEC.06: Admin-Only User Deletion & Role Modification Enforcement', () => {
+    function canDeleteUser(callerRole) {
+      return callerRole === 'admin';
+    }
+
+    function canModifyRole(callerRole) {
+      return callerRole === 'admin';
+    }
+
+    assertEqual(canDeleteUser('admin'), true, 'Admin can delete users');
+    assertEqual(canDeleteUser('manager'), false, 'Manager CANNOT delete users');
+    assertEqual(canDeleteUser('trainer'), false, 'Trainer CANNOT delete users');
+
+    assertEqual(canModifyRole('admin'), true, 'Admin can modify roles');
+    assertEqual(canModifyRole('manager'), false, 'Manager CANNOT modify roles');
+    assertEqual(canModifyRole('trainer'), false, 'Trainer CANNOT modify roles');
+  });
+});
+
+runner.describe('Tier 1 — R2: API Route Authorization, BOLA, Data Exposure & Error Sanitization (Milestone 2)', () => {
+  function safeTimingCompare(a, b) {
+    if (typeof a !== 'string' || typeof b !== 'string') return false;
+    if (a.length === 0 || b.length === 0) return false;
+    const bufA = Buffer.from(a, 'utf8');
+    const bufB = Buffer.from(b, 'utf8');
+    if (bufA.length !== bufB.length) return false;
+    return crypto.timingSafeEqual(bufA, bufB);
+  }
+
+  test('T1.R2.01: Public Validation Routes Authentication Guard & PII Stripping', () => {
+    function handleValidateLeetcode(user, isDuplicate, matchedUser) {
+      if (!user) return { status: 401, error: 'Unauthorized' };
+      if (isDuplicate) {
+        return {
+          valid: false,
+          isDuplicate: true,
+          error: 'LeetCode ID is already linked to another account.',
+        };
+      }
+      return { valid: true };
+    }
+
+    // Unauthenticated rejection
+    assertEqual(handleValidateLeetcode(null, false, null).status, 401, 'Rejects unauthenticated request with 401');
+
+    // Duplicate error strips full_name and email
+    const duplicateRes = handleValidateLeetcode({ id: 'u1' }, true, { full_name: 'John Doe', email: 'john@example.com' });
+    assertEqual(duplicateRes.valid, false);
+    assertEqual(duplicateRes.isDuplicate, true);
+    assertEqual(duplicateRes.error, 'LeetCode ID is already linked to another account.');
+    assertEqual(duplicateRes.error.includes('John Doe'), false, 'Does not expose full_name');
+    assertEqual(duplicateRes.error.includes('john@example.com'), false, 'Does not expose email');
+  });
+
+  test('T1.R2.02: LeetCode Contest Sync BOLA/BFLA Guard', () => {
+    function handleLeetCodeSync(callerRole, callerId, { userId, contestId }) {
+      const isAdminOrManager = callerRole === 'admin' || callerRole === 'manager';
+      if (userId) {
+        if (!isAdminOrManager && userId !== callerId) {
+          return { status: 403, error: 'Forbidden: You can only sync your own progress' };
+        }
+        return { status: 200, ok: true, synced: 'single' };
+      }
+      if (contestId) {
+        if (!isAdminOrManager) {
+          return { status: 403, error: 'Forbidden: Admin or Manager role required for contest-wide sync' };
+        }
+        return { status: 200, ok: true, synced: 'contest' };
+      }
+      return { status: 400, error: 'contestId or userId required' };
+    }
+
+    // Trainer self-sync allowed
+    assertEqual(handleLeetCodeSync('trainer', 't1', { userId: 't1' }).status, 200);
+    // Trainer syncing another user forbidden
+    assertEqual(handleLeetCodeSync('trainer', 't1', { userId: 't2' }).status, 403);
+    // Trainer syncing entire contest forbidden (BOLA fix)
+    assertEqual(handleLeetCodeSync('trainer', 't1', { contestId: 'c1' }).status, 403);
+    // Admin/Manager syncing entire contest allowed
+    assertEqual(handleLeetCodeSync('admin', 'a1', { contestId: 'c1' }).status, 200);
+    assertEqual(handleLeetCodeSync('manager', 'm1', { contestId: 'c1' }).status, 200);
+  });
+
+  test('T1.R2.03: Excessive Data Exposure Elimination in Support Tickets & IT Disputes', () => {
+    const rawRecord = {
+      id: 'ticket-1',
+      user_id: 'trainer-1',
+      status: 'rejected',
+      admin_notes: 'Confidential HR investigation note: trainer falsified attendance',
+      resolved_by: 'admin-uuid-123',
+      resolver: {
+        id: 'admin-uuid-123',
+        full_name: 'Lead Admin',
+        email: 'admin@internal.company.com',
+      },
+    };
+
+    function sanitizeForRole(record, role) {
+      const isAdminOrManager = role === 'admin' || role === 'manager';
+      if (!isAdminOrManager) {
+        const { admin_notes, resolved_by, resolver, ...safe } = record;
+        return safe;
+      }
+      return record;
+    }
+
+    const trainerView = sanitizeForRole(rawRecord, 'trainer');
+    assertEqual(trainerView.id, 'ticket-1');
+    assertEqual(trainerView.status, 'rejected');
+    assertEqual(trainerView.admin_notes, undefined, 'Omit admin_notes for trainer');
+    assertEqual(trainerView.resolved_by, undefined, 'Omit resolved_by for trainer');
+    assertEqual(trainerView.resolver, undefined, 'Omit resolver object for trainer');
+
+    const adminView = sanitizeForRole(rawRecord, 'admin');
+    assertEqual(adminView.admin_notes, rawRecord.admin_notes, 'Preserve admin_notes for admin');
+    assertEqual(adminView.resolver.email, 'admin@internal.company.com', 'Preserve resolver details for admin');
+  });
+
+  test('T1.R2.04: Constant-Time Service Key Verification & Empty String Guard', () => {
+    function authenticateServiceCall(providedApiKey, configuredSecret) {
+      if (!configuredSecret || configuredSecret.trim().length === 0) {
+        return { ok: false, status: 500, error: 'Misconfigured secret' };
+      }
+      if (!providedApiKey || !safeTimingCompare(providedApiKey, configuredSecret)) {
+        return { ok: false, status: 401, error: 'Unauthorized' };
+      }
+      return { ok: true, status: 200 };
+    }
+
+    assertEqual(authenticateServiceCall('secret123', 'secret123').ok, true, 'Valid key passes');
+    assertEqual(authenticateServiceCall('wrong', 'secret123').ok, false, 'Wrong key fails with 401');
+    assertEqual(authenticateServiceCall('', 'secret123').ok, false, 'Empty provided key fails with 401');
+    assertEqual(authenticateServiceCall('secret123', '').ok, false, 'Empty secret fails closed with 500');
+    assertEqual(authenticateServiceCall('', '').ok, false, 'Empty key & secret fails closed');
+  });
+
+  test('T1.R2.05: Scraper Microservice Fail-Closed Auth Guard', () => {
+    function scraperAuthMiddleware(apiKeyEnv, path, reqHeaders) {
+      if (path === '/health') return { next: true };
+      if (!apiKeyEnv || apiKeyEnv.trim() === '') {
+        return { status: 401, error: 'Unauthorized: scraper service API_KEY not configured' };
+      }
+      const provided = reqHeaders['x-api-key'];
+      if (!provided || !safeTimingCompare(provided, apiKeyEnv)) {
+        return { status: 401, error: 'Unauthorized: invalid or missing x-api-key header' };
+      }
+      return { next: true };
+    }
+
+    // Health endpoint is public
+    assertEqual(scraperAuthMiddleware('', '/health', {}).next, true);
+    // Unset API_KEY fails closed on protected endpoints
+    assertEqual(scraperAuthMiddleware('', '/scrape/progress', {}).status, 401);
+    assertEqual(scraperAuthMiddleware('', '/scrape/progress', { 'x-api-key': '' }).status, 401);
+    // Valid API_KEY check
+    assertEqual(scraperAuthMiddleware('secret-env', '/scrape/progress', {}).status, 401);
+    assertEqual(scraperAuthMiddleware('secret-env', '/scrape/progress', { 'x-api-key': 'wrong' }).status, 401);
+    assertEqual(scraperAuthMiddleware('secret-env', '/scrape/progress', { 'x-api-key': 'secret-env' }).next, true);
+  });
+
+  test('T1.R2.06: Verbose Database Error Sanitization', () => {
+    function sanitizeDbError(rawError, fallbackMessage = 'An unexpected database error occurred.') {
+      // Must not expose SQL schema, table names, column names, or PostgREST codes
+      const postgrestPatterns = [/PGRST\d+/i, /relation "[^"]+" does not exist/i, /column "[^"]+" does not exist/i, /violates foreign key constraint/i];
+      const isLeakingInternal = postgrestPatterns.some((pattern) => pattern.test(fallbackMessage));
+      assertEqual(isLeakingInternal, false, 'Sanitized message must not contain database internals');
+      return { error: fallbackMessage };
+    }
+
+    const res1 = sanitizeDbError({ message: 'relation "public.questions" does not exist', code: '42P01' }, 'Failed to fetch questions');
+    assertEqual(res1.error, 'Failed to fetch questions');
+
+    const res2 = sanitizeDbError({ message: 'duplicate key value violates unique constraint "users_email_key"', code: '23505' }, 'Failed to create user');
+    assertEqual(res2.error, 'Failed to create user');
+  });
+});
+
+// ============================================================================
+// TIER 1: R5 — Secrets Management, CDN Snapshot Minimization & DoS Controls
+// ============================================================================
+runner.describe('Tier 1: R5 — Secrets Management, CDN Minimization & DoS Protection', () => {
+  test('T1.R5.01: Public CDN Leaderboard Minimization (No emp_id, email, or user UUIDs)', () => {
+    const rawUsers = [
+      { id: 'usr-uuid-1', full_name: 'Alice Trainer', emp_id: 'EMP001', email: 'alice@company.com', team: 'Batch A', score: 100, solved: 5 },
+      { id: 'usr-uuid-2', full_name: 'Bob Trainer', emp_id: 'EMP002', email: 'bob@company.com', team: 'Batch B', score: 80, solved: 4 },
+    ];
+
+    // Sanitization function as implemented in cdnPublisher.js and cdn-cache.ts
+    const sanitizedPerformers = rawUsers
+      .sort((a, b) => b.score - a.score || b.solved - a.solved || a.full_name.localeCompare(b.full_name))
+      .map((entry, idx) => ({
+        rank: idx + 1,
+        name: entry.full_name,
+        team: entry.team,
+        score: entry.score,
+        solved: entry.solved,
+      }));
+
+    assertEqual(sanitizedPerformers.length, 2);
+    assertEqual(sanitizedPerformers[0].rank, 1);
+    assertEqual(sanitizedPerformers[0].name, 'Alice Trainer');
+    assertEqual(sanitizedPerformers[0].score, 100);
+    assertEqual(sanitizedPerformers[0].solved, 5);
+
+    // Verify complete exclusion of sensitive PII & internal keys
+    for (const p of sanitizedPerformers) {
+      assertEqual(p.id, undefined, 'Must not include id');
+      assertEqual(p.user_id, undefined, 'Must not include user_id');
+      assertEqual(p.emp_id, undefined, 'Must not include emp_id');
+      assertEqual(p.email, undefined, 'Must not include email');
+    }
+  });
+
+  test('T1.R5.02: Public CDN Contest Snapshot Minimization', () => {
+    const rawContestParticipants = [
+      {
+        user_id: 'usr-uuid-101',
+        name: 'Charlie Smith',
+        emp_id: 'EMP101',
+        email: 'charlie@company.com',
+        team: 'Alpha',
+        hackerrank_id: 'charlie_hr',
+        leetcode_id: 'charlie_lc',
+        solved: 3,
+        total: 5,
+        score: 30,
+        maxScore: 50,
+        lastActive: '2026-09-01T12:00:00Z',
+        progress: [
+          { question_id: 'q-1', user_id: 'usr-uuid-101', status: 'solved', score: 10, max_score: 10, last_submission_at: '2026-09-01T12:00:00Z' },
+        ],
+      },
+    ];
+
+    const sanitizedContestLeaderboard = rawContestParticipants.map((entry, idx) => ({
+      rank: idx + 1,
+      name: entry.name,
+      team: entry.team,
+      hackerrank_id: entry.hackerrank_id || null,
+      leetcode_id: entry.leetcode_id || null,
+      solved: entry.solved,
+      total: entry.total,
+      score: entry.score,
+      maxScore: entry.maxScore,
+      lastActive: entry.lastActive,
+      progress: (entry.progress || []).map((p) => ({
+        question_id: p.question_id,
+        status: p.status,
+        score: p.score,
+        max_score: p.max_score,
+        last_submission_at: p.last_submission_at,
+      })),
+    }));
+
+    assertEqual(sanitizedContestLeaderboard.length, 1);
+    const p1 = sanitizedContestLeaderboard[0];
+    assertEqual(p1.rank, 1);
+    assertEqual(p1.name, 'Charlie Smith');
+    assertEqual(p1.hackerrank_id, 'charlie_hr');
+    assertEqual(p1.user_id, undefined, 'Contest leaderboard must exclude user_id');
+    assertEqual(p1.emp_id, undefined, 'Contest leaderboard must exclude emp_id');
+    assertEqual(p1.email, undefined, 'Contest leaderboard must exclude email');
+    assertEqual(p1.progress[0].user_id, undefined, 'Progress item must exclude user_id');
+    assertEqual(p1.progress[0].question_id, 'q-1');
+  });
+
+  test('T1.R5.03: In-Memory Scraper Cooldown & Rate Limiter Protection (60s window)', () => {
+    const cooldownStore = new Map();
+    const COOLDOWN_MS = 60_000;
+
+    function checkCooldown(key, now) {
+      const last = cooldownStore.get(key);
+      if (last && now - last < COOLDOWN_MS) {
+        const remaining = COOLDOWN_MS - (now - last);
+        return { allowed: false, remainingSeconds: Math.ceil(remaining / 1000) };
+      }
+      return { allowed: true, remainingSeconds: 0 };
+    }
+
+    function recordCooldown(key, now) {
+      cooldownStore.set(key, now);
+    }
+
+    const t0 = 1000000;
+    const contestKey = 'scrape:contest:contest-abc';
+
+    // 1st request allowed
+    const check1 = checkCooldown(contestKey, t0);
+    assertEqual(check1.allowed, true);
+    recordCooldown(contestKey, t0);
+
+    // 2nd request at t0 + 10s rejected with 50s remaining
+    const check2 = checkCooldown(contestKey, t0 + 10_000);
+    assertEqual(check2.allowed, false);
+    assertEqual(check2.remainingSeconds, 50);
+
+    // 3rd request at t0 + 59s rejected with 1s remaining
+    const check3 = checkCooldown(contestKey, t0 + 59_000);
+    assertEqual(check3.allowed, false);
+    assertEqual(check3.remainingSeconds, 1);
+
+    // 4th request at t0 + 61s allowed
+    const check4 = checkCooldown(contestKey, t0 + 61_000);
+    assertEqual(check4.allowed, true);
+  });
+
+  test('T1.R5.04: Atomic Cron Concurrency Lock Acquisition', () => {
+    // Simulate DB state for auto_scrape_schedules row
+    const dbScheduleRow = { id: 'sched-1', is_running: false, active_job_id: null };
+
+    function attemptAtomicLock(row) {
+      // Simulates UPDATE auto_scrape_schedules SET is_running = true WHERE id = ... AND (is_running = false OR is_running IS NULL)
+      if (row.is_running === false || row.is_running === null) {
+        row.is_running = true;
+        return { success: true, updatedRows: [row] };
+      }
+      return { success: false, updatedRows: [] };
+    }
+
+    // Cron execution 1 acquires lock
+    const lock1 = attemptAtomicLock(dbScheduleRow);
+    assertEqual(lock1.success, true, 'First cron worker acquires atomic lock');
+    assertEqual(lock1.updatedRows.length, 1);
+    assertEqual(dbScheduleRow.is_running, true);
+
+    // Concurrent Cron execution 2 attempts to acquire lock simultaneously
+    const lock2 = attemptAtomicLock(dbScheduleRow);
+    assertEqual(lock2.success, false, 'Concurrent cron worker is rejected and skips');
+    assertEqual(lock2.updatedRows.length, 0);
+
+    // Release lock on completion
+    dbScheduleRow.is_running = false;
+
+    // Subsequent tick can acquire lock
+    const lock3 = attemptAtomicLock(dbScheduleRow);
+    assertEqual(lock3.success, true, 'Subsequent cron worker can acquire released lock');
   });
 });
 

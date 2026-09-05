@@ -44,6 +44,7 @@ export async function PATCH(request: Request, { params }: { params: Params }) {
     return NextResponse.json(requestRow);
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Unknown error';
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error(`[PATCH /api/access-requests/${id}] Error:`, message);
+    return NextResponse.json({ error: 'Failed to update access request' }, { status: 500 });
   }
 }

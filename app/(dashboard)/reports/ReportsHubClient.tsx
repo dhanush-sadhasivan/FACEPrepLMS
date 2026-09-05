@@ -204,26 +204,64 @@ export default function ReportsHubClient({ initialReportType = 'contests', userR
     }
 
     if (activeTab === 'it-attendance') {
-      return sortedRows.map((r) => ({
-        'IT Roadmap': r.roadmapTitle,
-        'Trainer Name': r.trainerName,
-        'Employee ID': r.empId,
-        'Email Address': r.email,
-        'Team / Cohort': r.team,
-        'Reporting Manager': r.manager,
-        'IT Days Logged': r.itDaysCount,
-        'Current Day': r.currentDay,
-        'Total Days': r.totalDays,
-        'Questions Completed': r.questionsCompleted,
-        'Total Questions': r.totalQuestions,
-        'Pending Questions': r.pendingQuestions,
-        'Completion (%)': `${r.completionPct}%`,
-        'Velocity (q/day)': r.completionVelocity ?? 0,
-        'Days Since Last Activity': r.daysSinceLastActivity ?? '—',
-        'Extended Days': r.extendedDays,
-        'Attendance Status': r.attendanceStatus,
-        'Last Check-In': r.lastCheckInDate ? new Date(r.lastCheckInDate).toLocaleDateString() : 'Never',
-      }));
+      return sortedRows.map((r) => {
+        let locationStr = '—';
+        if (r.locationDisplay && r.locationDisplay !== '—') {
+          locationStr = r.locationDisplay;
+        } else if (r.location) {
+          let rawLoc = r.location;
+          if (typeof rawLoc === 'string' && rawLoc.trim().startsWith('{') && rawLoc.trim().endsWith('}')) {
+            try {
+              rawLoc = JSON.parse(rawLoc);
+            } catch {
+              rawLoc = r.location;
+            }
+          }
+          if (typeof rawLoc === 'string') {
+            locationStr = rawLoc;
+          } else if (typeof rawLoc === 'object' && rawLoc !== null) {
+            const locType = rawLoc.type || rawLoc.office_name || '';
+            const detailStr = rawLoc.detail || (rawLoc.office_name && rawLoc.office_name !== locType ? rawLoc.office_name : '') || rawLoc.wfh_reason || '';
+            const locDetail = detailStr ? ` (${detailStr})` : '';
+            locationStr = `${locType}${locDetail}`.trim() || '—';
+          }
+        }
+
+        let formattedCheckIn = 'Never';
+        if (r.lastCheckInDate) {
+          try {
+            if (r.lastCheckInDate.length >= 10 && /^\d{4}-\d{2}-\d{2}/.test(r.lastCheckInDate)) {
+              formattedCheckIn = r.lastCheckInDate.slice(0, 10);
+            } else {
+              formattedCheckIn = new Date(r.lastCheckInDate).toLocaleDateString();
+            }
+          } catch {
+            formattedCheckIn = String(r.lastCheckInDate);
+          }
+        }
+
+        return {
+          'IT Roadmap': r.roadmapTitle,
+          'Trainer Name': r.trainerName,
+          'Employee ID': r.empId,
+          'Email Address': r.email,
+          'Team / Cohort': r.team,
+          'Reporting Manager': r.manager,
+          'IT Days Logged': r.itDaysCount,
+          'Current Day': r.currentDay,
+          'Total Days': r.totalDays,
+          'Check-In Date': formattedCheckIn,
+          'Location': locationStr,
+          'Questions Completed': r.questionsCompleted,
+          'Total Questions': r.totalQuestions,
+          'Pending Backlog': r.pendingQuestions,
+          'Completion (%)': `${r.completionPct}%`,
+          'Velocity (q/day)': r.completionVelocity ?? 0,
+          'Days Since Last Activity': r.daysSinceLastActivity ?? '—',
+          'Extended Days': r.extendedDays,
+          'Attendance Status': r.attendanceStatus,
+        };
+      });
     }
 
     if (activeTab === 'teams') {
@@ -293,10 +331,33 @@ export default function ReportsHubClient({ initialReportType = 'contests', userR
     return sortedRows;
   };
 
+  const sanitizeExportData = (data: Record<string, any>[]): Record<string, any>[] => {
+    const formulaChars = ['=', '+', '-', '@', '\t', '\r'];
+    return data.map((row) => {
+      const sanitized: Record<string, any> = {};
+      for (const [key, value] of Object.entries(row)) {
+        if (value === null || value === undefined) {
+          sanitized[key] = '';
+        } else if (typeof value === 'number' || typeof value === 'boolean') {
+          sanitized[key] = value;
+        } else {
+          const str = String(value);
+          if (str.length > 0 && formulaChars.includes(str.charAt(0))) {
+            sanitized[key] = "'" + str;
+          } else {
+            sanitized[key] = str;
+          }
+        }
+      }
+      return sanitized;
+    });
+  };
+
   const exportCsv = () => {
     const exportData = getFormattedExportData();
     if (exportData.length === 0) return;
-    const csv = Papa.unparse(exportData);
+    const sanitizedData = sanitizeExportData(exportData);
+    const csv = Papa.unparse(sanitizedData);
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -308,8 +369,9 @@ export default function ReportsHubClient({ initialReportType = 'contests', userR
   const exportExcel = () => {
     const exportData = getFormattedExportData();
     if (exportData.length === 0) return;
+    const sanitizedData = sanitizeExportData(exportData);
     const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.json_to_sheet(exportData);
+    const ws = XLSX.utils.json_to_sheet(sanitizedData);
     XLSX.utils.book_append_sheet(wb, ws, activeTab.slice(0, 31));
     XLSX.writeFile(wb, `FACEPrep_${activeTab}_report_${new Date().toISOString().slice(0, 10)}.xlsx`);
   };
@@ -488,17 +550,19 @@ export default function ReportsHubClient({ initialReportType = 'contests', userR
               </div>
             </div>
             <div className="kpi-card">
-              <div className="kpi-icon" style={{ background: 'rgba(239, 68, 68, 0.12)', color: 'var(--error)' }}>⏰</div>
+              <div className="kpi-icon" style={{ background: 'rgba(239, 68, 68, 0.12)', color: 'var(--error)' }}>⚠️</div>
               <div className="kpi-details">
-                <span className="kpi-val">{kpis.behindCount ?? 0}</span>
-                <span className="kpi-label">Behind Schedule</span>
+                <span className="kpi-val" style={{ color: 'var(--error)' }}>{kpis.behindCount ?? 0}</span>
+                <span className="kpi-label">In Backlog</span>
               </div>
             </div>
             <div className="kpi-card">
-              <div className="kpi-icon" style={{ background: 'rgba(245, 158, 11, 0.12)', color: '#f59e0b' }}>⏳</div>
+              <div className="kpi-icon" style={{ background: 'rgba(245, 158, 11, 0.12)', color: '#f59e0b' }}>📍</div>
               <div className="kpi-details">
-                <span className="kpi-val">{kpis.extendedCount ?? 0}</span>
-                <span className="kpi-label">Granted Extensions</span>
+                <span className="kpi-val" style={{ fontSize: '0.85rem' }}>
+                  {kpis.officeCheckInsCount ?? 0} Office · {kpis.wfhCheckInsCount ?? 0} WFH
+                </span>
+                <span className="kpi-label">Location Split</span>
               </div>
             </div>
             <div className="kpi-card">
@@ -766,15 +830,16 @@ export default function ReportsHubClient({ initialReportType = 'contests', userR
               {activeTab === 'it-attendance' && (
                 <tr>
                   {renderSortHeader('Trainer', 'trainerName', 'left', 180)}
-                  {renderSortHeader('Emp ID', 'empId', 'left', 110)}
-                  {renderSortHeader('Team', 'team', 'left', 120)}
-                  {renderSortHeader('Roadmap', 'roadmapTitle', 'left', 180)}
+                  {renderSortHeader('Emp ID', 'empId', 'left', 100)}
+                  {renderSortHeader('Team', 'team', 'left', 110)}
+                  {renderSortHeader('Roadmap', 'roadmapTitle', 'left', 170)}
                   {renderSortHeader('IT Days', 'itDaysCount', 'center', 90)}
                   {renderSortHeader('Day Plan', 'currentDay', 'center', 100)}
-                  {renderSortHeader('Qs Completed', 'questionsCompleted', 'left', 140)}
-                  {renderSortHeader('Velocity', 'completionVelocity', 'center', 100)}
-                  {renderSortHeader('Status', 'attendanceStatus', 'center', 120)}
-                  {renderSortHeader('Last Check-In', 'lastCheckInDate', 'right', 130)}
+                  {renderSortHeader('Solved Progress', 'questionsCompleted', 'left', 150)}
+                  {renderSortHeader('Backlog', 'pendingQuestions', 'center', 110)}
+                  {renderSortHeader('Location', 'locationDisplay', 'left', 160)}
+                  {renderSortHeader('Status', 'attendanceStatus', 'center', 110)}
+                  {renderSortHeader('Check-In Date', 'lastCheckInDate', 'right', 120)}
                 </tr>
               )}
 
@@ -897,10 +962,60 @@ export default function ReportsHubClient({ initialReportType = 'contests', userR
                               <div className="tbl-progress-bar">
                                 <div className="tbl-progress-fill" style={{ width: `${r.completionPct}%`, background: '#10b981' }} />
                               </div>
+                              <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>{r.completionPct}%</span>
                             </div>
                           </td>
-                          <td style={{ textAlign: 'center', fontWeight: 700, color: 'var(--indigo)', fontSize: '0.82rem' }}>
-                            {r.completionVelocity ?? 0} q/day
+                          <td style={{ textAlign: 'center' }}>
+                            {r.pendingQuestions > 0 ? (
+                              <span style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.2rem',
+                                padding: '0.2rem 0.5rem',
+                                borderRadius: '9999px',
+                                fontSize: '0.72rem',
+                                fontWeight: 800,
+                                background: 'rgba(239, 68, 68, 0.12)',
+                                color: 'var(--error)',
+                              }}>
+                                ⚠️ {r.pendingQuestions} Qs
+                              </span>
+                            ) : (
+                              <span style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.2rem',
+                                padding: '0.2rem 0.5rem',
+                                borderRadius: '9999px',
+                                fontSize: '0.72rem',
+                                fontWeight: 800,
+                                background: 'rgba(16, 185, 129, 0.12)',
+                                color: '#10b981',
+                              }}>
+                                ✓ Clear
+                              </span>
+                            )}
+                          </td>
+                          <td>
+                            {r.locationDisplay && r.locationDisplay !== '—' ? (
+                              <span style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '0.25rem',
+                                fontSize: '0.76rem',
+                                fontWeight: 600,
+                                color: (r.locationType || '').toLowerCase().includes('office') ? '#10b981' : (r.locationType || '').toLowerCase().includes('wfh') || (r.locationType || '').toLowerCase().includes('home') ? '#3b82f6' : 'var(--text-primary)',
+                                maxWidth: '170px',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                              }} title={r.locationDisplay}>
+                                <span>{(r.locationType || '').toLowerCase().includes('office') ? '🏢' : (r.locationType || '').toLowerCase().includes('wfh') || (r.locationType || '').toLowerCase().includes('home') ? '🏠' : '📍'}</span>
+                                <span>{r.locationDisplay}</span>
+                              </span>
+                            ) : (
+                              <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>—</span>
+                            )}
                           </td>
                           <td style={{ textAlign: 'center' }}>
                             <span className={`status-pill ${
@@ -913,7 +1028,11 @@ export default function ReportsHubClient({ initialReportType = 'contests', userR
                             </span>
                           </td>
                           <td style={{ textAlign: 'right', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                            {r.lastCheckInDate ? new Date(r.lastCheckInDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : 'Never'}
+                            {r.lastCheckInDate ? (
+                              r.lastCheckInDate.length >= 10 && /^\d{4}-\d{2}-\d{2}/.test(r.lastCheckInDate)
+                                ? r.lastCheckInDate.slice(0, 10)
+                                : new Date(r.lastCheckInDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+                            ) : 'Never'}
                           </td>
                         </>
                       )}

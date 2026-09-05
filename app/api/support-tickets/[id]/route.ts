@@ -116,7 +116,8 @@ export async function PATCH(req: Request, { params }: { params: Params }) {
         .single();
 
       if (resErr) {
-        return NextResponse.json({ error: resErr.message }, { status: 500 });
+        console.error('[support-tickets/[id]] Update error:', resErr.message);
+        return NextResponse.json({ error: 'Failed to update support ticket' }, { status: 500 });
       }
 
       // 4. Notify user
@@ -157,7 +158,8 @@ export async function PATCH(req: Request, { params }: { params: Params }) {
         .single();
 
       if (resErr) {
-        return NextResponse.json({ error: resErr.message }, { status: 500 });
+        console.error('[support-tickets/[id]] Update error:', resErr.message);
+        return NextResponse.json({ error: 'Failed to update support ticket' }, { status: 500 });
       }
 
       // Notify user
@@ -177,6 +179,7 @@ export async function PATCH(req: Request, { params }: { params: Params }) {
       return NextResponse.json({ ok: true, ticket: updatedTicket, action: 'rejected' });
     }
   } catch (err: any) {
-    return NextResponse.json({ error: err.message || 'Error resolving support ticket' }, { status: 500 });
+    console.error('[support-tickets/[id]] Exception:', err);
+    return NextResponse.json({ error: 'Failed to resolve support ticket' }, { status: 500 });
   }
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { getAdminClient } from '@/lib/supabase/admin';
+import { isValidIdentifier } from '@/lib/security';
 
 export async function GET(request: Request) {
   const supabase = await createClient();
@@ -24,7 +25,10 @@ export async function GET(request: Request) {
       .select('*, questions:questions(count), assignments:contest_assignments(count)')
       .order('start_date', { ascending: false });
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    if (error) {
+      console.error('[GET /api/contests] Admin query error:', error.message);
+      return NextResponse.json({ error: 'Failed to fetch contests' }, { status: 500 });
+    }
     return NextResponse.json(data);
   }
 
@@ -59,7 +63,10 @@ export async function GET(request: Request) {
     .in('id', contestIds)
     .order('start_date', { ascending: false });
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    console.error('[GET /api/contests] Trainer query error:', error.message);
+    return NextResponse.json({ error: 'Failed to fetch contests' }, { status: 500 });
+  }
   return NextResponse.json(data);
 }
 
@@ -80,27 +87,57 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json();
-    const { title, slug, platform = 'hackerrank', start_date, end_date, questions, groups = [], teams = [], new_group } = body;
-    const finalGroups: string[] = Array.isArray(groups) ? [...groups] : [];
-    const finalTeams: string[] = Array.isArray(teams) ? [...teams] : [];
+    const {
+      title,
+      slug,
+      hackerrank_contest_slug,
+      platform = 'hackerrank',
+      start_date,
+      start_time,
+      end_date,
+      end_time,
+      questions,
+      groups = [],
+      teams = [],
+      new_group,
+    } = body;
 
-    if (!title || !slug || !start_date || !end_date) {
-      return NextResponse.json({ error: 'Missing required contest fields' }, { status: 400 });
+    const contestSlug = String(slug || hackerrank_contest_slug || '').trim();
+    const contestTitle = String(title || '').trim();
+    const contestStart = String(start_date || start_time || '').trim();
+    const contestEnd = String(end_date || end_time || '').trim();
+
+    if (!contestTitle || !contestSlug || !contestStart || !contestEnd) {
+      return NextResponse.json({ error: 'Missing required contest fields: title, slug, start_date, end_date' }, { status: 400 });
     }
 
-    console.log(`[POST /api/contests] Creating contest "${title}" (${slug}) [${platform}] with ${questions?.length || 0} question(s)`);
+    if (!isValidIdentifier(contestSlug)) {
+      return NextResponse.json({ error: 'Invalid contest slug format. Must contain only alphanumeric characters, underscores, or hyphens.' }, { status: 400 });
+    }
 
-    // 1. Create Contest
+    const cleanPlatform = platform === 'leetcode' ? 'leetcode' : (platform === 'hackerrank' ? 'hackerrank' : null);
+    if (!cleanPlatform) {
+      return NextResponse.json({ error: 'Invalid contest platform. Allowed platforms are "hackerrank" or "leetcode".' }, { status: 400 });
+    }
+
+    const finalGroups: string[] = Array.isArray(groups) ? groups.filter(g => typeof g === 'string') : [];
+    const finalTeams: string[] = Array.isArray(teams) ? teams.filter(t => typeof t === 'string') : [];
+
+    console.log(`[POST /api/contests] Creating contest "${contestTitle}" (${contestSlug}) [${cleanPlatform}] with ${questions?.length || 0} question(s)`);
+
+    // 1. Create Contest with strict field allowlist (mass-assignment protection)
+    const contestInsertPayload = {
+      title: contestTitle,
+      hackerrank_slug: contestSlug,
+      platform: cleanPlatform,
+      start_date: contestStart,
+      end_date: contestEnd,
+      created_by: user.id,
+    };
+
     const { data: contest, error: contestError } = await supabaseAdmin
       .from('contests')
-      .insert({
-        title,
-        hackerrank_slug: slug,
-        platform,
-        start_date,
-        end_date,
-        created_by: user.id
-      })
+      .insert(contestInsertPayload)
       .select()
       .single();
 
@@ -109,20 +146,30 @@ export async function POST(request: Request) {
       throw contestError;
     }
 
-    // 2. Insert Questions
+    // 2. Insert Questions (strictly allowlisted fields)
     if (questions && questions.length > 0) {
-      const questionsData = questions.map((q: any, idx: number) => ({
-        contest_id: contest.id,
-        slug: q.slug || `q-${idx}`,
-        title: q.title || 'Untitled Problem',
-        domain: q.domain || 'General',
-        hackerrank_url: q.url || q.hackerrank_url || (platform === 'leetcode' ? `https://leetcode.com/problems/${q.slug}/` : `https://www.hackerrank.com/contests/${slug}/challenges/${q.slug}`),
-        url: q.url || q.hackerrank_url || (platform === 'leetcode' ? `https://leetcode.com/problems/${q.slug}/` : `https://www.hackerrank.com/contests/${slug}/challenges/${q.slug}`),
-        difficulty: q.difficulty || 'Medium',
-        max_score: q.max_score || 10,
-        is_enabled: true,
-        order_index: idx
-      }));
+      const questionsData = questions.map((q: any, idx: number) => {
+        const rawSlug = q.slug ? String(q.slug).trim() : `q-${idx}`;
+        const cleanSlug = isValidIdentifier(rawSlug) ? rawSlug : `q-${idx}`;
+        const cleanTitle = q.title ? String(q.title).trim() : 'Untitled Problem';
+        const cleanDomain = q.domain ? String(q.domain).trim() : 'General';
+        const cleanDifficulty = ['Easy', 'Medium', 'Hard'].includes(q.difficulty) ? q.difficulty : 'Medium';
+        const cleanMaxScore = typeof q.max_score === 'number' && q.max_score > 0 ? q.max_score : 10;
+        const problemUrl = q.url || q.hackerrank_url || (cleanPlatform === 'leetcode' ? `https://leetcode.com/problems/${cleanSlug}/` : `https://www.hackerrank.com/contests/${contestSlug}/challenges/${cleanSlug}`);
+
+        return {
+          contest_id: contest.id,
+          slug: cleanSlug,
+          title: cleanTitle,
+          domain: cleanDomain,
+          hackerrank_url: problemUrl,
+          url: problemUrl,
+          difficulty: cleanDifficulty,
+          max_score: cleanMaxScore,
+          is_enabled: true,
+          order_index: idx,
+        };
+      });
 
       const { error: qError } = await supabaseAdmin.from('questions').insert(questionsData);
       if (qError) {
@@ -214,6 +261,7 @@ export async function POST(request: Request) {
     return NextResponse.json(contest, { status: 201 });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Unknown error';
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error('[POST /api/contests] Exception:', message);
+    return NextResponse.json({ error: 'Failed to create contest' }, { status: 500 });
   }
 }

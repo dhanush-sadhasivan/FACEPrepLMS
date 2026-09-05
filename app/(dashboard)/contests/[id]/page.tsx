@@ -123,9 +123,9 @@ export default async function ContestDetailPage({ params }: { params: Promise<{ 
     const cachedContest = await getCachedContestData(contest.id);
 
     if (cachedContest && Array.isArray(cachedContest.leaderboard) && cachedContest.leaderboard.length > 0) {
-      // Sanitize cached leaderboard and STRICTLY filter to currently assigned participants
+      // Sanitize cached leaderboard
       leaderboard = cachedContest.leaderboard
-        .filter((row: any) => assignedUserIds.has(row.user_id))
+        .filter((row: any) => !row.user_id || assignedUserIds.has(row.user_id))
         .map((row: any) => {
           const qProgress = row.progress || [];
           if (Array.isArray(qProgress) && qProgress.length > 0) {

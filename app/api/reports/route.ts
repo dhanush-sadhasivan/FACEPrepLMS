@@ -462,31 +462,228 @@ async function handleITAttendanceReport(
     return jsonResponse({ reportType: 'it-attendance', rows: [], kpis: {}, meta: {} });
   }
 
-  const roadmapIds = itRoadmaps.map((r: any) => r.id);
+  const roadmapIds: string[] = itRoadmaps.map((r: any) => r.id);
+  const roadmapMap = new Map<string, any>();
+  itRoadmaps.forEach((r: any) => roadmapMap.set(r.id, r));
 
   // Fetch day plan counts per roadmap to get accurate totalDays
   const { data: dayPlanRows } = await dbAdmin
     .from('it_day_plans')
-    .select('roadmap_id')
+    .select('id, roadmap_id, day_number')
     .in('roadmap_id', roadmapIds);
 
+  const dayPlans = dayPlanRows || [];
   const roadmapDaysMap = new Map<string, number>();
-  (dayPlanRows || []).forEach((dp: any) => {
+  dayPlans.forEach((dp: any) => {
     roadmapDaysMap.set(dp.roadmap_id, (roadmapDaysMap.get(dp.roadmap_id) || 0) + 1);
   });
 
   // 1. Fetch overview from RPC
-  const { data: itOverviewData } = await dbAdmin.rpc('get_it_trainer_overview');
-  const overviewList = itOverviewData || [];
+  let overviewList: any[] = [];
+  try {
+    const { data: itOverviewData, error: rpcErr } = await dbAdmin.rpc('get_it_trainer_overview');
+    if (!rpcErr && Array.isArray(itOverviewData) && itOverviewData.length > 0) {
+      overviewList = itOverviewData;
+    }
+  } catch (err) {
+    console.warn('[handleITAttendanceReport] RPC get_it_trainer_overview call failed, using in-app fallback:', err);
+  }
 
-  // 2. Fetch IT trainer progress to get started_at / updated_at dates
+  // 2. In-app calculation fallback if RPC returned empty or failed
+  if (overviewList.length === 0) {
+    const [
+      assignmentsRes,
+      groupMembersRes,
+      trainerProgressRes,
+    ] = await Promise.all([
+      dbAdmin.from('roadmap_assignments').select('roadmap_id, user_id, group_id').in('roadmap_id', roadmapIds),
+      dbAdmin.from('group_members').select('group_id, user_id'),
+      dbAdmin.from('it_trainer_progress').select('*').in('roadmap_id', roadmapIds),
+    ]);
+
+    const assignments = assignmentsRes.data || [];
+    const groupMembers = groupMembersRes.data || [];
+    const trainerProgressList = trainerProgressRes.data || [];
+
+    const dayPlanIds = dayPlans.map((dp: any) => dp.id);
+    let allQuestions: any[] = [];
+    if (dayPlanIds.length > 0) {
+      const { data: qData } = await dbAdmin
+        .from('it_day_questions')
+        .select('id, day_plan_id, question_id, order_index')
+        .in('day_plan_id', dayPlanIds);
+      allQuestions = qData || [];
+    }
+
+    const relevantQuestionIds = Array.from(
+      new Set(allQuestions.map((q: any) => q.question_id).filter(Boolean))
+    );
+    const relevantDayQuestionIds = allQuestions.map((q: any) => q.id);
+
+    let completions: any[] = [];
+    if (relevantDayQuestionIds.length > 0) {
+      let cFrom = 0;
+      const cStep = 1000;
+      while (true) {
+        const { data: cPage } = await dbAdmin
+          .from('it_question_completions')
+          .select('user_id, day_question_id, clicked_at, is_completed')
+          .in('day_question_id', relevantDayQuestionIds)
+          .order('id', { ascending: true })
+          .range(cFrom, cFrom + cStep - 1);
+        if (!cPage || cPage.length === 0) break;
+        completions = completions.concat(cPage);
+        if (cPage.length < cStep) break;
+        cFrom += cStep;
+      }
+    }
+
+    let hrProgress: any[] = [];
+    if (relevantQuestionIds.length > 0) {
+      let pFrom = 0;
+      const pStep = 1000;
+      while (true) {
+        const { data: pPage } = await dbAdmin
+          .from('progress')
+          .select('user_id, question_id, status, score, max_score')
+          .in('question_id', relevantQuestionIds)
+          .eq('status', 'solved')
+          .order('id', { ascending: true })
+          .range(pFrom, pFrom + pStep - 1);
+        if (!pPage || pPage.length === 0) break;
+        hrProgress = hrProgress.concat(pPage);
+        if (pPage.length < pStep) break;
+        pFrom += pStep;
+      }
+    }
+
+    const groupMembersMap = new Map<string, Set<string>>();
+    groupMembers.forEach((gm: any) => {
+      if (!groupMembersMap.has(gm.group_id)) groupMembersMap.set(gm.group_id, new Set());
+      groupMembersMap.get(gm.group_id)!.add(gm.user_id);
+    });
+
+    const roadmapTrainersMap = new Map<string, Set<string>>();
+    roadmapIds.forEach((rmId: string) => roadmapTrainersMap.set(rmId, new Set()));
+
+    assignments.forEach((a: any) => {
+      const targetSet = roadmapTrainersMap.get(a.roadmap_id);
+      if (!targetSet) return;
+      if (a.user_id) targetSet.add(a.user_id);
+      if (a.group_id && groupMembersMap.has(a.group_id)) {
+        groupMembersMap.get(a.group_id)!.forEach((uid) => targetSet.add(uid));
+      }
+    });
+
+    trainerProgressList.forEach((p: any) => {
+      if (roadmapTrainersMap.has(p.roadmap_id)) {
+        roadmapTrainersMap.get(p.roadmap_id)!.add(p.user_id);
+      }
+    });
+
+    const progressMap = new Map<string, any>();
+    trainerProgressList.forEach((p: any) => {
+      progressMap.set(`${p.user_id}_${p.roadmap_id}`, p);
+    });
+
+    const dayPlanQuestionsMap = new Map<string, any[]>();
+    allQuestions.forEach((q: any) => {
+      if (!dayPlanQuestionsMap.has(q.day_plan_id)) dayPlanQuestionsMap.set(q.day_plan_id, []);
+      dayPlanQuestionsMap.get(q.day_plan_id)!.push(q);
+    });
+
+    const roadmapDayPlansMap = new Map<string, any[]>();
+    dayPlans.forEach((dp: any) => {
+      if (!roadmapDayPlansMap.has(dp.roadmap_id)) roadmapDayPlansMap.set(dp.roadmap_id, []);
+      roadmapDayPlansMap.get(dp.roadmap_id)!.push(dp);
+    });
+
+    const completionMap = new Map<string, any>();
+    completions.forEach((c: any) => {
+      completionMap.set(`${c.user_id}_${c.day_question_id}`, c);
+    });
+
+    const hrSolvedLookup = new Set<string>();
+    hrProgress.forEach((p: any) => {
+      if (isRecordSolved(p)) {
+        hrSolvedLookup.add(`${p.user_id}_${p.question_id}`);
+      }
+    });
+
+    roadmapIds.forEach((rmId: string) => {
+      const rm = roadmapMap.get(rmId);
+      const rmTitle = rm?.title || 'IT Roadmap';
+      const assignedUserIds = roadmapTrainersMap.get(rmId) || new Set();
+      const rmDayPlans = roadmapDayPlansMap.get(rmId) || [];
+      const totalDays = rmDayPlans.length;
+
+      const rmQuestions: (any & { day_number: number })[] = [];
+      rmDayPlans.forEach((dp: any) => {
+        const qs = dayPlanQuestionsMap.get(dp.id) || [];
+        qs.forEach((q: any) => {
+          rmQuestions.push({ ...q, day_number: dp.day_number });
+        });
+      });
+      const totalQuestionsCount = rmQuestions.length;
+
+      assignedUserIds.forEach((uid) => {
+        const u = userMap.get(uid);
+        if (!u || u.role === 'admin') return;
+
+        const p = progressMap.get(`${uid}_${rmId}`);
+        const itDaysLogged = p?.it_days_logged ?? u.it_days_count ?? 0;
+        const currentDay = Math.min(itDaysLogged, totalDays || 1);
+        const lastCheckIn = p?.last_check_in_date || u.last_it_check_date || null;
+
+        let completedCount = 0;
+        let pendingCount = 0;
+
+        rmQuestions.forEach((q) => {
+          const comp = completionMap.get(`${uid}_${q.id}`);
+          const hasClicked = Boolean(comp?.clicked_at);
+          const isManuallyCompleted = Boolean(comp?.is_completed);
+          const isHrSolved = q.question_id ? hrSolvedLookup.has(`${uid}_${q.question_id}`) : false;
+          const isComp = hasClicked && (isHrSolved || isManuallyCompleted);
+
+          if (isComp) {
+            completedCount++;
+          } else if (q.day_number <= currentDay) {
+            pendingCount++;
+          }
+        });
+
+        overviewList.push({
+          user_id: u.id,
+          full_name: u.full_name || 'Unknown Trainer',
+          emp_id: u.emp_id || '—',
+          email: u.email,
+          team: u.team || 'General',
+          roadmap_id: rmId,
+          roadmap_title: rmTitle,
+          started_at: p?.started_at || null,
+          current_day: currentDay,
+          total_days: totalDays,
+          completed_questions_count: completedCount,
+          total_questions_count: totalQuestionsCount,
+          pending_questions_count: pendingCount,
+          it_days_count: itDaysLogged,
+          extended_days: p?.extended_days || 0,
+          extension_count: p?.extension_count || 0,
+          location: p?.location || null,
+          last_it_check_date: lastCheckIn,
+        });
+      });
+    });
+  }
+
+  // 3. Fetch IT trainer progress to get extra metadata (started_at, last_check_in_date, location)
   let itProgressData: any[] = [];
   let pFrom = 0;
   const pStep = 1000;
   while (true) {
     const { data: pPage } = await dbAdmin
       .from('it_trainer_progress')
-      .select('user_id, roadmap_id, started_at, updated_at')
+      .select('user_id, roadmap_id, started_at, updated_at, last_check_in_date, location, it_days_logged, extended_days, extension_count')
       .order('id', { ascending: true })
       .range(pFrom, pFrom + pStep - 1);
     if (!pPage || pPage.length === 0) break;
@@ -495,9 +692,9 @@ async function handleITAttendanceReport(
     pFrom += pStep;
   }
 
-  const progressMap = new Map<string, any>();
+  const progressLookup = new Map<string, any>();
   itProgressData.forEach((p: any) => {
-    progressMap.set(`${p.user_id}:${p.roadmap_id}`, p);
+    progressLookup.set(`${p.user_id}:${p.roadmap_id}`, p);
   });
 
   const now = new Date().getTime();
@@ -505,75 +702,132 @@ async function handleITAttendanceReport(
   const rows: any[] = [];
 
   overviewList.forEach((row: any) => {
+    const u = userMap.get(row.user_id);
+    if (u?.role === 'admin') return;
+
+    const p = progressLookup.get(`${row.user_id}:${row.roadmap_id}`);
+    const trainerName = u?.full_name || row.full_name || 'Unknown Trainer';
+    const empId = u?.emp_id || row.emp_id || '—';
+    const team = u?.team || row.team || 'General';
+    const email = u?.email || row.email || '';
+    const manager = u?.manager || '—';
+    const rmTitle = row.roadmap_title || roadmapMap.get(row.roadmap_id)?.title || 'IT Roadmap';
+
     // Apply filters
     if (filters.roadmapFilter && filters.roadmapFilter !== 'all' && row.roadmap_id !== filters.roadmapFilter) return;
-    if (filters.teamFilter && filters.teamFilter !== 'all' && row.team !== filters.teamFilter) return;
+    if (filters.teamFilter && filters.teamFilter !== 'all' && team !== filters.teamFilter) return;
 
-    const u = userMap.get(row.user_id);
-    if (!u || u.role === 'admin') return;
+    // Location parsing
+    const rawLoc = p?.location || row.location || null;
+    let locationDisplay = '—';
+    let locationType = '';
+    let locationDetail = '';
+
+    if (rawLoc) {
+      let parsedLoc = rawLoc;
+      if (typeof rawLoc === 'string' && rawLoc.trim().startsWith('{') && rawLoc.trim().endsWith('}')) {
+        try {
+          parsedLoc = JSON.parse(rawLoc);
+        } catch {
+          parsedLoc = rawLoc;
+        }
+      }
+
+      if (typeof parsedLoc === 'string') {
+        locationDisplay = parsedLoc;
+        locationType = parsedLoc;
+      } else if (typeof parsedLoc === 'object') {
+        locationType = parsedLoc.type || parsedLoc.office_name || '';
+        locationDetail = parsedLoc.detail || (parsedLoc.office_name && parsedLoc.office_name !== locationType ? parsedLoc.office_name : '') || parsedLoc.wfh_reason || '';
+        locationDisplay = `${locationType}${locationDetail ? ` (${locationDetail})` : ''}`.trim() || '—';
+      }
+    }
 
     // Search filter
     if (filters.searchFilter) {
       const sf = filters.searchFilter;
-      if (!u.full_name?.toLowerCase().includes(sf) &&
-          !u.emp_id?.toLowerCase().includes(sf) &&
-          !u.team?.toLowerCase().includes(sf) &&
-          !row.roadmap_title?.toLowerCase().includes(sf)) {
-        return;
-      }
+      const matchesSearch =
+        trainerName.toLowerCase().includes(sf) ||
+        empId.toLowerCase().includes(sf) ||
+        team.toLowerCase().includes(sf) ||
+        rmTitle.toLowerCase().includes(sf) ||
+        email.toLowerCase().includes(sf) ||
+        locationDisplay.toLowerCase().includes(sf) ||
+        locationType.toLowerCase().includes(sf) ||
+        locationDetail.toLowerCase().includes(sf);
+
+      if (!matchesSearch) return;
     }
 
-    const p = progressMap.get(`${row.user_id}:${row.roadmap_id}`);
-    const startedAt = p?.started_at || null;
-    const lastCheckInDate = p?.updated_at || u.last_it_check_date || null;
+    const startedAt = p?.started_at || row.started_at || null;
+    const lastCheckInDate = p?.last_check_in_date || row.last_it_check_date || u?.last_it_check_date || (p?.updated_at ? p.updated_at.slice(0, 10) : null);
 
-    if (filters.startDate && (!lastCheckInDate || new Date(lastCheckInDate).getTime() < new Date(filters.startDate).getTime())) return;
-    if (filters.endDate && (!lastCheckInDate || new Date(lastCheckInDate).getTime() > new Date(filters.endDate).getTime())) return;
+    if (filters.startDate) {
+      if (!lastCheckInDate) return;
+      const checkInTime = new Date(lastCheckInDate).getTime();
+      const startTime = new Date(filters.startDate).getTime();
+      if (checkInTime < startTime) return;
+    }
+    if (filters.endDate) {
+      if (!lastCheckInDate) return;
+      const checkInTime = new Date(lastCheckInDate).getTime();
+      const endTime = filters.endDate.length === 10
+        ? new Date(`${filters.endDate}T23:59:59.999Z`).getTime()
+        : new Date(filters.endDate).getTime();
+      if (checkInTime > endTime) return;
+    }
 
     const completedQsCount = row.completed_questions_count || 0;
-    const currentDay = row.current_day || 1;
+    const currentDay = row.current_day ?? p?.current_day ?? 0;
     const totalQuestions = row.total_questions_count || 0;
     const completionPct = totalQuestions > 0 ? Math.round((completedQsCount / totalQuestions) * 100) : 0;
-    
+    const pendingQuestions = row.pending_questions_count ?? Math.max(0, totalQuestions - completedQsCount);
+
     const completionVelocity = Math.round((completedQsCount / Math.max(1, currentDay)) * 10) / 10;
     const daysSinceLastActivity = lastCheckInDate ? Math.floor((now - new Date(lastCheckInDate).getTime()) / dayMs) : null;
-    
-    const extensionCount = row.extension_count || 0;
-    const itDaysCount = row.it_days_count || 0;
-    
+
+    const extensionCount = row.extension_count ?? p?.extension_count ?? 0;
+    const extendedDays = row.extended_days ?? p?.extended_days ?? 0;
+    const itDaysCount = row.it_days_count ?? p?.it_days_logged ?? u?.it_days_count ?? 0;
+
     let attendanceStatus = 'On Track';
     if (completionPct >= 100) attendanceStatus = 'Completed';
+    else if (pendingQuestions > 0 && daysSinceLastActivity !== null && daysSinceLastActivity > 3) attendanceStatus = 'Behind';
+    else if (pendingQuestions > 0) attendanceStatus = 'Behind';
     else if (completionPct > 0 && daysSinceLastActivity !== null && daysSinceLastActivity <= 3) attendanceStatus = 'On Track';
-    else if (completionPct > 0 && daysSinceLastActivity !== null && daysSinceLastActivity > 3) attendanceStatus = 'Behind';
     else if (extensionCount > 0) attendanceStatus = 'Extended';
     else if (completionPct === 0 && itDaysCount === 0) attendanceStatus = 'Not Started';
 
-    const rm = itRoadmaps.find((r:any) => r.id === row.roadmap_id);
+    const rm = roadmapMap.get(row.roadmap_id);
 
     rows.push({
       roadmapId: row.roadmap_id,
-      roadmapTitle: row.roadmap_title,
+      roadmapTitle: rmTitle,
       domain: rm?.domain || 'Internal Training',
       userId: row.user_id,
-      trainerName: u.full_name,
-      empId: u.emp_id || '—',
-      email: u.email,
-      team: u.team || 'N/A',
-      manager: u.manager || '—',
-      itDaysCount: row.it_days_count,
-      totalDays: roadmapDaysMap.get(row.roadmap_id) ?? 0,
-      currentDay: row.current_day,
+      trainerName,
+      empId,
+      email,
+      team,
+      manager,
+      itDaysCount,
+      totalDays: roadmapDaysMap.get(row.roadmap_id) ?? row.total_days ?? 0,
+      currentDay,
       startedAt,
       lastCheckInDate,
+      location: rawLoc,
+      locationDisplay,
+      locationType,
+      locationDetail,
       questionsCompleted: completedQsCount,
       totalQuestions,
-      pendingQuestions: row.pending_questions_count,
+      pendingQuestions,
       completionPct,
-      extendedDays: row.extended_days,
-      extensionCount: row.extension_count,
+      extendedDays,
+      extensionCount,
       attendanceStatus,
       completionVelocity,
-      daysSinceLastActivity
+      daysSinceLastActivity,
     });
   });
 
@@ -581,10 +835,23 @@ async function handleITAttendanceReport(
   const totalTrainers = rows.length;
   const completedCount = rows.filter((r) => r.attendanceStatus === 'Completed').length;
   const onTrackCount = rows.filter((r) => r.attendanceStatus === 'On Track').length;
-  const behindCount = rows.filter((r) => r.attendanceStatus === 'Behind').length;
-  const extendedCount = rows.filter((r) => r.attendanceStatus === 'Extended').length;
-  const avgItDays = totalTrainers > 0 ? Math.round(rows.reduce((a, b) => a + (b.itDaysCount||0), 0) / totalTrainers) : 0;
-  const avgItCompletion = totalTrainers > 0 ? Math.round(rows.reduce((a, b) => a + (b.completionPct||0), 0) / totalTrainers) : 0;
+  const behindCount = rows.filter((r) => r.attendanceStatus === 'Behind' || (r.pendingQuestions > 0)).length;
+  const extendedCount = rows.filter((r) => r.extendedDays > 0 || r.extensionCount > 0).length;
+  const totalBacklogCount = rows.reduce((sum, r) => sum + (r.pendingQuestions || 0), 0);
+  const avgItDays = totalTrainers > 0 ? Math.round((rows.reduce((a, b) => a + (b.itDaysCount || 0), 0) / totalTrainers) * 10) / 10 : 0;
+  const avgItCompletion = totalTrainers > 0 ? Math.round(rows.reduce((a, b) => a + (b.completionPct || 0), 0) / totalTrainers) : 0;
+  const officeCheckInsCount = rows.filter((r) => {
+    const t = (r.locationType || '').toLowerCase();
+    const d = (r.locationDisplay || '').toLowerCase();
+    return t.includes('office') || t.includes('coimbatore') || t.includes('chennai') || t.includes('hyderabad') || t.includes('vijayawada') ||
+           d.includes('office') || d.includes('coimbatore') || d.includes('chennai') || d.includes('hyderabad') || d.includes('vijayawada');
+  }).length;
+  const wfhCheckInsCount = rows.filter((r) => {
+    const t = (r.locationType || '').toLowerCase();
+    const d = (r.locationDisplay || '').toLowerCase();
+    return t.includes('wfh') || t.includes('home') || t.includes('remote') ||
+           d.includes('wfh') || d.includes('home') || d.includes('remote');
+  }).length;
 
   return jsonResponse({
     reportType: 'it-attendance',
@@ -595,8 +862,11 @@ async function handleITAttendanceReport(
       onTrackCount,
       behindCount,
       extendedCount,
+      totalBacklogCount,
       avgItDays,
       avgItCompletion,
+      officeCheckInsCount,
+      wfhCheckInsCount,
     },
     meta: {
       availableRoadmaps: itRoadmaps.map((r: any) => ({ id: r.id, title: r.title })),

@@ -66,7 +66,7 @@ export async function DELETE(request: Request) {
 
   if (updateErr) {
     console.error('[auto-cron/cancel] Failed to release lock:', updateErr.message);
-    return NextResponse.json({ error: updateErr.message }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to cancel auto-scrape job' }, { status: 500 });
   }
 
   console.log(

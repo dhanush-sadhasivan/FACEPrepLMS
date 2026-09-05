@@ -34,7 +34,10 @@ export async function PATCH(
     .select()
     .single();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    console.error(`[PATCH /api/trainer/todos/${id}] DB error:`, error.message);
+    return NextResponse.json({ error: 'Failed to update todo' }, { status: 500 });
+  }
   return NextResponse.json(data);
 }
 
@@ -55,6 +58,9 @@ export async function DELETE(
     .eq('id', id)
     .eq('user_id', user.id);
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    console.error(`[DELETE /api/trainer/todos/${id}] DB error:`, error.message);
+    return NextResponse.json({ error: 'Failed to delete todo' }, { status: 500 });
+  }
   return NextResponse.json({ success: true });
 }

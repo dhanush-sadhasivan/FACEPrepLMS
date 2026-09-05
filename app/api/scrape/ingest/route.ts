@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { revalidatePath, revalidateTag } from 'next/cache';
 import { getAdminClient } from '@/lib/supabase/admin';
 import { generateAndUploadCdnSnapshots } from '@/lib/cdn-cache';
+import { safeTimingCompare } from '@/lib/security';
 
 function normalizeStatus(status?: string): 'solved' | 'attempted' | 'unattempted' {
   if (!status) return 'unattempted';
@@ -18,7 +19,7 @@ function normalizeStatus(status?: string): 'solved' | 'attempted' | 'unattempted
 const UPSERT_BATCH_SIZE = 500;
 
 export async function POST(request: Request) {
-  const authHeader = request.headers.get('x-api-key');
+  const authHeader = request.headers.get('x-api-key') || '';
   const expectedKey = process.env.SCRAPER_INGEST_API_KEY || process.env.RAILWAY_API_KEY;
 
   if (!expectedKey) {
@@ -26,8 +27,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Server misconfiguration: API key not set' }, { status: 500 });
   }
 
-  if (expectedKey && authHeader !== expectedKey) {
-    console.error(`[scrape/ingest] Unauthorized: provided key "${authHeader}" does not match expected.`);
+  if (!authHeader || !safeTimingCompare(authHeader, expectedKey)) {
+    console.error('[scrape/ingest] Unauthorized: provided key does not match expected.');
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
@@ -65,7 +66,7 @@ export async function POST(request: Request) {
 
     if (qError) {
       console.error(`[scrape/ingest] Failed to fetch questions: ${qError.message}`);
-      return NextResponse.json({ error: qError.message }, { status: 500 });
+      return NextResponse.json({ error: 'Failed to fetch contest questions' }, { status: 500 });
     }
 
     const questionList = questions || [];
@@ -232,10 +233,10 @@ export async function POST(request: Request) {
     }
 
     if (errors.length > 0) {
-      console.error(`[scrape/ingest] Completed with ${errors.length} batch error(s). Upserted: ${totalUpserted}/${progressRows.length}`);
+      console.error(`[scrape/ingest] Completed with ${errors.length} batch error(s):`, errors);
       return NextResponse.json({
         ok: false,
-        error: `Partial failure: ${errors.join('; ')}`,
+        error: 'Partial failure during progress ingestion',
         updated: totalUpserted,
         total: progressRows.length,
         unmappedSlugs,
@@ -253,6 +254,6 @@ export async function POST(request: Request) {
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     console.error(`[scrape/ingest] Exception: ${message}`);
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to ingest scraping results' }, { status: 500 });
   }
 }

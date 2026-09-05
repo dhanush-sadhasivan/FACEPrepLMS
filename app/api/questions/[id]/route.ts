@@ -19,29 +19,65 @@ export async function PATCH(request: Request, { params }: { params: Params }) {
   }
 
   const body = await request.json();
-  const { is_enabled } = body;
+  const updatePayload: Record<string, any> = {};
 
-  if (is_enabled === undefined || typeof is_enabled !== 'boolean') {
-    return NextResponse.json({ error: 'is_enabled (boolean) is required' }, { status: 400 });
+  if (body.is_enabled !== undefined) {
+    if (typeof body.is_enabled !== 'boolean') {
+      return NextResponse.json({ error: 'is_enabled must be a boolean' }, { status: 400 });
+    }
+    updatePayload.is_enabled = body.is_enabled;
+  }
+
+  if (body.title !== undefined) {
+    const cleanTitle = String(body.title).trim();
+    if (!cleanTitle) {
+      return NextResponse.json({ error: 'title cannot be empty' }, { status: 400 });
+    }
+    updatePayload.title = cleanTitle;
+  }
+
+  if (body.domain !== undefined) {
+    updatePayload.domain = String(body.domain).trim();
+  }
+
+  if (body.difficulty !== undefined) {
+    if (!['Easy', 'Medium', 'Hard'].includes(body.difficulty)) {
+      return NextResponse.json({ error: 'difficulty must be Easy, Medium, or Hard' }, { status: 400 });
+    }
+    updatePayload.difficulty = body.difficulty;
+  }
+
+  if (body.max_score !== undefined) {
+    const score = Number(body.max_score);
+    if (!Number.isFinite(score) || score < 0) {
+      return NextResponse.json({ error: 'max_score must be a positive number' }, { status: 400 });
+    }
+    updatePayload.max_score = score;
+  }
+
+  if (body.order_index !== undefined) {
+    const idx = Number(body.order_index);
+    if (Number.isInteger(idx) && idx >= 0) {
+      updatePayload.order_index = idx;
+    }
+  }
+
+  if (Object.keys(updatePayload).length === 0) {
+    return NextResponse.json({ error: 'No valid updatable fields provided' }, { status: 400 });
   }
 
   const supabaseAdmin = getAdminClient();
 
   const { data: question, error } = await supabaseAdmin
     .from('questions')
-    .update({ is_enabled })
+    .update(updatePayload)
     .eq('id', id)
     .select()
     .single();
 
   if (error) {
     console.error(`[PATCH /api/questions/${id}] Error: ${error.message}`);
-    if (error.message.includes("is_enabled") || error.message.includes("schema cache")) {
-      return NextResponse.json({
-        error: "Missing Database Column: Please run 'ALTER TABLE questions ADD COLUMN IF NOT EXISTS is_enabled BOOLEAN DEFAULT true;' in Supabase SQL Editor."
-      }, { status: 400 });
-    }
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to update question' }, { status: 500 });
   }
 
   if (question?.contest_id) {
@@ -59,6 +95,6 @@ export async function PATCH(request: Request, { params }: { params: Params }) {
   revalidateTag('leaderboard', 'max');
   revalidateTag('global-stats', 'max');
 
-  console.log(`[PATCH /api/questions/${id}] Updated is_enabled=${is_enabled}`);
+  console.log(`[PATCH /api/questions/${id}] Updated fields: ${Object.keys(updatePayload).join(', ')}`);
   return NextResponse.json({ success: true, question });
 }

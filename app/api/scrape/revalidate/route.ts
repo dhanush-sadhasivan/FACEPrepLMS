@@ -2,14 +2,14 @@ import { NextResponse } from 'next/server';
 import { revalidatePath, revalidateTag } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { generateAndUploadCdnSnapshots } from '@/lib/cdn-cache';
+import { safeTimingCompare } from '@/lib/security';
 
 export async function POST(req: Request) {
-  const apiKey = req.headers.get('x-api-key');
+  const apiKey = req.headers.get('x-api-key') || '';
   const expectedKey = process.env.RAILWAY_API_KEY;
+  const isInternal = Boolean(apiKey && expectedKey && safeTimingCompare(apiKey, expectedKey));
   
-  if (apiKey && expectedKey && apiKey === expectedKey) {
-    // Service call from scraper — proceed
-  } else {
+  if (!isInternal) {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -57,6 +57,7 @@ export async function POST(req: Request) {
     console.log(`[scrape/revalidate] Revalidated paths & tags for /dashboard, /contests, /roadmaps, /reports, /internal-training, contestId=${contestId || 'all'}`);
     return NextResponse.json({ ok: true, revalidated: true, cdnRefreshed: true, timestamp: new Date().toISOString() });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    console.error('[scrape/revalidate] Error:', err);
+    return NextResponse.json({ error: 'Failed to revalidate cache' }, { status: 500 });
   }
 }

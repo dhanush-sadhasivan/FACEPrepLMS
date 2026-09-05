@@ -31,5 +31,15 @@ export async function updateSession(request: NextRequest) {
     url.pathname = '/login'
     return NextResponse.redirect(url)
   }
+
+  // Inject security headers and cache-control on API routes and authenticated sessions
+  const isApiRoute = request.nextUrl.pathname.startsWith('/api')
+  if (isApiRoute || user) {
+    supabaseResponse.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, private')
+  }
+  supabaseResponse.headers.set('X-Content-Type-Options', 'nosniff')
+  supabaseResponse.headers.set('X-Frame-Options', 'DENY')
+  supabaseResponse.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
+
   return supabaseResponse
 }

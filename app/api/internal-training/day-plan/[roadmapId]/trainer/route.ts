@@ -296,8 +296,9 @@ export async function POST(
     const result = await recordITAttendance(user.id, roadmapId, location);
     return NextResponse.json(result);
   } catch (err: any) {
+    console.error('[POST /api/internal-training/day-plan/[roadmapId]/trainer] Check-in error:', err);
     return NextResponse.json(
-      { error: err.message || 'Failed to check in for IT' },
+      { error: 'Failed to check in for IT' },
       { status: 500 }
     );
   }

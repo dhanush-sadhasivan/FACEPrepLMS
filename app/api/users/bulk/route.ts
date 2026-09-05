@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server';
 import { parseHackerrankUsername, sanitizeField } from '@/lib/utils';
 import { parseLeetcodeUsername } from '@/lib/leetcode';
 import { generateAndUploadCdnSnapshots } from '@/lib/cdn-cache';
+import { generateSecureTempPassword } from '@/lib/security';
 import { revalidatePath, revalidateTag } from 'next/cache';
 import { Resend } from 'resend';
 
@@ -19,8 +20,11 @@ export async function POST(req: Request) {
 
   try {
     const { users } = await req.json();
-    if (!Array.isArray(users)) {
-      return NextResponse.json({ error: 'Expected an array of users' }, { status: 400 });
+    if (!Array.isArray(users) || users.length === 0) {
+      return NextResponse.json({ error: 'Expected a non-empty array of users' }, { status: 400 });
+    }
+    if (users.length > 500) {
+      return NextResponse.json({ error: 'Payload exceeds maximum limit of 500 users per bulk import request' }, { status: 400 });
     }
 
     const supabaseAdmin = getAdminClient();
@@ -41,13 +45,25 @@ export async function POST(req: Request) {
 
       if (!email || !full_name || !emp_id) {
         skipped++;
-        errors.push(`Row missing required fields: emp_id=${user.emp_id}, email=${user.email || user.emp_email}`);
+        errors.push(`Row missing required fields: emp_id=${user.emp_id || user.empid || 'unknown'}, email=${user.email || user.emp_email || 'unknown'}`);
         continue;
+      }
+
+      // Role escalation protection: Only Admins can assign/create Admin accounts
+      let assignedRole: 'admin' | 'manager' | 'trainer' = 'trainer';
+      if (role && ['admin', 'manager', 'trainer'].includes(role.trim().toLowerCase())) {
+        const requestedRole = role.trim().toLowerCase() as 'admin' | 'manager' | 'trainer';
+        if (requestedRole === 'admin' && caller.role !== 'admin') {
+          skipped++;
+          errors.push(`Row with emp_id=${emp_id}: Only Admins can create Admin accounts`);
+          continue;
+        }
+        assignedRole = requestedRole;
       }
 
       const tempPassword = (providedPassword && typeof providedPassword === 'string' && providedPassword.trim().length > 0)
         ? providedPassword.trim()
-        : Math.random().toString(36).slice(-8) + 'A1!';
+        : generateSecureTempPassword();
 
       const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
         email,
@@ -57,8 +73,9 @@ export async function POST(req: Request) {
       });
 
       if (authError) {
+        console.error(`[users-bulk] Auth Error for ${email}:`, authError.message);
         skipped++;
-        errors.push(`Auth Error for ${email}: ${authError.message}`);
+        errors.push(`Auth Error for ${email}: Failed to create user authentication record`);
         continue;
       }
 
@@ -70,7 +87,7 @@ export async function POST(req: Request) {
         emp_email,
         full_name,
         emp_id,
-        role: (role && ['admin', 'manager', 'trainer'].includes(role.trim().toLowerCase())) ? role.trim().toLowerCase() : 'trainer',
+        role: assignedRole,
         team: sanitizeField(team),
         manager: sanitizeField(manager),
         hackerrank_id,
@@ -78,14 +95,15 @@ export async function POST(req: Request) {
       });
 
       if (dbError) {
+        console.error(`[users-bulk] DB Error for ${email}:`, dbError.message);
         await supabaseAdmin.auth.admin.deleteUser(userId);
         skipped++;
-        errors.push(`DB Error for ${email}: ${dbError.message}`);
+        errors.push(`DB Error for ${email}: Failed to create user profile`);
         continue;
       }
 
       created++;
-      createdUsers.push({ email, full_name, tempPassword, role: role || 'trainer' });
+      createdUsers.push({ email, full_name, tempPassword, role: assignedRole });
 
       // Send invite email
       if (process.env.RESEND_API_KEY) {
@@ -116,7 +134,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ created, skipped, errors, createdUsers });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error('[users-bulk] Internal error:', error);
+    return NextResponse.json({ error: 'Failed to process bulk user import' }, { status: 500 });
   }
 }

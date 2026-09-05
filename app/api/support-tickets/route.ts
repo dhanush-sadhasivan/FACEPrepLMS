@@ -27,12 +27,21 @@ export async function GET() {
     const { data: tickets, error } = await query;
     if (error) {
       console.error('[GET /api/support-tickets] DB error:', error.message);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ error: 'Failed to fetch support tickets' }, { status: 500 });
     }
 
-    return NextResponse.json(tickets || []);
+    const sanitizedTickets = (tickets || []).map((t: any) => {
+      if (!isAdminOrManager) {
+        const { admin_notes, resolved_by, resolver, ...rest } = t;
+        return rest;
+      }
+      return t;
+    });
+
+    return NextResponse.json(sanitizedTickets);
   } catch (err: any) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    console.error('[GET /api/support-tickets] Catch error:', err);
+    return NextResponse.json({ error: 'Failed to fetch support tickets' }, { status: 500 });
   }
 }
 
@@ -114,7 +123,7 @@ export async function POST(req: Request) {
 
     if (ticketErr) {
       console.error('[POST /api/support-tickets] Insert error:', ticketErr.message);
-      return NextResponse.json({ error: ticketErr.message }, { status: 500 });
+      return NextResponse.json({ error: 'Failed to submit support ticket' }, { status: 500 });
     }
 
     // 4. Notify all Admins and Managers
@@ -136,6 +145,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ ok: true, ticket }, { status: 201 });
   } catch (err: any) {
-    return NextResponse.json({ error: err.message || 'Failed to submit support ticket' }, { status: 500 });
+    console.error('[POST /api/support-tickets] Catch error:', err);
+    return NextResponse.json({ error: 'Failed to submit support ticket' }, { status: 500 });
   }
 }

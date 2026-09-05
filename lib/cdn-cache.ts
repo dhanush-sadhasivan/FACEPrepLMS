@@ -2,13 +2,14 @@ import { getAdminClient } from '@/lib/supabase/admin';
 import { isRecordSolved } from '@/lib/utils';
 
 export interface GlobalPerformer {
-  id: string;
-  user_id: string;
+  id?: string;
+  user_id?: string;
   name: string;
-  emp_id: string;
-  team: string;
+  emp_id?: string;
+  team?: string;
   score: number;
   solved: number;
+  rank?: number;
 }
 
 export interface CachedLeaderboardPayload {
@@ -123,19 +124,12 @@ export async function getCachedRoadmapAnalytics(): Promise<any[] | null> {
 /**
  * Fetch pre-computed internal training trainer overview snapshot from Supabase Storage CDN.
  */
+/**
+ * Fetch pre-computed internal training trainer overview snapshot from Supabase Storage CDN.
+ * Disabled: IT trainer overview is not published to public CDN to prevent PII exposure.
+ */
 export async function getCachedITOverview(): Promise<any[] | null> {
-  const cdnUrl = getCdnStorageUrl('it_trainer_overview.json');
-  try {
-    const res = await fetch(cdnUrl, {
-      next: { revalidate: 60, tags: ['internal-training', 'it-overview'] },
-      headers: { 'Accept': 'application/json' },
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    return data?.trainers || null;
-  } catch {
-    return null;
-  }
+  return null;
 }
 
 /**
@@ -145,7 +139,7 @@ export async function generateAndUploadCdnSnapshots(contestId?: string): Promise
   const dbAdmin = getAdminClient();
 
   try {
-    // 1. Generate & Upload Global Leaderboard
+    // 1. Generate & Upload Global Leaderboard (Sanitized: display-safe fields only, NO emp_id, email, or UUIDs)
     const uStep = 1000;
     let uFrom = 0;
     let allUserProfiles: any[] = [];
@@ -162,13 +156,11 @@ export async function generateAndUploadCdnSnapshots(contestId?: string): Promise
       uFrom += uStep;
     }
 
-    const globalUserMap = new Map<string, GlobalPerformer>();
+    const globalUserMap = new Map<string, any>();
     (allUserProfiles || []).forEach((u: any) => {
       globalUserMap.set(u.id, {
         id: u.id,
-        user_id: u.id,
         name: u.full_name || 'Anonymous',
-        emp_id: u.emp_id || '—',
         team: u.team || 'N/A',
         score: 0,
         solved: 0,
@@ -230,8 +222,16 @@ export async function generateAndUploadCdnSnapshots(contestId?: string): Promise
       }
     });
 
+    // Strip internal database UUIDs (id, user_id), emails, and emp_id from public CDN payload
     const globalPerformers = Array.from(globalUserMap.values())
-      .sort((a, b) => (b.score - a.score) || (b.solved - a.solved) || (a.name || '').localeCompare(b.name || ''));
+      .sort((a, b) => (b.score - a.score) || (b.solved - a.solved) || (a.name || '').localeCompare(b.name || ''))
+      .map((entry, idx) => ({
+        rank: idx + 1,
+        name: entry.name,
+        team: entry.team,
+        score: entry.score,
+        solved: entry.solved,
+      }));
 
     const leaderboardPayload: CachedLeaderboardPayload = {
       updated_at: new Date().toISOString(),
@@ -301,7 +301,6 @@ export async function generateAndUploadCdnSnapshots(contestId?: string): Promise
             contestLeaderMap.set(u.id, {
               user_id: u.id,
               name: u.full_name || 'Anonymous',
-              emp_id: u.emp_id || '—',
               team: u.team || 'N/A',
               hackerrank_id: u.hackerrank_id || null,
               leetcode_id: u.leetcode_id || null,
@@ -384,15 +383,47 @@ export async function generateAndUploadCdnSnapshots(contestId?: string): Promise
           }
         });
 
+        // Sanitize leaderboard for public CDN snapshot (strictly no internal user_id, emp_id, or email)
+        const sanitizedLeaderboard = Array.from(contestLeaderMap.values())
+          .sort((a, b) => (b.score - a.score) || (b.solved - a.solved) || (a.name || '').localeCompare(b.name || ''))
+          .map((entry, idx) => ({
+            rank: idx + 1,
+            name: entry.name,
+            team: entry.team,
+            hackerrank_id: entry.hackerrank_id || null,
+            leetcode_id: entry.leetcode_id || null,
+            solved: entry.solved,
+            total: entry.total,
+            score: entry.score,
+            maxScore: entry.maxScore,
+            lastActive: entry.lastActive,
+            progress: (entry.progress || []).map((p: any) => ({
+              question_id: p.question_id,
+              status: p.status,
+              score: p.score,
+              max_score: p.max_score,
+              last_submission_at: p.last_submission_at,
+            })),
+          }));
+
+        const sanitizedQuestions = (allQuestions || []).map((q: any) => ({
+          id: q.id,
+          slug: q.slug,
+          title: q.title,
+          difficulty: q.difficulty,
+          domain: q.domain,
+          max_score: q.max_score,
+          order_index: q.order_index,
+          is_enabled: q.is_enabled,
+        }));
+
         const contestPayload: CachedContestPayload = {
           contest_id: contestId,
           updated_at: new Date().toISOString(),
-          questions: allQuestions,
+          questions: sanitizedQuestions,
           enabled_question_count: enabledQuestions.length,
           total_max_score: totalMaxScore,
-          leaderboard: Array.from(contestLeaderMap.values()).sort(
-            (a, b) => (b.score - a.score) || (b.solved - a.solved) || (a.name || '').localeCompare(b.name || '')
-          ),
+          leaderboard: sanitizedLeaderboard,
         };
 
         await dbAdmin.storage

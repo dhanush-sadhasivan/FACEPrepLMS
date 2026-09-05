@@ -162,8 +162,8 @@ export async function POST(request: Request) {
   }
 
   if (insertError) {
-    console.error('Error inserting announcement notifications:', insertError);
-    return NextResponse.json({ error: insertError.message }, { status: 500 });
+    console.error('Error inserting announcement notifications:', insertError.message);
+    return NextResponse.json({ error: 'Failed to create announcement' }, { status: 500 });
   }
 
   return NextResponse.json({

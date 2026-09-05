@@ -18,7 +18,10 @@ export async function POST(req: Request, { params }: { params: Params }) {
 
   const inserts = userIds.map((userId: string) => ({ group_id: groupId, user_id: userId }));
   const { error } = await supabase.from('group_members').insert(inserts);
-  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+  if (error) {
+    console.error(`[POST /api/groups/${groupId}/members] DB error:`, error.message);
+    return NextResponse.json({ error: 'Failed to add members to group' }, { status: 400 });
+  }
   return NextResponse.json({ success: true });
 }
 
@@ -41,6 +44,9 @@ export async function DELETE(req: Request, { params }: { params: Params }) {
     .eq('group_id', groupId)
     .eq('user_id', userId);
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+  if (error) {
+    console.error(`[DELETE /api/groups/${groupId}/members] DB error:`, error.message);
+    return NextResponse.json({ error: 'Failed to remove member from group' }, { status: 400 });
+  }
   return NextResponse.json({ success: true });
 }

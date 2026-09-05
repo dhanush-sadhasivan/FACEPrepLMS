@@ -147,7 +147,8 @@ export async function POST(request: Request) {
     .single();
 
   if (insertError) {
-    return NextResponse.json({ error: insertError.message }, { status: 500 });
+    console.error('[POST /api/admin/roadmaps] Insert error:', insertError.message);
+    return NextResponse.json({ error: 'Failed to create roadmap' }, { status: 500 });
   }
 
   // 2. Create Roadmap Assignments (Group or User based)

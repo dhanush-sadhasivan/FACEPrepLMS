@@ -51,7 +51,8 @@ export async function POST(request: Request) {
 
     return NextResponse.json(requestRow);
   } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error('[POST /api/access-requests] Error:', error);
+    return NextResponse.json({ error: 'Failed to create access request' }, { status: 500 });
   }
 }
 

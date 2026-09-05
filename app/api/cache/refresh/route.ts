@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { generateAndUploadCdnSnapshots } from '@/lib/cdn-cache';
+import { safeTimingCompare } from '@/lib/security';
 import { revalidateTag, revalidatePath } from 'next/cache';
 
 export async function POST(req: Request) {
@@ -10,7 +11,13 @@ export async function POST(req: Request) {
   // Allow service key via header OR authenticated admin/manager
   const authHeader = req.headers.get('authorization') || '';
   const apiKey = req.headers.get('x-api-key') || '';
-  const isInternal = apiKey === process.env.RAILWAY_API_KEY || authHeader.includes(process.env.SUPABASE_SERVICE_ROLE_KEY || '___none___');
+  const railwayApiKey = process.env.RAILWAY_API_KEY;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  const matchesRailwayKey = Boolean(railwayApiKey && apiKey && safeTimingCompare(apiKey, railwayApiKey));
+  const bearerToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : authHeader.trim();
+  const matchesServiceRole = Boolean(serviceRoleKey && bearerToken && safeTimingCompare(bearerToken, serviceRoleKey));
+  const isInternal = matchesRailwayKey || matchesServiceRole;
 
   if (!isInternal) {
     if (!user) {

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { getAdminClient } from '@/lib/supabase/admin';
+import { checkCooldown, recordCooldown } from '@/lib/rate-limiter';
 
 export async function POST(request: Request) {
   const supabaseServer = await createClient();
@@ -26,6 +27,26 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'contestId query parameter is required' }, { status: 400 });
   }
 
+  // ── Cooldown & Rate Limiting (60s per-contest and per-user) ────────────────
+  const contestCooldownKey = `scrape:contest:${contestId}`;
+  const userCooldownKey = `scrape:user:${user.id}`;
+
+  const contestCooldown = checkCooldown(contestCooldownKey, 60_000);
+  if (!contestCooldown.allowed) {
+    return NextResponse.json(
+      { error: `Rate limit / cooldown active: Scrape was recently triggered for this contest. Please wait ${contestCooldown.remainingSeconds}s before triggering again.` },
+      { status: 429, headers: { 'Retry-After': String(contestCooldown.remainingSeconds) } }
+    );
+  }
+
+  const userCooldown = checkCooldown(userCooldownKey, 60_000);
+  if (!userCooldown.allowed) {
+    return NextResponse.json(
+      { error: `Rate limit / cooldown active: You recently triggered a scrape. Please wait ${userCooldown.remainingSeconds}s before triggering again.` },
+      { status: 429, headers: { 'Retry-After': String(userCooldown.remainingSeconds) } }
+    );
+  }
+
   console.log(`[scrape/trigger] Triggering progress scrape for contest: ${contestId}`);
 
   // Use Admin Client to ensure queries work smoothly without RLS / cookie blocks
@@ -47,6 +68,8 @@ export async function POST(request: Request) {
   if (contest.platform === 'leetcode') {
     console.log(`[scrape/trigger] Contest "${contest.title}" is a LeetCode contest. Routing to LeetCode sync engine...`);
     try {
+      recordCooldown(contestCooldownKey);
+      recordCooldown(userCooldownKey);
       const { syncLeetCodeContest } = await import('@/lib/leetcode-sync');
       const result = await syncLeetCodeContest(contestId);
       return NextResponse.json({
@@ -58,7 +81,7 @@ export async function POST(request: Request) {
       });
     } catch (lcErr: any) {
       console.error(`[scrape/trigger] LeetCode sync error:`, lcErr);
-      return NextResponse.json({ error: lcErr.message || 'LeetCode sync failed' }, { status: 500 });
+      return NextResponse.json({ error: 'LeetCode sync failed' }, { status: 500 });
     }
   }
 
@@ -243,6 +266,10 @@ export async function POST(request: Request) {
     const result = await res.json();
     console.log(`[scrape/trigger] Scrape started successfully:`, result);
 
+    // Record cooldown for contest and user
+    recordCooldown(contestCooldownKey);
+    recordCooldown(userCooldownKey);
+
     // Update last_scraped_at timestamp
     await supabase
       .from('contests')
@@ -259,6 +286,6 @@ export async function POST(request: Request) {
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     console.error(`[scrape/trigger] Error: ${message}`);
-    return NextResponse.json({ error: `Failed to start progress scrape: ${message}` }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to start progress scrape' }, { status: 500 });
   }
 }

@@ -89,10 +89,18 @@ export function parseHackerrankUsername(input?: string | null): string | null {
 
 /**
  * Sanitizes generic text fields, converting placeholder tokens ('nil', 'n/a', '-') or empty strings to null.
+ * Also strips dangerous spreadsheet formula injection prefixes (=, +, -, @, \t, \r) to prevent CWE-1236.
  */
 export function sanitizeField(val?: string | null): string | null {
   if (!val) return null;
-  const trimmed = String(val).trim();
+  let trimmed = String(val).trim();
+  if (!trimmed || ['nil', 'null', 'n/a', 'undefined', 'none', '-'].includes(trimmed.toLowerCase())) {
+    return null;
+  }
+  // Strip formula injection prefixes
+  while (trimmed.length > 0 && ['=', '+', '-', '@', '\t', '\r'].includes(trimmed.charAt(0))) {
+    trimmed = trimmed.slice(1).trim();
+  }
   if (!trimmed || ['nil', 'null', 'n/a', 'undefined', 'none', '-'].includes(trimmed.toLowerCase())) {
     return null;
   }

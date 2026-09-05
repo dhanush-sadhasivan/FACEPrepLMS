@@ -85,6 +85,6 @@ export async function POST(req: Request) {
     });
   } catch (err: any) {
     console.error('[problem-lookup] Error looking up LeetCode problems:', err);
-    return NextResponse.json({ error: err.message || 'Failed to lookup problems' }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to lookup problems' }, { status: 500 });
   }
 }

@@ -31,7 +31,8 @@ export async function GET(
   ]);
 
   if (contestRes.error) {
-    return NextResponse.json({ error: contestRes.error.message }, { status: 404 });
+    console.error(`[GET /api/admin/roadmaps/contests/${contestId}/questions] Error:`, contestRes.error.message);
+    return NextResponse.json({ error: 'Contest not found' }, { status: 404 });
   }
 
   return NextResponse.json({

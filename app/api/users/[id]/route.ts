@@ -48,8 +48,14 @@ export async function PATCH(req: Request, { params }: { params: Params }) {
       updated_at: now,
     };
 
-    if (role && ['admin', 'manager', 'trainer'].includes(role.toLowerCase())) {
-      updatePayload.role = role.toLowerCase();
+    // Restrict role modification exclusively to Admins
+    if (role) {
+      if (caller?.role !== 'admin') {
+        return NextResponse.json({ error: 'Forbidden: Only Admins can modify user roles.' }, { status: 403 });
+      }
+      if (['admin', 'manager', 'trainer'].includes(role.toLowerCase())) {
+        updatePayload.role = role.toLowerCase();
+      }
     }
 
     if (cleanEmpEmail !== undefined) {
@@ -118,7 +124,8 @@ export async function PATCH(req: Request, { params }: { params: Params }) {
     }
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 400 });
+      console.error('[users/[id]-patch] DB Error:', error.message);
+      return NextResponse.json({ error: 'Failed to update user' }, { status: 400 });
     }
 
     // Refresh CDN snapshots in background so updated details reflect across the LMS
@@ -134,8 +141,8 @@ export async function PATCH(req: Request, { params }: { params: Params }) {
 
     return NextResponse.json(data);
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error('[users/[id]-patch] Internal Error:', error);
+    return NextResponse.json({ error: 'Failed to update user' }, { status: 500 });
   }
 }
 
@@ -144,9 +151,10 @@ export async function DELETE(req: Request, { params }: { params: Params }) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   
+  // Restrict user deletion exclusively to Admins
   const { data: caller } = await supabase.from('users').select('role').eq('id', user.id).single();
-  if (caller?.role !== 'admin' && caller?.role !== 'manager') {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  if (caller?.role !== 'admin') {
+    return NextResponse.json({ error: 'Forbidden: Only Admins can delete users.' }, { status: 403 });
   }
 
   const { id } = await params;
@@ -169,7 +177,7 @@ export async function DELETE(req: Request, { params }: { params: Params }) {
 
     return NextResponse.json({ success: true });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error('[users/[id]-delete] Internal Error:', error);
+    return NextResponse.json({ error: 'Failed to delete user' }, { status: 500 });
   }
 }

@@ -87,25 +87,37 @@ export default function ITAttendanceToggle({
             </span>
           )}
 
-          {isCheckedInToday && location && (
-            <span
-              style={{
-                fontSize: '0.72rem',
-                fontWeight: 700,
-                color: '#10b981',
-                background: 'rgba(16, 185, 129, 0.15)',
-                padding: '0.15rem 0.55rem',
-                borderRadius: '999px',
-                border: '1px solid rgba(16, 185, 129, 0.3)',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.25rem',
-              }}
-            >
-              <span>📍</span> {location.type}
-              {location.detail ? ` (${location.detail})` : ''}
-            </span>
-          )}
+          {isCheckedInToday && location && (() => {
+            let loc: any = location;
+            if (typeof loc === 'string' && loc.trim().startsWith('{') && loc.trim().endsWith('}')) {
+              try { loc = JSON.parse(loc); } catch {}
+            }
+            const locType = typeof loc === 'string' ? loc : (loc?.type || loc?.office_name || 'Logged Location');
+            const locDetail = typeof loc === 'object' && loc !== null ? (loc.detail || (loc.office_name && loc.office_name !== locType ? loc.office_name : '') || loc.wfh_reason || '') : '';
+            const locDisplay = `${locType}${locDetail ? ` (${locDetail})` : ''}`;
+
+            return (
+              <span
+                style={{
+                  fontSize: '0.72rem',
+                  fontWeight: 700,
+                  color: '#10b981',
+                  background: 'rgba(16, 185, 129, 0.15)',
+                  padding: '0.15rem 0.55rem',
+                  borderRadius: '999px',
+                  border: '1px solid rgba(16, 185, 129, 0.3)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.25rem',
+                }}
+                title={locDisplay}
+              >
+                <span>📍</span>
+                <span>{locType}</span>
+                {locDetail && <span>({locDetail})</span>}
+              </span>
+            );
+          })()}
         </div>
 
         <div style={{ fontSize: '0.76rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>

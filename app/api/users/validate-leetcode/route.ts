@@ -1,8 +1,15 @@
 import { NextResponse } from 'next/server';
 import { parseLeetcodeUsername, fetchProfileStats } from '@/lib/leetcode';
 import { getAdminClient } from '@/lib/supabase/admin';
+import { createClient } from '@/lib/supabase/server';
 
 export async function GET(req: Request) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   const { searchParams } = new URL(req.url);
   const username = searchParams.get('username');
   const excludeUserId = searchParams.get('excludeUserId');
@@ -30,11 +37,10 @@ export async function GET(req: Request) {
 
     const { data: existingUsers, error: dupErr } = await duplicateQuery;
     if (!dupErr && existingUsers && existingUsers.length > 0) {
-      const match = existingUsers[0];
       return NextResponse.json({
         valid: false,
         isDuplicate: true,
-        error: `LeetCode ID "${clean}" is already linked to user "${match.full_name}" (${match.email}). Each user must have a unique LeetCode account.`,
+        error: 'LeetCode ID is already linked to another account.',
       });
     }
 

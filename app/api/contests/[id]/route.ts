@@ -36,7 +36,10 @@ export async function PATCH(request: Request, { params }: { params: Params }) {
     .select()
     .single();
 
-  if (contestError) return NextResponse.json({ error: contestError.message }, { status: 500 });
+  if (contestError) {
+    console.error(`[PATCH /api/contests/${id}] Update error:`, contestError.message);
+    return NextResponse.json({ error: 'Failed to update contest' }, { status: 500 });
+  }
 
   // 2. Update assignments if groups or teams are provided
   if (Array.isArray(groups) || Array.isArray(teams)) {
@@ -189,7 +192,7 @@ export async function POST(request: Request, { params }: { params: Params }) {
 
   if (insertError) {
     console.error(`[contests/${id}] Failed to insert questions: ${insertError.message}`);
-    return NextResponse.json({ error: `Failed to insert questions: ${insertError.message}` }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to insert questions' }, { status: 500 });
   }
 
   console.log(`[contests/${id}] Successfully inserted ${questionsData.length} questions`);
@@ -209,6 +212,9 @@ export async function DELETE(request: Request, { params }: { params: Params }) {
 
   const supabaseAdmin = getAdminClient();
   const { error } = await supabaseAdmin.from('contests').delete().eq('id', id);
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    console.error(`[DELETE /api/contests/${id}] Delete error:`, error.message);
+    return NextResponse.json({ error: 'Failed to delete contest' }, { status: 500 });
+  }
   return NextResponse.json({ success: true });
 }

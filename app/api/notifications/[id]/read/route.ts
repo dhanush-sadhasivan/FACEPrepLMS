@@ -16,6 +16,9 @@ export async function PATCH(request: Request, { params }: { params: Params }) {
     .eq('id', id)
     .eq('user_id', user.id);
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    console.error(`[PATCH /api/notifications/${id}/read] Error:`, error.message);
+    return NextResponse.json({ error: 'Failed to mark notification as read' }, { status: 500 });
+  }
   return NextResponse.json({ success: true });
 }

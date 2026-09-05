@@ -68,6 +68,7 @@ export async function POST(req: Request) {
     const result = await recordITAttendance(user.id, roadmapId);
     return NextResponse.json(result);
   } catch (err: any) {
-    return NextResponse.json({ error: err.message || 'Failed to update IT attendance' }, { status: 500 });
+    console.error('[POST /api/trainer/it-check] Error:', err);
+    return NextResponse.json({ error: 'Failed to update IT attendance' }, { status: 500 });
   }
 }

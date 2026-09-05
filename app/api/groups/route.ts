@@ -10,7 +10,10 @@ export async function GET() {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
   const { data, error } = await supabase.from('groups').select('*, members:group_members(count)');
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    console.error('[GET /api/groups] DB error:', error.message);
+    return NextResponse.json({ error: 'Failed to fetch groups' }, { status: 500 });
+  }
   return NextResponse.json(data);
 }
 
@@ -28,7 +31,10 @@ export async function POST(req: Request) {
 
   const { data, error } = await supabase.from('groups').insert({ name, created_by: user.id }).select().single();
   
-  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+  if (error) {
+    console.error('[POST /api/groups] DB error:', error.message);
+    return NextResponse.json({ error: 'Failed to create group' }, { status: 400 });
+  }
   return NextResponse.json(data, { status: 201 });
 }
 

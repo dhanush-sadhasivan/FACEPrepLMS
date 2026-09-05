@@ -9,14 +9,20 @@ const MAX_RETRIES = 2;
 
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+const SAFE_LEETCODE_IDENTIFIER = /^[a-zA-Z0-9_-]+$/;
+
 /**
  * Accepts a raw username or any LeetCode profile URL and returns the normalized username.
+ * Validates against safe alphanumeric/hyphen regex (/^[a-zA-Z0-9_-]+$/).
  * e.g., "https://leetcode.com/u/jdoe/" -> "jdoe", "jdoe" -> "jdoe"
  */
 export function parseLeetcodeUsername(input?: string | null): string | null {
   if (!input) return null;
   let s = String(input).trim();
   if (!s) return null;
+  if (['nil', 'null', 'n/a', 'undefined', 'none', '-'].includes(s.toLowerCase())) {
+    return null;
+  }
   if (s.includes('leetcode.com')) {
     try {
       const url = new URL(s.startsWith('http') ? s : `https://${s}`);
@@ -28,24 +34,37 @@ export function parseLeetcodeUsername(input?: string | null): string | null {
       s = m ? m[1] : s;
     }
   }
-  return s.replace(/[/?#].*$/, '').trim() || null;
+  s = s.replace(/^@+/, '').replace(/[/?#].*$/, '').trim();
+  if (!s || !SAFE_LEETCODE_IDENTIFIER.test(s)) {
+    return null;
+  }
+  return s;
 }
 
 /**
  * Convert a LeetCode problem URL or slug into a canonical titleSlug.
+ * Validates against safe alphanumeric/hyphen regex (/^[a-zA-Z0-9_-]+$/).
  * e.g., "https://leetcode.com/problems/two-sum/" -> "two-sum", "two-sum" -> "two-sum"
  */
 export function parseProblemSlug(input?: string | null): string | null {
   if (!input) return null;
   let s = String(input).trim();
   if (!s) return null;
+  if (['nil', 'null', 'n/a', 'undefined', 'none', '-'].includes(s.toLowerCase())) {
+    return null;
+  }
   const m = s.match(/problems\/([^/?#]+)/i);
-  if (m) return m[1].toLowerCase();
-  return s.replace(/[/?#].*$/, '').toLowerCase() || null;
+  if (m) {
+    const candidate = m[1].toLowerCase().replace(/[/?#].*$/, '').trim();
+    return SAFE_LEETCODE_IDENTIFIER.test(candidate) ? candidate : null;
+  }
+  const candidate = s.replace(/[/?#].*$/, '').toLowerCase().trim();
+  return SAFE_LEETCODE_IDENTIFIER.test(candidate) ? candidate : null;
 }
 
 /**
  * Check if the input is a LeetCode problem list URL or slug.
+ * Validates against safe alphanumeric/hyphen regex (/^[a-zA-Z0-9_-]+$/).
  * e.g., "https://leetcode.com/problem-list/top-interview-questions/" -> "top-interview-questions"
  * e.g., "https://leetcode.com/problem-list/7957516d/" -> "7957516d"
  * e.g., "https://leetcode.com/list/top-interview-questions" -> "top-interview-questions"
@@ -54,9 +73,16 @@ export function parseProblemListId(input?: string | null): string | null {
   if (!input) return null;
   const s = String(input).trim();
   if (!s) return null;
+  if (['nil', 'null', 'n/a', 'undefined', 'none', '-'].includes(s.toLowerCase())) {
+    return null;
+  }
   const m = s.match(/(?:problem-list|list)\/([^/?#]+)/i);
-  if (m) return m[1].toLowerCase();
-  return null;
+  if (m) {
+    const candidate = m[1].toLowerCase().replace(/[/?#].*$/, '').trim();
+    return SAFE_LEETCODE_IDENTIFIER.test(candidate) ? candidate : null;
+  }
+  const candidate = s.replace(/[/?#].*$/, '').toLowerCase().trim();
+  return SAFE_LEETCODE_IDENTIFIER.test(candidate) ? candidate : null;
 }
 
 async function gql<T = any>(query: string, variables: Record<string, any>): Promise<T> {
@@ -342,7 +368,7 @@ export async function fetchProblemDetails(input: string): Promise<ProblemLookupR
 }
 
 export async function fetchProblemListQuestions(input: string): Promise<ProblemLookupResult[]> {
-  const listId = parseProblemListId(input) || input.trim();
+  const listId = parseProblemListId(input) || (SAFE_LEETCODE_IDENTIFIER.test(input.trim()) ? input.trim() : null);
   if (!listId) return [];
 
   try {

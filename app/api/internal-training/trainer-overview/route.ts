@@ -67,7 +67,7 @@ export async function GET() {
     dbAdmin.from('it_day_plans').select('id, roadmap_id, day_number').in('roadmap_id', roadmapIds),
     dbAdmin.from('roadmap_assignments').select('roadmap_id, user_id, group_id').in('roadmap_id', roadmapIds),
     dbAdmin.from('group_members').select('group_id, user_id'),
-    dbAdmin.from('users').select('id, full_name, emp_id, email, team, role').neq('role', 'admin'),
+    dbAdmin.from('users').select('id, full_name, emp_id, email, team, role, it_days_count, last_it_check_date').neq('role', 'admin'),
     dbAdmin.from('it_trainer_progress').select('*').in('roadmap_id', roadmapIds),
     dbAdmin.auth.admin.listUsers({ perPage: 1000 }).catch((authErr: any) => {
       console.warn('[trainer-overview] Failed to list auth users (online status will be unavailable):', authErr?.message || authErr);
@@ -170,6 +170,12 @@ export async function GET() {
     }
   });
 
+  trainerProgressList.forEach((p: any) => {
+    if (roadmapTrainersMap.has(p.roadmap_id)) {
+      roadmapTrainersMap.get(p.roadmap_id)!.add(p.user_id);
+    }
+  });
+
   // Map (user_id, roadmap_id) -> progress
   const progressMap = new Map<string, any>();
   trainerProgressList.forEach((p: any) => {
@@ -231,10 +237,10 @@ export async function GET() {
 
       const p = progressMap.get(`${uid}_${rmId}`);
       // Per-roadmap attendance-driven day: use it_days_logged from progress row
-      const itDaysLogged = p?.it_days_logged || 0;
+      const itDaysLogged = p?.it_days_logged ?? u.it_days_count ?? 0;
       const currentDay = Math.min(itDaysLogged, totalDays || 1);
-      const lastCheckIn = p?.last_check_in_date || null;
-      const isCountedToday = lastCheckIn === today;
+      const lastCheckIn = p?.last_check_in_date || u.last_it_check_date || null;
+      const isCountedToday = Boolean(lastCheckIn && lastCheckIn.slice(0, 10) === today);
 
       // Count completions for this trainer
       // Portal-click gating: question is complete only if clicked_at exists AND (HR solved OR manually completed)
@@ -273,10 +279,10 @@ export async function GET() {
         completed_questions_count: completedCount,
         total_questions_count: totalQuestionsCount,
         pending_questions_count: pendingCount,
-        it_days_count: itDaysLogged,
+        it_days_count: itDaysLogged ?? u.it_days_count ?? 0,
         extended_days: p?.extended_days || 0,
         extension_count: p?.extension_count || 0,
-        location: isCountedToday ? p?.location || null : null,
+        location: p?.location || null,
         is_online: false, // populated on client via Realtime Presence
         last_it_check_date: lastCheckIn,
         is_it_counted_today: isCountedToday,

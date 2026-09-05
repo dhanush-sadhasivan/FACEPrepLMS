@@ -89,6 +89,6 @@ export async function POST(request: Request) {
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     console.error(`[scrape/challenges] Exception: ${message}`);
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to scrape challenges' }, { status: 500 });
   }
 }

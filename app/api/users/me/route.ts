@@ -27,7 +27,10 @@ export async function GET() {
       .select('*')
       .eq('id', user.id)
       .single();
-    if (plainErr) return NextResponse.json({ error: plainErr.message }, { status: 500 });
+    if (plainErr) {
+      console.error('users/me GET fallback error:', plainErr.message);
+      return NextResponse.json({ error: 'Failed to fetch user profile' }, { status: 500 });
+    }
     return NextResponse.json(plain);
   }
 
@@ -121,7 +124,8 @@ export async function PATCH(req: Request) {
     }
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      console.error('users/me PATCH DB error:', error.message);
+      return NextResponse.json({ error: 'Failed to update profile' }, { status: 500 });
     }
 
     // Refresh CDN cache & purge page caches in background so changes reflect across LMS
@@ -137,6 +141,7 @@ export async function PATCH(req: Request) {
 
     return NextResponse.json(data);
   } catch (err: any) {
-    return NextResponse.json({ error: err.message || 'Failed to update profile' }, { status: 500 });
+    console.error('users/me PATCH internal error:', err);
+    return NextResponse.json({ error: 'Failed to update profile' }, { status: 500 });
   }
 }

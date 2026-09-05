@@ -215,6 +215,9 @@ export async function PATCH(request: Request) {
     .select()
     .single();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    console.error('[trainer/roadmaps PATCH] DB error:', error.message);
+    return NextResponse.json({ error: 'Failed to update roadmap progress' }, { status: 500 });
+  }
   return NextResponse.json(data);
 }

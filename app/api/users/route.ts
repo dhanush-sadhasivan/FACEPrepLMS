@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server';
 import { parseHackerrankUsername, sanitizeField } from '@/lib/utils';
 import { parseLeetcodeUsername } from '@/lib/leetcode';
 import { generateAndUploadCdnSnapshots } from '@/lib/cdn-cache';
+import { generateSecureTempPassword } from '@/lib/security';
 import { revalidatePath, revalidateTag } from 'next/cache';
 import { Resend } from 'resend';
 
@@ -34,6 +35,16 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Missing required fields: email, full_name, emp_id' }, { status: 400 });
     }
 
+    // Role escalation protection: Managers cannot create Admin accounts
+    let assignedRole: 'admin' | 'manager' | 'trainer' = 'trainer';
+    if (role && ['admin', 'manager', 'trainer'].includes(role.toLowerCase())) {
+      const requestedRole = role.toLowerCase() as 'admin' | 'manager' | 'trainer';
+      if (requestedRole === 'admin' && caller.role !== 'admin') {
+        return NextResponse.json({ error: 'Forbidden: Only Admins can create Admin accounts' }, { status: 403 });
+      }
+      assignedRole = requestedRole;
+    }
+
     const supabaseAdmin = getAdminClient();
 
     // Check LeetCode handle uniqueness
@@ -53,7 +64,7 @@ export async function POST(req: Request) {
 
     const finalPassword = (password && password.trim().length > 0)
       ? password.trim()
-      : Math.random().toString(36).slice(-8) + 'A1!';
+      : generateSecureTempPassword();
 
     // 1. Create auth user with must_change_password flag
     const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
@@ -63,7 +74,10 @@ export async function POST(req: Request) {
       user_metadata: { must_change_password: true },
     });
 
-    if (authError) return NextResponse.json({ error: authError.message }, { status: 400 });
+    if (authError) {
+      console.error('[users-create] Auth error:', authError.message);
+      return NextResponse.json({ error: 'Failed to create user authentication record' }, { status: 400 });
+    }
 
     const userId = authUser.user.id;
 
@@ -76,7 +90,7 @@ export async function POST(req: Request) {
         emp_email: cleanEmpEmail,
         full_name: cleanName,
         emp_id: cleanEmpId,
-        role: (role && ['admin', 'manager', 'trainer'].includes(role.toLowerCase())) ? role.toLowerCase() : 'trainer',
+        role: assignedRole,
         team: cleanTeam,
         manager: cleanManager,
         hackerrank_id: cleanHr,
@@ -86,8 +100,9 @@ export async function POST(req: Request) {
       .single();
 
     if (dbError) {
+      console.error('[users-create] DB error:', dbError.message);
       await supabaseAdmin.auth.admin.deleteUser(userId);
-      return NextResponse.json({ error: dbError.message }, { status: 400 });
+      return NextResponse.json({ error: 'Failed to create user profile' }, { status: 400 });
     }
 
     // Refresh CDN snapshots in background
@@ -117,7 +132,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ ...newUser, tempPassword: finalPassword }, { status: 201 });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    return NextResponse.json({ error: message }, { status: 500 });
+    console.error('[users-create] Internal error:', error);
+    return NextResponse.json({ error: 'Failed to create user' }, { status: 500 });
   }
 }

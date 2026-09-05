@@ -5,6 +5,7 @@ import { fetchProfileStats, fetchRecentAc, parseProblemSlug, sleep } from '@/lib
 import { syncLeetCodeContest } from '@/lib/leetcode-sync';
 import { revalidatePath, revalidateTag } from 'next/cache';
 import { generateAndUploadCdnSnapshots } from '@/lib/cdn-cache';
+import { checkCooldown, recordCooldown } from '@/lib/rate-limiter';
 
 export async function POST(req: Request) {
   const supabase = await createClient();
@@ -25,6 +26,38 @@ export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => ({}));
     const { contestId, userId } = body;
+
+    // ── Cooldown / Rate Limiting (60s cooldown per target and per caller) ───────
+    const callerCooldownKey = `lc:caller:${user.id}`;
+    const callerCheck = checkCooldown(callerCooldownKey, 60_000);
+    if (!callerCheck.allowed) {
+      return NextResponse.json(
+        { error: `Rate limit / cooldown active: You requested a sync recently. Please wait ${callerCheck.remainingSeconds}s before syncing again.` },
+        { status: 429, headers: { 'Retry-After': String(callerCheck.remainingSeconds) } }
+      );
+    }
+
+    if (contestId) {
+      const contestCooldownKey = `lc:contest:${contestId}`;
+      const contestCheck = checkCooldown(contestCooldownKey, 60_000);
+      if (!contestCheck.allowed) {
+        return NextResponse.json(
+          { error: `Rate limit / cooldown active: Sync was recently requested for this contest. Please wait ${contestCheck.remainingSeconds}s before syncing again.` },
+          { status: 429, headers: { 'Retry-After': String(contestCheck.remainingSeconds) } }
+        );
+      }
+    }
+
+    if (userId) {
+      const targetCooldownKey = `lc:user:${userId}`;
+      const targetCheck = checkCooldown(targetCooldownKey, 60_000);
+      if (!targetCheck.allowed) {
+        return NextResponse.json(
+          { error: `Rate limit / cooldown active: Sync was recently requested for this user. Please wait ${targetCheck.remainingSeconds}s before syncing again.` },
+          { status: 429, headers: { 'Retry-After': String(targetCheck.remainingSeconds) } }
+        );
+      }
+    }
 
     const dbAdmin = getAdminClient();
 
@@ -153,6 +186,9 @@ export async function POST(req: Request) {
         revalidateTag('leaderboard', 'max');
       } catch {}
 
+      recordCooldown(callerCooldownKey);
+      recordCooldown(`lc:user:${userId}`);
+
       return NextResponse.json({
         ok: true,
         stats,
@@ -163,7 +199,12 @@ export async function POST(req: Request) {
 
     // ── CASE 2: Sync an entire contest ────────────────────────────────────────
     if (contestId) {
+      if (!isAdminOrManager) {
+        return NextResponse.json({ error: 'Forbidden: Admin or Manager role required for contest-wide sync' }, { status: 403 });
+      }
       const result = await syncLeetCodeContest(contestId);
+      recordCooldown(callerCooldownKey);
+      recordCooldown(`lc:contest:${contestId}`);
       return NextResponse.json({
         ok: true,
         contestId,
@@ -176,6 +217,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'contestId or userId required' }, { status: 400 });
   } catch (err: any) {
     console.error('[leetcode/sync] Fatal error:', err);
-    return NextResponse.json({ error: err.message || 'Sync failed' }, { status: 500 });
+    return NextResponse.json({ error: 'Sync failed' }, { status: 500 });
   }
 }

@@ -82,23 +82,42 @@ export default function ITDayStatus({
 
         {/* Current Active Location Card */}
         <div className="it-stat-card" style={{ flex: 1.2 }}>
-          <div
-            className="it-stat-icon-wrap"
-            style={{
-              background: counted && location ? 'rgba(59, 130, 246, 0.15)' : 'rgba(156, 163, 175, 0.15)',
-              color: counted && location ? '#3b82f6' : '#9ca3af',
-            }}
-          >
-            📍
-          </div>
-          <div>
-            <div className="it-stat-value" style={{ fontSize: '1.05rem', color: counted && location ? 'var(--text-primary)' : 'var(--text-muted)' }}>
-              {counted && location ? location.type : 'No Location Logged'}
-            </div>
-            <div className="it-stat-label">
-              {counted && location?.detail ? location.detail : 'Today\'s Training Location'}
-            </div>
-          </div>
+          {(() => {
+            let loc: any = location;
+            if (typeof loc === 'string' && loc.trim().startsWith('{') && loc.trim().endsWith('}')) {
+              try { loc = JSON.parse(loc); } catch {}
+            }
+            const locType = counted && loc
+              ? typeof loc === 'string'
+                ? loc
+                : loc?.type || loc?.office_name || 'Logged Location'
+              : 'No Location Logged';
+            const locDetail = counted && typeof loc === 'object' && loc !== null
+              ? loc.detail || (loc.office_name && loc.office_name !== locType ? loc.office_name : '') || loc.wfh_reason || "Today's Training Location"
+              : "Today's Training Location";
+
+            return (
+              <>
+                <div
+                  className="it-stat-icon-wrap"
+                  style={{
+                    background: counted && location ? 'rgba(59, 130, 246, 0.15)' : 'rgba(156, 163, 175, 0.15)',
+                    color: counted && location ? '#3b82f6' : '#9ca3af',
+                  }}
+                >
+                  📍
+                </div>
+                <div>
+                  <div className="it-stat-value" style={{ fontSize: '1.05rem', color: counted && location ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+                    {locType}
+                  </div>
+                  <div className="it-stat-label">
+                    {locDetail}
+                  </div>
+                </div>
+              </>
+            );
+          })()}
         </div>
       </div>
     </div>

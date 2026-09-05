@@ -15,7 +15,10 @@ export async function GET() {
     .order('due_date', { ascending: true, nullsFirst: false })
     .order('created_at', { ascending: false });
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    console.error('[GET /api/trainer/todos] DB error:', error.message);
+    return NextResponse.json({ error: 'Failed to fetch todos' }, { status: 500 });
+  }
   return NextResponse.json(data);
 }
 
@@ -47,6 +50,9 @@ export async function POST(request: Request) {
     .select()
     .single();
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    console.error('[POST /api/trainer/todos] DB error:', error.message);
+    return NextResponse.json({ error: 'Failed to create todo' }, { status: 500 });
+  }
   return NextResponse.json(data, { status: 201 });
 }

@@ -4,10 +4,10 @@ import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 
 export interface Performer {
-  user_id: string;
+  user_id?: string;
   name: string;
-  emp_id: string;
-  team: string;
+  emp_id?: string;
+  team?: string;
   score: number;
   solved: number;
   rank?: number;
@@ -66,9 +66,9 @@ export default function TopPerformersWidget({ performers, currentUserId }: TopPe
   // Filtered performers for modal
   const filteredPerformers = rankedPerformers.filter(p => {
     const matchesSearch =
-      p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      p.emp_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      p.team.toLowerCase().includes(searchTerm.toLowerCase());
+      (p.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (p.emp_id || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (p.team || '').toLowerCase().includes(searchTerm.toLowerCase());
     const matchesTeam = filterTeam === 'All' || p.team === filterTeam;
     return matchesSearch && matchesTeam;
   });

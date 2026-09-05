@@ -22,7 +22,7 @@ export async function GET() {
 
   if (error) {
     console.error(`[GET /api/admin/access-requests] Error: ${error.message}`);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ error: 'Failed to fetch access requests' }, { status: 500 });
   }
 
   return NextResponse.json(requests || []);

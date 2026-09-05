@@ -109,7 +109,8 @@ export async function PUT(
     .single();
 
   if (updateError) {
-    return NextResponse.json({ error: updateError.message }, { status: 500 });
+    console.error(`[PATCH /api/admin/roadmaps/${id}] Update error:`, updateError.message);
+    return NextResponse.json({ error: 'Failed to update roadmap' }, { status: 500 });
   }
 
   // 2. Refresh Assignments
@@ -168,6 +169,9 @@ export async function DELETE(
   await supabase.from('user_roadmap_progress').delete().eq('roadmap_id', id);
   const { error } = await supabase.from('roadmaps').delete().eq('id', id);
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    console.error(`[DELETE /api/admin/roadmaps/${id}] Delete error:`, error.message);
+    return NextResponse.json({ error: 'Failed to delete roadmap' }, { status: 500 });
+  }
   return NextResponse.json({ success: true });
 }

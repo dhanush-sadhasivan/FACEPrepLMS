@@ -1,6 +1,8 @@
--- Migration 13: Fix get_it_trainer_overview RPC Solved Condition Parity
--- Eliminates the flawed "OR COALESCE(p.score, 0) > 0" clause from get_it_trainer_overview()
--- Ensures strict parity with the in-app API fallback logic in app/api/internal-training/trainer-overview/route.ts
+-- Migration 14: Fix get_it_trainer_overview RPC Date Casting and Location Exposure
+-- 1. Eliminates date casting type mismatch (operator does not exist: text = date) by using LEFT(..., 10) = CURRENT_DATE::text
+-- 2. Fully exposes tm.location for all records (so check-in location is always accessible in overview and reports)
+-- 3. Coalesces tm.last_check_in_date with user_last_check_date for complete user record consistency
+-- 4. Ensures strict parity with in-app calculation in trainer-overview and reports route
 
 DROP FUNCTION IF EXISTS public.get_it_trainer_overview();
 
@@ -31,6 +33,8 @@ BEGIN
       SELECT ra.roadmap_id, ra.user_id FROM public.roadmap_assignments ra WHERE ra.user_id IS NOT NULL
       UNION
       SELECT ra.roadmap_id, gm.user_id FROM public.roadmap_assignments ra JOIN public.group_members gm ON gm.group_id = ra.group_id WHERE ra.group_id IS NOT NULL
+      UNION
+      SELECT itp.roadmap_id, itp.user_id FROM public.it_trainer_progress itp
     ) a ON a.roadmap_id = r.id
     JOIN public.users u ON u.id = a.user_id
     WHERE u.role != 'admin'
@@ -124,8 +128,8 @@ BEGIN
       'extension_count', COALESCE(tm.extension_count, 0),
       'location', tm.location,
       'is_online', false,
-      'last_it_check_date', tm.last_check_in_date,
-      'is_it_counted_today', (tm.last_check_in_date IS NOT NULL AND tm.last_check_in_date::text = CURRENT_DATE::text)
+      'last_it_check_date', COALESCE(tm.last_check_in_date, at.user_last_check_date),
+      'is_it_counted_today', (COALESCE(tm.last_check_in_date, at.user_last_check_date) IS NOT NULL AND LEFT(COALESCE(tm.last_check_in_date, at.user_last_check_date)::text, 10) = CURRENT_DATE::text)
     )
     ORDER BY GREATEST(0, COALESCE(ca.questions_due_count, 0) - COALESCE(ca.questions_done_due_count, 0)) DESC, at.full_name ASC
   ) INTO result

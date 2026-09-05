@@ -38,6 +38,29 @@ function getAvatarGradient(name?: string | null): string {
   return gradients[index];
 }
 
+// Parse location safely across stringified JSON, objects, and strings
+function parseLocation(rawLoc: any): { display: string; type: string; detail: string } {
+  if (!rawLoc) return { display: '', type: '', detail: '' };
+  let parsed = rawLoc;
+  if (typeof rawLoc === 'string' && rawLoc.trim().startsWith('{') && rawLoc.trim().endsWith('}')) {
+    try {
+      parsed = JSON.parse(rawLoc);
+    } catch {
+      parsed = rawLoc;
+    }
+  }
+  if (typeof parsed === 'string') {
+    return { display: parsed, type: parsed, detail: '' };
+  }
+  if (typeof parsed === 'object' && parsed !== null) {
+    const type = parsed.type || parsed.office_name || 'Location';
+    const detail = parsed.detail || (parsed.office_name && parsed.office_name !== type ? parsed.office_name : '') || parsed.wfh_reason || '';
+    const display = `${type}${detail ? ` (${detail})` : ''}`.trim() || '';
+    return { display, type, detail };
+  }
+  return { display: String(rawLoc), type: String(rawLoc), detail: '' };
+}
+
 type TrainerSortField =
   | 'full_name'
   | 'team'
@@ -226,8 +249,10 @@ export default function TrainerOverviewTable({ onlineUserIds: propOnlineUserIds 
         (t.team || '').toLowerCase().includes(q) ||
         (t.roadmap_title || '').toLowerCase().includes(q) ||
         (t.email || '').toLowerCase().includes(q) ||
-        (t.location?.type || '').toLowerCase().includes(q) ||
-        (t.location?.detail || '').toLowerCase().includes(q);
+        (() => {
+          const locInfo = parseLocation(t.location);
+          return `${locInfo.display} ${locInfo.type} ${locInfo.detail}`;
+        })().toLowerCase().includes(q);
 
       const matchesRoadmap = roadmapFilter === 'All' || t.roadmap_title === roadmapFilter;
 
@@ -796,28 +821,36 @@ export default function TrainerOverviewTable({ onlineUserIds: propOnlineUserIds 
                             ✏️
                           </button>
                         </div>
-                        {t.location && (
-                          <div
-                            style={{
-                              fontSize: '0.68rem',
-                              color: '#10b981',
-                              fontWeight: 700,
-                              marginTop: '0.25rem',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '0.2rem',
-                              whiteSpace: 'nowrap',
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              maxWidth: '180px',
-                            }}
-                            title={`Today's location: ${t.location.type}${t.location.detail ? ` (${t.location.detail})` : ''}`}
-                          >
-                            <span>📍</span>
-                            <span>{t.location.type}</span>
-                            {t.location.detail && <span style={{ color: 'var(--text-muted)' }}>({t.location.detail})</span>}
-                          </div>
-                        )}
+                        {t.location && (() => {
+                          const locInfo = parseLocation(t.location);
+                          if (!locInfo.display) return null;
+                          return (
+                            <div
+                              style={{
+                                fontSize: '0.68rem',
+                                color: '#10b981',
+                                fontWeight: 700,
+                                marginTop: '0.25rem',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.2rem',
+                                whiteSpace: 'nowrap',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                maxWidth: '180px',
+                              }}
+                              title={`Today's location: ${locInfo.display}`}
+                            >
+                              <span>📍</span>
+                              <span>{locInfo.type}</span>
+                              {locInfo.detail && (
+                                <span style={{ color: 'var(--text-muted)' }}>
+                                  ({locInfo.detail})
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </td>
 
                       {/* Extended Days */}
